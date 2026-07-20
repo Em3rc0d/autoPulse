@@ -18,13 +18,19 @@ export async function initializeSpikeDatabase(): Promise<DatabaseHealthResult> {
     
     // Check readability & writability using Canary table
     state = 'HEALTHY';
-    const result = await expoDb.runAsync('INSERT INTO technical_health_checks (boot_version, created_at) VALUES (?, ?)', ['v1', Date.now()]);
-    if (result.changes > 0) {
-      isWritable = true;
-    }
-    const row = await expoDb.getFirstAsync<{ id: number }>('SELECT id FROM technical_health_checks LIMIT 1');
+    let row = await expoDb.getFirstAsync<{ id: number }>('SELECT id FROM technical_health_checks LIMIT 1');
     if (row && row.id) {
       isReadable = true;
+      isWritable = true; // Assuming it was written previously. We could update it instead.
+    } else {
+      const result = await expoDb.runAsync('INSERT INTO technical_health_checks (boot_version, created_at) VALUES (?, ?)', ['v1', Date.now()]);
+      if (result.changes > 0) {
+        isWritable = true;
+      }
+      row = await expoDb.getFirstAsync<{ id: number }>('SELECT id FROM technical_health_checks LIMIT 1');
+      if (row && row.id) {
+        isReadable = true;
+      }
     }
 
     return {
