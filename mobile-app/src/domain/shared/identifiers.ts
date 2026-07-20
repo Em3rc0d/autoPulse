@@ -1,0 +1,33 @@
+export type Brand<T, B> = T & { readonly __brand: B };
+
+export type EvaluationId = Brand<string, 'EvaluationId'>;
+export type VehicleId = Brand<string, 'VehicleId'>;
+export type TechnicianId = Brand<string, 'TechnicianId'>;
+export type TenantId = Brand<string, 'TenantId'>;
+export type CaptureRunId = Brand<string, 'CaptureRunId'>;
+export type EvidenceItemId = Brand<string, 'EvidenceItemId'>;
+export type FindingId = Brand<string, 'FindingId'>;
+export type LiveSessionId = Brand<string, 'LiveSessionId'>;
+export type ReportDraftId = Brand<string, 'ReportDraftId'>;
+export type ReportVersionId = Brand<string, 'ReportVersionId'>;
+export type ManifestId = Brand<string, 'ManifestId'>;
+export type TriageExecutionId = Brand<string, 'TriageExecutionId'>;
+export type SignalId = Brand<string, 'SignalId'>;
+export type MarkerId = Brand<string, 'MarkerId'>;
+export type AlertId = Brand<string, 'AlertId'>;
+
+export const createEvaluationId = (id: string) => id as EvaluationId;
+export const createVehicleId = (id: string) => id as VehicleId;
+export const createTechnicianId = (id: string) => id as TechnicianId;
+export const createTenantId = (id: string) => id as TenantId;
+export const createCaptureRunId = (id: string) => id as CaptureRunId;
+export const createEvidenceItemId = (id: string) => id as EvidenceItemId;
+export const createFindingId = (id: string) => id as FindingId;
+export const createLiveSessionId = (id: string) => id as LiveSessionId;
+export const createReportDraftId = (id: string) => id as ReportDraftId;
+export const createReportVersionId = (id: string) => id as ReportVersionId;
+export const createManifestId = (id: string) => id as ManifestId;
+export const createTriageExecutionId = (id: string) => id as TriageExecutionId;
+export const createSignalId = (id: string) => id as SignalId;
+export const createMarkerId = (id: string) => id as MarkerId;
+export const createAlertId = (id: string) => id as AlertId;

@@ -1,0 +1,55 @@
+export enum LiveSessionState {
+  CREATED = 'CREATED',
+  CONNECTING = 'CONNECTING',
+  STREAMING = 'STREAMING',
+  PAUSED = 'PAUSED',
+  COMPLETED = 'COMPLETED',
+  INTERRUPTED = 'INTERRUPTED',
+  FAILED = 'FAILED',
+  ABORTED = 'ABORTED'
+}
+
+export enum TelemetryPreset {
+  ESSENTIAL = 'ESSENTIAL',
+  OFF_ROAD = 'OFF_ROAD',
+  ROUTE = 'ROUTE',
+  DIAGNOSTIC = 'DIAGNOSTIC',
+  PERFORMANCE = 'PERFORMANCE',
+  CUSTOM = 'CUSTOM'
+}
+
+export enum TelemetryValueOrigin {
+  ECU_DIRECT = 'ECU_DIRECT',
+  DEVICE_SENSOR = 'DEVICE_SENSOR',
+  CALCULATED = 'CALCULATED',
+  ESTIMATED = 'ESTIMATED'
+}
+
+export enum TelemetryQuality {
+  VALID = 'VALID',
+  DEGRADED = 'DEGRADED',
+  STALE = 'STALE',
+  UNAVAILABLE = 'UNAVAILABLE',
+  INVALID = 'INVALID'
+}
+
+export enum TelemetryMarkerType {
+  USER_MARKER = 'USER_MARKER',
+  LIVE_ALERT = 'LIVE_ALERT',
+  CONNECTION_LOSS = 'CONNECTION_LOSS',
+  RECOVERY = 'RECOVERY',
+  CUSTOM = 'CUSTOM'
+}
+
+export enum LiveAlertState {
+  ACTIVE = 'ACTIVE',
+  ACKNOWLEDGED = 'ACKNOWLEDGED',
+  ENDED = 'ENDED',
+  DISMISSED = 'DISMISSED'
+}
+
+export enum LiveAlertSeverity {
+  ADVISORY = 'ADVISORY',
+  WARNING = 'WARNING',
+  URGENT = 'URGENT'
+}
