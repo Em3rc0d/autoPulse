@@ -10,7 +10,7 @@ import { nowUtc } from '../shared/timestamps';
 import { Evaluation } from '../evaluation/models/evaluation';
 import { TelemetryWindow } from '../telemetry/models/telemetryWindow';
 import { LiveTelemetrySession } from '../telemetry/models/liveTelemetrySession';
-import { createElapsedMs, createSequenceNumber } from '../shared/durations';
+import { createElapsedMsStrict, createSequenceNumberStrict } from '../shared/durations';
 
 describe('Integrated Domain Scenarios', () => {
 
@@ -20,7 +20,7 @@ describe('Integrated Domain Scenarios', () => {
     
     // 3 & 4. Añadir y abortar/interrumpir primera captura
     expect(canTransitionCapture(CaptureState.CREATED, CaptureState.CONNECTING).ok).toBe(true);
-    expect(canTransitionCapture(CaptureState.CONNECTING, CaptureState.INTERRUPTED).ok).toBe(true);
+    expect(canTransitionCapture(CaptureState.CONNECTING, CaptureState.FAILED).ok).toBe(true);
     
     // 5 & 6. Segunda captura completada
     expect(canTransitionCapture(CaptureState.CREATED, CaptureState.CONNECTING).ok).toBe(true);
@@ -70,8 +70,8 @@ describe('Integrated Domain Scenarios', () => {
       startedAt: nowUtc(),
       endedAt: nowUtc(),
       frames: [
-        { sessionId, timestamp: nowUtc(), elapsedMs: createElapsedMs(100), sequenceNumber: createSequenceNumber(1), samples: [] },
-        { sessionId, timestamp: nowUtc(), elapsedMs: createElapsedMs(200), sequenceNumber: createSequenceNumber(2), samples: [] }
+        { sessionId, timestamp: nowUtc(), elapsedMs: createElapsedMsStrict(100), sequenceNumber: createSequenceNumberStrict(1), samples: [] },
+        { sessionId, timestamp: nowUtc(), elapsedMs: createElapsedMsStrict(200), sequenceNumber: createSequenceNumberStrict(2), samples: [] }
       ],
       markers: [],
       signalDefinitions: []
