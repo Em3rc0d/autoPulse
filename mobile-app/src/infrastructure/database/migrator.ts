@@ -17,30 +17,55 @@ export async function initializeSpikeDatabase(): Promise<DatabaseHealthResult> {
     await migrate(db, migrations);
     
     // Check readability & writability using Canary table
-    state = 'HEALTHY';
-    let row = await expoDb.getFirstAsync<{ id: number }>('SELECT id FROM technical_health_checks LIMIT 1');
-    if (row && row.id) {
+    // Read all rows to provide evidence
+    const allRows = await expoDb.getAllAsync<{ id: number; boot_version: string; created_at: number; notes: string | null }>('SELECT * FROM technical_health_checks');
+    let verificationEvidence = {
+      rowCount: allRows.length,
+      rows: allRows
+    };
+
+    if (allRows.length > 0) {
       isReadable = true;
-      isWritable = true; // Assuming it was written previously. We could update it instead.
+      isWritable = true;
+      
+      // Si la fila del Build A no tiene notes (es null), la actualizamos para probar escritura en Build B
+      const firstRow = allRows[0];
+      if (firstRow.notes === null) {
+        await expoDb.runAsync('UPDATE technical_health_checks SET notes = ? WHERE id = ?', ['Updated in Build B (0002)', firstRow.id]);
+        
+        // Refresh evidence
+        const updatedRows = await expoDb.getAllAsync<{ id: number; boot_version: string; created_at: number; notes: string | null }>('SELECT * FROM technical_health_checks');
+        verificationEvidence = {
+          rowCount: updatedRows.length,
+          rows: updatedRows
+        };
+      }
     } else {
-      const result = await expoDb.runAsync('INSERT INTO technical_health_checks (boot_version, created_at) VALUES (?, ?)', ['v1', Date.now()]);
+      const result = await expoDb.runAsync('INSERT INTO technical_health_checks (boot_version, created_at, notes) VALUES (?, ?, ?)', ['v2', Date.now(), 'Build B Migration 0002 Check']);
       if (result.changes > 0) {
         isWritable = true;
       }
-      row = await expoDb.getFirstAsync<{ id: number }>('SELECT id FROM technical_health_checks LIMIT 1');
-      if (row && row.id) {
+      const newRows = await expoDb.getAllAsync<{ id: number; boot_version: string; created_at: number; notes: string | null }>('SELECT * FROM technical_health_checks');
+      if (newRows.length > 0) {
         isReadable = true;
       }
+      verificationEvidence = {
+        rowCount: newRows.length,
+        rows: newRows
+      };
     }
+    
+    state = 'HEALTHY';
 
     return {
       state,
       databaseName: DATABASE_NAME,
-      expectedVersion: '0001',
+      expectedVersion: '0002',
       isReadable,
       isWritable,
       isSafeToContinueLegacy: true,
-      durationMs: Date.now() - startTime
+      durationMs: Date.now() - startTime,
+      verificationEvidence
     };
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -54,7 +79,7 @@ export async function initializeSpikeDatabase(): Promise<DatabaseHealthResult> {
     return {
       state: finalState,
       databaseName: DATABASE_NAME,
-      expectedVersion: '0001',
+      expectedVersion: '0002',
       isReadable: false,
       isWritable: false,
       isSafeToContinueLegacy: true,

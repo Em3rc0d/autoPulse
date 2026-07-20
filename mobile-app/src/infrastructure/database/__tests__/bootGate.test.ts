@@ -18,10 +18,10 @@ describe('Database Boot Gate', () => {
 
   it('should return HEALTHY state when migration succeeds', async () => {
     const mockRunAsync = jest.fn().mockResolvedValue({ changes: 1 });
-    const mockGetFirstAsync = jest.fn().mockResolvedValue({ id: 1 });
+    const mockGetAllAsync = jest.fn().mockResolvedValue([{ id: 1, notes: null }]);
     
     (getDatabaseConnection as jest.Mock).mockReturnValue({
-      expoDb: { runAsync: mockRunAsync, getFirstAsync: mockGetFirstAsync },
+      expoDb: { runAsync: mockRunAsync, getAllAsync: mockGetAllAsync },
       db: {}
     });
 
@@ -46,10 +46,11 @@ describe('Database Boot Gate', () => {
   });
 
   it('should return SCHEMA_MISMATCH state when table does not exist after migration', async () => {
+    const mockGetAllAsync = jest.fn().mockRejectedValue(new Error('no such table: technical_health_checks'));
     const mockRunAsync = jest.fn().mockRejectedValue(new Error('no such table: technical_health_checks'));
     
     (getDatabaseConnection as jest.Mock).mockReturnValue({
-      expoDb: { runAsync: mockRunAsync },
+      expoDb: { getAllAsync: mockGetAllAsync, runAsync: mockRunAsync },
       db: {}
     });
 

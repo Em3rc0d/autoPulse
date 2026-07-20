@@ -1,0 +1,1 @@
+ALTER TABLE `technical_health_checks` ADD `notes` text;

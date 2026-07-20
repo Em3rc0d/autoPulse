@@ -8,6 +8,13 @@
       "when": 1784555735349,
       "tag": "0000_rapid_silhouette",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784581726110,
+      "tag": "0001_high_nighthawk",
+      "breakpoints": true
     }
   ]
 }
