@@ -84,7 +84,6 @@ export default function LiveSessionScreen() {
             title: "AutoPulse",
             message: "Conexión OBD2 activa leyendo telemetría...",
             icon: "ic_launcher",
-            ServiceType: "connectedDevice",
             button: false,
             button2: false,
             setOnlyAlertOnce: "true",

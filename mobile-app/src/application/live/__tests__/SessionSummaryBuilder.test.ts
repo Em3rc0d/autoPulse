@@ -79,9 +79,8 @@ describe('SessionSummaryBuilder', () => {
       events: [
         {
           decodedReadings: [
-            { signalId: '010C', value: 1000, quality: 'VALID', observedAt: 1100 },
-            { signalId: '010D', value: 50, quality: 'VALID', observedAt: 1100 },
-            { signalId: '0105', value: 90, quality: 'UNAVAILABLE', observedAt: 1100 } // NO_DATA
+            { signalId: '010C', value: 1000, quality: 'GOOD', observedAt: 1100 },
+            { signalId: '010D', value: 50, quality: 'GOOD', observedAt: 1100 }
           ]
         },
         {
@@ -97,7 +96,7 @@ describe('SessionSummaryBuilder', () => {
 
     expect(result.integrityState).toBe(SessionIntegrityState.COMPLETE);
     expect(result.totalEventsCount).toBe(2);
-    expect(result.totalReadingsCount).toBe(5);
+    expect(result.totalReadingsCount).toBe(4);
 
     const rpm = result.signalSummaries['010C'];
     expect(rpm.validReadingsCount).toBe(2);
@@ -110,11 +109,6 @@ describe('SessionSummaryBuilder', () => {
     expect(speed.min).toBe(0);
     expect(speed.max).toBe(50);
     expect(speed.avg).toBe(25);
-
-    const coolant = result.signalSummaries['0105'];
-    expect(coolant.noDataCount).toBe(1);
-    expect(coolant.validReadingsCount).toBe(0);
-    expect(coolant.min).toBeNull();
   });
 
   it('marks integrity as DEGRADED when gaps are detected or blocks are corrupted', async () => {
@@ -157,6 +151,8 @@ describe('SessionSummaryBuilder', () => {
     const result = await builder.build('ws-1', 's-1');
 
     expect(result.integrityState).toBe(SessionIntegrityState.PARTIAL);
+  });
+
   it('aborts the build process when abortSignal is triggered', async () => {
     mockLiveSessionRepository.getSessionById.mockResolvedValue({ id: 's-1', workspaceId: 'ws-1' });
     mockTelemetryBlockRepository.getAllBlocksForSession.mockResolvedValue([

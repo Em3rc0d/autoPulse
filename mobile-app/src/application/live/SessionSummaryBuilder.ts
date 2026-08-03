@@ -9,7 +9,7 @@ import {
 } from '../../domain/telemetry/models/sessionSummaryResult';
 import { ObdAcquisitionEvent } from '../../domain/telemetry/models/ObdAcquisitionEvent';
 import { LiveSessionId, VehicleId, WorkspaceId } from '../../domain/shared/identifiers';
-import { UtcIsoTimestamp } from '../../domain/shared/timestamps';
+import { UtcIsoTimestamp, parseUtcIsoTimestamp } from '../../domain/shared/timestamps';
 
 function isCodecCorruption(err: any): boolean {
   return err instanceof Error && (err.message.includes('CORRUPTED') || err.message.includes('UNSUPPORTED'));
@@ -64,24 +64,26 @@ export class SessionSummaryBuilder {
     const signalMap = new Map<string, SignalSummary>();
 
     let prevWindowIndex = -1;
+    let prevLastSequence: number | undefined = undefined;
 
     for (let i = 0; i < blocks.length; i++) {
       if (abortSignal?.aborted) {
-        throw new Error('ABORTED');
+        throw new SessionSummaryBuildAbortedError();
       }
 
       const result = blocks[i];
       if (result.status !== 'VALID') {
-        corruptedBlocksCount++;
+        if (result.status === 'CORRUPTED') {
+          corruptedBlocksCount++;
+        }
         continue;
       }
 
       const block = result.block;
+      completeBlocksCount++;
 
       if (block.isPartial) {
         partialBlocksCount++;
-      } else {
-        completeBlocksCount++;
       }
 
       if (firstWindowIndex === undefined || block.windowIndex < firstWindowIndex) {
@@ -101,7 +103,11 @@ export class SessionSummaryBuilder {
       if (prevWindowIndex !== -1 && block.windowIndex > prevWindowIndex + 1) {
         gapsDetectedCount++;
       }
+      if (prevLastSequence !== undefined && (block.firstEventSequence > prevLastSequence + 1 || block.firstEventSequence <= prevLastSequence)) {
+        gapsDetectedCount++;
+      }
       prevWindowIndex = block.windowIndex;
+      prevLastSequence = block.lastEventSequence;
 
       // Decode the block using the codec
       try {
@@ -129,10 +135,9 @@ export class SessionSummaryBuilder {
               };
             }
 
-            if (reading.quality === ('UNAVAILABLE' as any)) {
-              // Note: 'UNAVAILABLE' corresponds to NO_DATA or literally no response for that PID
-              sigSummary = { ...sigSummary, noDataCount: sigSummary.noDataCount + 1 };
-            } else if (reading.quality === ('INVALID' as any) || reading.quality === ('STALE' as any)) {
+            // Since 'GOOD', 'DEGRADED', 'INVALID' are the only valid values, we just count NO_DATA at event level.
+            // If the reading exists, it is valid or invalid/degraded.
+            if (reading.quality === 'INVALID') {
               sigSummary = { ...sigSummary, invalidCount: sigSummary.invalidCount + 1 };
             } else {
               // Valid reading
@@ -143,17 +148,18 @@ export class SessionSummaryBuilder {
                 min: sigSummary.min === null ? v : Math.min(sigSummary.min, v),
                 max: sigSummary.max === null ? v : Math.max(sigSummary.max, v),
                 avg: sigSummary.avg === null ? v : sigSummary.avg + v, // We will divide by count at the end
-                firstValidAt: sigSummary.firstValidAt === null ? reading.observedAt as unknown as UtcIsoTimestamp : sigSummary.firstValidAt,
-                lastValidAt: reading.observedAt as unknown as UtcIsoTimestamp
+                firstValidAt: sigSummary.firstValidAt === null ? parseUtcIsoTimestamp(new Date(reading.observedAt).toISOString()) : sigSummary.firstValidAt,
+                lastValidAt: parseUtcIsoTimestamp(new Date(reading.observedAt).toISOString())
               };
             }
             signalMap.set(sigId, sigSummary);
           }
         }
-      } catch (err: any) {
-        if (isCodecCorruption(err)) {
-          console.warn(`[SessionSummaryBuilder] Failed to decode block ${block.windowIndex} for session ${sessionId}:`, err);
-          if (err?.message?.startsWith('UNSUPPORTED')) {
+      } catch (err) {
+        const error = err as Error;
+        if (isCodecCorruption(error)) {
+          console.warn(`[SessionSummaryBuilder] Failed to decode block ${block.windowIndex} for session ${sessionId}:`, error);
+          if (error.message.startsWith('UNSUPPORTED')) {
             unsupportedBlocksCount++;
           } else {
             corruptedBlocksCount++;

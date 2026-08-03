@@ -10,7 +10,7 @@ import { nowUtc } from '../shared/timestamps';
 import { Evaluation } from '../evaluation/models/evaluation';
 import { TelemetryWindow } from '../telemetry/models/telemetryWindow';
 import { LiveTelemetrySession } from '../telemetry/models/liveTelemetrySession';
-import { createElapsedMsStrict, createSequenceNumberStrict } from '../shared/durations';
+import { createElapsedMs, createSequenceNumber } from '../shared/durations';
 
 describe('Integrated Domain Scenarios', () => {
 
@@ -70,8 +70,8 @@ describe('Integrated Domain Scenarios', () => {
       startedAt: nowUtc(),
       endedAt: nowUtc(),
       frames: [
-        { sessionId, timestamp: nowUtc(), elapsedMs: createElapsedMsStrict(100), sequenceNumber: createSequenceNumberStrict(1), samples: [] },
-        { sessionId, timestamp: nowUtc(), elapsedMs: createElapsedMsStrict(200), sequenceNumber: createSequenceNumberStrict(2), samples: [] }
+        { sessionId, timestamp: nowUtc(), elapsedMs: createElapsedMs(100), sequenceNumber: createSequenceNumber(1), samples: [] },
+        { sessionId, timestamp: nowUtc(), elapsedMs: createElapsedMs(200), sequenceNumber: createSequenceNumber(2), samples: [] }
       ],
       markers: [],
       signalDefinitions: []

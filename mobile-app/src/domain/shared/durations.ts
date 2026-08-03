@@ -13,7 +13,7 @@ export function createElapsedMs(ms: number): ElapsedMs {
   if (ms < 0) throw new Error('Elapsed time cannot be negative');
   return ms as ElapsedMs;
 }
-export const createElapsedMsStrict = createElapsedMs;
+
 
 export function createSequenceNumber(seq: number): SequenceNumber {
   if (seq < 0 || !Number.isInteger(seq)) {
@@ -21,4 +21,3 @@ export function createSequenceNumber(seq: number): SequenceNumber {
   }
   return seq as SequenceNumber;
 }
-export const createSequenceNumberStrict = createSequenceNumber;
