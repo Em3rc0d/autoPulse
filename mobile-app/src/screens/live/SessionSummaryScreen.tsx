@@ -290,4 +290,3 @@ const styles = StyleSheet.create({
   errorDetails: { color: '#9ca3af', fontSize: 14, fontFamily: 'SpaceMono_400Regular', marginBottom: 24, textAlign: 'center' },
   content: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 }
 });
-
