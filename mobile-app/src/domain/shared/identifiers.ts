@@ -1,6 +1,7 @@
 export type Brand<T, B> = T & { readonly __brand: B };
 
 export type EvaluationId = Brand<string, 'EvaluationId'>;
+export type WorkspaceId = Brand<string, 'WorkspaceId'>;
 export type VehicleId = Brand<string, 'VehicleId'>;
 export type TechnicianId = Brand<string, 'TechnicianId'>;
 export type TenantId = Brand<string, 'TenantId'>;
@@ -17,6 +18,7 @@ export type MarkerId = Brand<string, 'MarkerId'>;
 export type AlertId = Brand<string, 'AlertId'>;
 
 export const createEvaluationId = (id: string) => id as EvaluationId;
+export const createWorkspaceId = (id: string) => id as WorkspaceId;
 export const createVehicleId = (id: string) => id as VehicleId;
 export const createTechnicianId = (id: string) => id as TechnicianId;
 export const createTenantId = (id: string) => id as TenantId;

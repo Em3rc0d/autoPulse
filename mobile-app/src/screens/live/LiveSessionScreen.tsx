@@ -87,7 +87,7 @@ export default function LiveSessionScreen() {
             ServiceType: "connectedDevice",
             button: false,
             button2: false,
-            setOnlyAlertOnce: true,
+            setOnlyAlertOnce: "true",
             color: "#000000",
           });
         } catch (err) {

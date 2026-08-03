@@ -8,6 +8,19 @@ import {
   SignalSummary
 } from '../../domain/telemetry/models/sessionSummaryResult';
 import { ObdAcquisitionEvent } from '../../domain/telemetry/models/ObdAcquisitionEvent';
+import { LiveSessionId, VehicleId, WorkspaceId } from '../../domain/shared/identifiers';
+import { UtcIsoTimestamp } from '../../domain/shared/timestamps';
+
+function isCodecCorruption(err: any): boolean {
+  return err instanceof Error && (err.message.includes('CORRUPTED') || err.message.includes('UNSUPPORTED'));
+}
+
+export class SessionSummaryBuildAbortedError extends Error {
+  constructor(message?: string) {
+    super(message || 'SESSION_SUMMARY_BUILD_ABORTED');
+    this.name = 'SessionSummaryBuildAbortedError';
+  }
+}
 
 export class SessionSummaryBuilder {
   constructor(
@@ -116,10 +129,10 @@ export class SessionSummaryBuilder {
               };
             }
 
-            if (reading.quality === 'UNAVAILABLE') {
+            if (reading.quality === ('UNAVAILABLE' as any)) {
               // Note: 'UNAVAILABLE' corresponds to NO_DATA or literally no response for that PID
               sigSummary = { ...sigSummary, noDataCount: sigSummary.noDataCount + 1 };
-            } else if (reading.quality === 'INVALID' || reading.quality === 'STALE') {
+            } else if (reading.quality === ('INVALID' as any) || reading.quality === ('STALE' as any)) {
               sigSummary = { ...sigSummary, invalidCount: sigSummary.invalidCount + 1 };
             } else {
               // Valid reading
@@ -130,8 +143,8 @@ export class SessionSummaryBuilder {
                 min: sigSummary.min === null ? v : Math.min(sigSummary.min, v),
                 max: sigSummary.max === null ? v : Math.max(sigSummary.max, v),
                 avg: sigSummary.avg === null ? v : sigSummary.avg + v, // We will divide by count at the end
-                firstValidAt: sigSummary.firstValidAt === null ? reading.observedAt : sigSummary.firstValidAt,
-                lastValidAt: reading.observedAt
+                firstValidAt: sigSummary.firstValidAt === null ? reading.observedAt as unknown as UtcIsoTimestamp : sigSummary.firstValidAt,
+                lastValidAt: reading.observedAt as unknown as UtcIsoTimestamp
               };
             }
             signalMap.set(sigId, sigSummary);
@@ -188,22 +201,19 @@ export class SessionSummaryBuilder {
     }
 
     let mode = SessionAcquisitionMode.REAL_BLE;
-    // Simple heuristic for now until AcquisitionMode is officially stored in DB
-    if (session.adapterInstanceId === 'LAPTOP_HOST' || session.adapterInstanceId === 'VIRTUAL') {
-      mode = SessionAcquisitionMode.LAPTOP_REPLAY; // Or Virtual
-    }
+    const adapterId = session.adapterInstanceId;
 
     return {
-      sessionId: session.id,
-      vehicleId: session.vehicleId,
-      workspaceId: session.workspaceId,
+      sessionId: session.id as unknown as LiveSessionId,
+      vehicleId: session.vehicleId as unknown as VehicleId,
+      workspaceId: workspaceId as unknown as WorkspaceId,
 
-      acquisitionMode: mode,
-      adapterId: session.adapterInstanceId,
+      acquisitionMode: adapterId === 'VIRTUAL' ? SessionAcquisitionMode.LAPTOP_REPLAY : SessionAcquisitionMode.REAL_BLE,
+      adapterId: adapterId,
       protocolId: session.protocolCode || undefined,
 
-      startedAt: session.startedAt || 0,
-      endedAt: session.endedAt || undefined,
+      startedAt: session.startedAt as unknown as UtcIsoTimestamp,
+      endedAt: session.endedAt as unknown as UtcIsoTimestamp || undefined,
       durationSeconds: session.startedAt && session.endedAt ? Math.floor((session.endedAt - session.startedAt) / 1000) : undefined,
       terminationReason: session.stopReason || session.failureCode || undefined,
       isInterrupted: session.status === 'INTERRUPTED' || session.status === 'FAILED',

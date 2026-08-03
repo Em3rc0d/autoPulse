@@ -1,1 +1,55 @@
-import React from 'react';import { render } from '@testing-library/react-native';import VehicleCapabilitiesScreen from '../VehicleCapabilitiesScreen';import { useCapabilitySnapshot } from '../../../infrastructure/hooks/useCapabilitySnapshot';jest.mock('../../../infrastructure/hooks/useVehicle', () => ({  useVehicle: () => ({ vehicle: { alias: 'Test Vehicle' } })}));jest.mock('../../../infrastructure/hooks/useLocalContext', () => ({  useLocalContext: () => ({ context: { activeWorkspaceId: 'WS-1' } })}));jest.mock('../../../infrastructure/hooks/useCapabilitySnapshot', () => ({  useCapabilitySnapshot: jest.fn()}));jest.mock('@react-navigation/native', () => ({  useRoute: () => ({ params: { vehicleId: 'V-1' } }),  useNavigation: () => ({ goBack: jest.fn() })}));jest.mock('@expo/vector-icons', () => ({  Ionicons: 'Ionicons'}));describe('VehicleCapabilitiesScreen', () => {  it('renders technical PID and fallback name when definition is null', () => {    (useCapabilitySnapshot as jest.Mock).mockReturnValue({      snapshot: { id: 'snap-1', testedAt: 123 },      loading: false,      parameters: [        {          id: 'param-1',          snapshotId: 'snap-1',          service: 1,          parameterIdentifier: 12,          supportState: 'SUPPORTED',          testedAt: 123,          definition: null // NULL definition        }      ]    });    const { getByText, queryByText } = render(<VehicleCapabilitiesScreen />);    // Verify it remains visible and shows fallback names    expect(getByText('Unknown Parameter')).toBeTruthy();    expect(getByText('Mode 1 PID 12')).toBeTruthy();    expect(getByText('Supported')).toBeTruthy();    // Verify it doesn't crash or present as NOT_SUPPORTED simply because definition is missing    expect(queryByText('NOT_SUPPORTED')).toBeFalsy();  });});
+import React from 'react';
+import { render } from '@testing-library/react-native';
+import VehicleCapabilitiesScreen from '../VehicleCapabilitiesScreen';
+import { useCapabilitySnapshot } from '../../../infrastructure/hooks/useCapabilitySnapshot';
+
+jest.mock('../../../infrastructure/hooks/useVehicle', () => ({
+  useVehicle: () => ({ vehicle: { alias: 'Test Vehicle' } })
+}));
+
+jest.mock('../../../infrastructure/hooks/useLocalContext', () => ({
+  useLocalContext: () => ({ context: { activeWorkspaceId: 'WS-1' } })
+}));
+
+jest.mock('../../../infrastructure/hooks/useCapabilitySnapshot', () => ({
+  useCapabilitySnapshot: jest.fn()
+}));
+
+jest.mock('@react-navigation/native', () => ({
+  useRoute: () => ({ params: { vehicleId: 'V-1' } }),
+  useNavigation: () => ({ goBack: jest.fn() })
+}));
+
+jest.mock('@expo/vector-icons', () => ({
+  Ionicons: 'Ionicons'
+}));
+
+describe('VehicleCapabilitiesScreen', () => {
+  it('renders technical PID and fallback name when definition is null', () => {
+    (useCapabilitySnapshot as jest.Mock).mockReturnValue({
+      snapshot: { id: 'snap-1', testedAt: 123 },
+      loading: false,
+      parameters: [
+        {
+          id: 'param-1',
+          snapshotId: 'snap-1',
+          service: 1,
+          parameterIdentifier: 12,
+          supportState: 'SUPPORTED',
+          testedAt: 123,
+          definition: null // NULL definition
+        }
+      ]
+    });
+
+    const { getByText, queryByText } = render(<VehicleCapabilitiesScreen />);
+
+    // Verify it remains visible and shows fallback names
+    expect(getByText('Unknown Parameter')).toBeTruthy();
+    expect(getByText('Mode 1 PID 12')).toBeTruthy();
+    expect(getByText('Supported')).toBeTruthy();
+
+    // Verify it doesn't crash or present as NOT_SUPPORTED simply because definition is missing
+    expect(queryByText('NOT_SUPPORTED')).toBeFalsy();
+  });
+});
