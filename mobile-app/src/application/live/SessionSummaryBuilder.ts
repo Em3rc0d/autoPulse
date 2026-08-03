@@ -1,0 +1,232 @@
+import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
+import { ITelemetryBlockRepository } from '../../domain/telemetry/repositories/TelemetryBlockRepository';
+import { BinaryObd2V3Codec } from '../../infrastructure/telemetry-codecs/binary-obd2-v3/BinaryObd2V3Codec';
+import {
+  SessionSummaryResult,
+  SessionIntegrityState,
+  SessionAcquisitionMode,
+  SignalSummary
+} from '../../domain/telemetry/models/sessionSummaryResult';
+import { ObdAcquisitionEvent } from '../../domain/telemetry/models/ObdAcquisitionEvent';
+
+export class SessionSummaryBuilder {
+  constructor(
+    private liveSessionRepository: LiveSessionRepository,
+    private telemetryBlockRepository: ITelemetryBlockRepository,
+    private codec: BinaryObd2V3Codec
+  ) {}
+
+  async build(
+    workspaceId: string,
+    sessionId: string,
+    onProgress?: (progress: number) => void,
+    abortSignal?: AbortSignal
+  ): Promise<SessionSummaryResult> {
+    const session = await this.liveSessionRepository.getSessionById(workspaceId, sessionId);
+    if (!session) {
+      throw new Error('SESSION_NOT_FOUND');
+    }
+
+    const blocks = await this.telemetryBlockRepository.getAllBlocksForSession(sessionId);
+
+    // Yield control initially
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    let expectedBlocksCount = session.totalBlocks || 0; // The controller counted them
+    let foundBlocksCount = blocks.length;
+    let completeBlocksCount = 0;
+    let partialBlocksCount = 0;
+    let corruptedBlocksCount = 0;
+    let unsupportedBlocksCount = 0;
+
+    let firstWindowIndex: number | undefined = undefined;
+    let lastWindowIndex: number | undefined = undefined;
+    let firstSequence: number | undefined = undefined;
+    let lastSequence: number | undefined = undefined;
+
+    let gapsDetectedCount = 0;
+    let totalEventsCount = 0;
+    let totalReadingsCount = 0;
+
+    const signalMap = new Map<string, SignalSummary>();
+
+    let prevWindowIndex = -1;
+
+    for (let i = 0; i < blocks.length; i++) {
+      if (abortSignal?.aborted) {
+        throw new Error('ABORTED');
+      }
+
+      const result = blocks[i];
+      if (result.status !== 'VALID') {
+        corruptedBlocksCount++;
+        continue;
+      }
+
+      const block = result.block;
+
+      if (block.isPartial) {
+        partialBlocksCount++;
+      } else {
+        completeBlocksCount++;
+      }
+
+      if (firstWindowIndex === undefined || block.windowIndex < firstWindowIndex) {
+        firstWindowIndex = block.windowIndex;
+      }
+      if (lastWindowIndex === undefined || block.windowIndex > lastWindowIndex) {
+        lastWindowIndex = block.windowIndex;
+      }
+
+      if (firstSequence === undefined || block.firstEventSequence < firstSequence) {
+        firstSequence = block.firstEventSequence;
+      }
+      if (lastSequence === undefined || block.lastEventSequence > lastSequence) {
+        lastSequence = block.lastEventSequence;
+      }
+
+      if (prevWindowIndex !== -1 && block.windowIndex > prevWindowIndex + 1) {
+        gapsDetectedCount++;
+      }
+      prevWindowIndex = block.windowIndex;
+
+      // Decode the block using the codec
+      try {
+        const decoded = this.codec.decode(block.payload, block);
+
+        for (const event of decoded.events) {
+          totalEventsCount++;
+
+          for (const reading of event.decodedReadings) {
+            totalReadingsCount++;
+
+            const sigId = reading.signalId;
+            let sigSummary = signalMap.get(sigId);
+            if (!sigSummary) {
+              sigSummary = {
+                signalId: sigId,
+                validReadingsCount: 0,
+                noDataCount: 0,
+                invalidCount: 0,
+                min: null,
+                max: null,
+                avg: null,
+                firstValidAt: null,
+                lastValidAt: null
+              };
+            }
+
+            if (reading.quality === 'UNAVAILABLE') {
+              // Note: 'UNAVAILABLE' corresponds to NO_DATA or literally no response for that PID
+              sigSummary = { ...sigSummary, noDataCount: sigSummary.noDataCount + 1 };
+            } else if (reading.quality === 'INVALID' || reading.quality === 'STALE') {
+              sigSummary = { ...sigSummary, invalidCount: sigSummary.invalidCount + 1 };
+            } else {
+              // Valid reading
+              const v = reading.value;
+              sigSummary = {
+                ...sigSummary,
+                validReadingsCount: sigSummary.validReadingsCount + 1,
+                min: sigSummary.min === null ? v : Math.min(sigSummary.min, v),
+                max: sigSummary.max === null ? v : Math.max(sigSummary.max, v),
+                avg: sigSummary.avg === null ? v : sigSummary.avg + v, // We will divide by count at the end
+                firstValidAt: sigSummary.firstValidAt === null ? reading.observedAt : sigSummary.firstValidAt,
+                lastValidAt: reading.observedAt
+              };
+            }
+            signalMap.set(sigId, sigSummary);
+          }
+        }
+      } catch (err: any) {
+        if (isCodecCorruption(err)) {
+          console.warn(`[SessionSummaryBuilder] Failed to decode block ${block.windowIndex} for session ${sessionId}:`, err);
+          if (err?.message?.startsWith('UNSUPPORTED')) {
+            unsupportedBlocksCount++;
+          } else {
+            corruptedBlocksCount++;
+          }
+        } else {
+          // Unexpected error, do not swallow it as corruption
+          throw err;
+        }
+      }
+
+      // Yield every 10 blocks to prevent UI starvation
+      if (i % 10 === 0) {
+        if (onProgress) {
+          onProgress(Math.min(1, i / expectedBlocksCount));
+        }
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+
+    // Finalize averages
+    const signalSummaries: Record<string, SignalSummary> = {};
+    for (const [sigId, summary] of signalMap.entries()) {
+      let finalAvg = null;
+      if (summary.validReadingsCount > 0 && summary.avg !== null) {
+        finalAvg = summary.avg / summary.validReadingsCount;
+      }
+      signalSummaries[sigId] = {
+        ...summary,
+        avg: finalAvg
+      };
+    }
+
+    let integrityState = SessionIntegrityState.COMPLETE;
+
+    if (corruptedBlocksCount > 0 || gapsDetectedCount > 0) {
+      integrityState = SessionIntegrityState.DEGRADED;
+    } else if (session.status === 'INTERRUPTED' || partialBlocksCount > 0) {
+      integrityState = SessionIntegrityState.PARTIAL;
+    }
+
+    if (corruptedBlocksCount === foundBlocksCount && foundBlocksCount > 0) {
+      integrityState = SessionIntegrityState.CORRUPTED;
+    } else if (foundBlocksCount === 0) {
+      integrityState = SessionIntegrityState.UNAVAILABLE;
+    }
+
+    let mode = SessionAcquisitionMode.REAL_BLE;
+    // Simple heuristic for now until AcquisitionMode is officially stored in DB
+    if (session.adapterInstanceId === 'LAPTOP_HOST' || session.adapterInstanceId === 'VIRTUAL') {
+      mode = SessionAcquisitionMode.LAPTOP_REPLAY; // Or Virtual
+    }
+
+    return {
+      sessionId: session.id,
+      vehicleId: session.vehicleId,
+      workspaceId: session.workspaceId,
+
+      acquisitionMode: mode,
+      adapterId: session.adapterInstanceId,
+      protocolId: session.protocolCode || undefined,
+
+      startedAt: session.startedAt || 0,
+      endedAt: session.endedAt || undefined,
+      durationSeconds: session.startedAt && session.endedAt ? Math.floor((session.endedAt - session.startedAt) / 1000) : undefined,
+      terminationReason: session.stopReason || session.failureCode || undefined,
+      isInterrupted: session.status === 'INTERRUPTED' || session.status === 'FAILED',
+
+      expectedBlocksCount,
+      foundBlocksCount,
+      completeBlocksCount,
+      partialBlocksCount,
+      corruptedBlocksCount,
+      unsupportedBlocksCount,
+
+      firstWindowIndex,
+      lastWindowIndex,
+      firstSequence,
+      lastSequence,
+
+      gapsDetectedCount,
+      totalEventsCount,
+      totalReadingsCount,
+
+      integrityState,
+
+      signalSummaries
+    };
+  }
+}
