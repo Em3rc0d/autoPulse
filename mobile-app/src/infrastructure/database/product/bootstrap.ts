@@ -4,6 +4,10 @@ import * as Crypto from 'expo-crypto';
 import { ProductIdGenerator } from './uuidv7';
 import { sql } from 'drizzle-orm';
 
+function isInstallationIdPlaceholder(id: string | null | undefined): boolean {
+  return id == null || id.trim() === '' || id === 'PENDING';
+}
+
 export async function bootstrapProductDb(db: ExpoSQLiteDatabase<typeof schema>) {
   // Use a transaction since we are creating multiple roots.
   return await db.transaction(async (tx) => {
@@ -62,20 +66,37 @@ export async function bootstrapProductDb(db: ExpoSQLiteDatabase<typeof schema>) 
 
     // 5. If it exists, validate the references
     const context = contexts[0];
+    const identityId = identityResult[0].installationId;
+    const contextId = context.installationId;
 
-    if (identityResult[0].installationId !== context.installationId) {
-      if (!identityResult[0].installationId) {
-        // Sync context -> DB
-        await tx.update(schema.databaseIdentity)
-          .set({ installationId: context.installationId })
-          .where(sql`database_kind = 'PRODUCT'`);
-      } else {
-        // Sync DB -> context
-        await tx.update(schema.localAppContext)
-          .set({ installationId: identityResult[0].installationId })
-          .where(sql`singleton_key = 1`);
-        context.installationId = identityResult[0].installationId;
-      }
+    let finalInstallationId = contextId;
+
+    const isIdentityPlaceholder = isInstallationIdPlaceholder(identityId);
+    const isContextPlaceholder = isInstallationIdPlaceholder(contextId);
+
+    if (isIdentityPlaceholder && isContextPlaceholder) {
+      const newId = ProductIdGenerator.generate();
+      await tx.update(schema.databaseIdentity)
+        .set({ installationId: newId })
+        .where(sql`database_kind = 'PRODUCT'`);
+      await tx.update(schema.localAppContext)
+        .set({ installationId: newId })
+        .where(sql`singleton_key = 1`);
+      finalInstallationId = newId;
+    } else if (isIdentityPlaceholder && !isContextPlaceholder) {
+      // Sync context -> DB
+      await tx.update(schema.databaseIdentity)
+        .set({ installationId: contextId })
+        .where(sql`database_kind = 'PRODUCT'`);
+      finalInstallationId = contextId;
+    } else if (!isIdentityPlaceholder && isContextPlaceholder) {
+      // Sync DB -> context
+      await tx.update(schema.localAppContext)
+        .set({ installationId: identityId })
+        .where(sql`singleton_key = 1`);
+      finalInstallationId = identityId;
+    } else if (identityId !== contextId) {
+      throw new Error('LOCAL_CONTEXT_CORRUPT: Mismatching real installation IDs between database identity and local app context.');
     }
 
     const workspace = await tx.query.workspaces.findFirst({
@@ -93,6 +114,6 @@ export async function bootstrapProductDb(db: ExpoSQLiteDatabase<typeof schema>) 
       throw new Error('LOCAL_CONTEXT_CORRUPT: The default workspace or operator is missing or violates tenant boundaries.');
     }
 
-    return context;
+    return { ...context, installationId: finalInstallationId };
   });
 }

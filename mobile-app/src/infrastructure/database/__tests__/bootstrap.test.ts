@@ -68,32 +68,63 @@ describe('bootstrapProductDb', () => {
     expect(mockTx.insert).toHaveBeenCalledTimes(3); 
   });
 
-  it('validates existing context and synchronizes installationId from DB if they mismatch', async () => {
-    identityResultMock = [{ databaseKind: 'PRODUCT', installationId: 'inst-1' }];
-    contextResultMock = [{ installationId: 'inst-2', defaultWorkspaceId: 'ws-1', defaultOperatorId: 'op-1' }];
-    
-    mockTx.query.workspaces.findFirst.mockResolvedValueOnce({ id: 'ws-1' });
-    mockTx.query.operators.findFirst.mockResolvedValueOnce({ id: 'op-1' });
+  describe('installationId reconciliation matrix', () => {
+    beforeEach(() => {
+      mockTx.query.workspaces.findFirst.mockResolvedValue({ id: 'ws-1' });
+      mockTx.query.operators.findFirst.mockResolvedValue({ id: 'op-1' });
+    });
 
-    const result = await bootstrapProductDb(mockDb);
-    expect(mockTx.update).toHaveBeenCalled();
-    expect(result.installationId).toBe('inst-1');
-  });
+    it('PENDING / UUID real -> context gana', async () => {
+      identityResultMock = [{ databaseKind: 'PRODUCT', installationId: 'PENDING' }];
+      contextResultMock = [{ installationId: 'real-uuid', defaultWorkspaceId: 'ws-1', defaultOperatorId: 'op-1' }];
+      
+      const result = await bootstrapProductDb(mockDb);
+      expect(mockTx.update).toHaveBeenCalled();
+      expect(result.installationId).toBe('real-uuid');
+    });
 
-  it('validates existing context and returns it if everything is correct', async () => {
-    const existingContext = {
-      installationId: 'inst-1',
-      defaultWorkspaceId: 'ws-1',
-      defaultOperatorId: 'op-1'
-    };
+    it('null / UUID real -> context gana', async () => {
+      identityResultMock = [{ databaseKind: 'PRODUCT', installationId: null }];
+      contextResultMock = [{ installationId: 'real-uuid', defaultWorkspaceId: 'ws-1', defaultOperatorId: 'op-1' }];
+      
+      const result = await bootstrapProductDb(mockDb);
+      expect(mockTx.update).toHaveBeenCalled();
+      expect(result.installationId).toBe('real-uuid');
+    });
 
-    identityResultMock = [{ databaseKind: 'PRODUCT', installationId: 'inst-1' }];
-    contextResultMock = [existingContext];
-    
-    mockTx.query.workspaces.findFirst.mockResolvedValueOnce({ id: 'ws-1' });
-    mockTx.query.operators.findFirst.mockResolvedValueOnce({ id: 'op-1' });
+    it('UUID real / PENDING -> identity gana', async () => {
+      identityResultMock = [{ databaseKind: 'PRODUCT', installationId: 'real-uuid' }];
+      contextResultMock = [{ installationId: 'PENDING', defaultWorkspaceId: 'ws-1', defaultOperatorId: 'op-1' }];
+      
+      const result = await bootstrapProductDb(mockDb);
+      expect(mockTx.update).toHaveBeenCalled();
+      expect(result.installationId).toBe('real-uuid');
+    });
 
-    const result = await bootstrapProductDb(mockDb);
-    expect(result).toBe(existingContext);
+    it('PENDING / PENDING -> genera uno nuevo para ambos', async () => {
+      identityResultMock = [{ databaseKind: 'PRODUCT', installationId: 'PENDING' }];
+      contextResultMock = [{ installationId: 'PENDING', defaultWorkspaceId: 'ws-1', defaultOperatorId: 'op-1' }];
+      
+      const result = await bootstrapProductDb(mockDb);
+      expect(mockTx.update).toHaveBeenCalledTimes(2);
+      expect(result.installationId).not.toBe('PENDING');
+      expect(result.installationId).toBeTruthy();
+    });
+
+    it('UUID-A / UUID-A -> idempotente', async () => {
+      identityResultMock = [{ databaseKind: 'PRODUCT', installationId: 'uuid-a' }];
+      contextResultMock = [{ installationId: 'uuid-a', defaultWorkspaceId: 'ws-1', defaultOperatorId: 'op-1' }];
+      
+      const result = await bootstrapProductDb(mockDb);
+      expect(mockTx.update).not.toHaveBeenCalled();
+      expect(result.installationId).toBe('uuid-a');
+    });
+
+    it('UUID-A / UUID-B -> lanza LOCAL_CONTEXT_CORRUPT', async () => {
+      identityResultMock = [{ databaseKind: 'PRODUCT', installationId: 'uuid-a' }];
+      contextResultMock = [{ installationId: 'uuid-b', defaultWorkspaceId: 'ws-1', defaultOperatorId: 'op-1' }];
+      
+      await expect(bootstrapProductDb(mockDb)).rejects.toThrow('LOCAL_CONTEXT_CORRUPT');
+    });
   });
 });
