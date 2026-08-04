@@ -1,0 +1,51 @@
+{
+  "P0171": {
+    "system": "Motor y Emisiones",
+    "description": "Mezcla pobre en Banco 1 (System too lean)",
+    "explanation": "El motor está recibiendo más aire que combustible en los cilindros del banco 1. Esto puede deberse a una fuga de vacío, un sensor MAF sucio, baja presión de combustible o inyectores tapados.",
+    "severity": "ALTA",
+    "cost_estimate_pen": "S/ 150 - S/ 800"
+  },
+  "P0172": {
+    "system": "Motor y Emisiones",
+    "description": "Mezcla rica en Banco 1 (System too rich)",
+    "explanation": "El motor está recibiendo demasiado combustible y muy poco aire. Posibles causas: inyector con fugas, regulador de presión de combustible defectuoso, filtro de aire muy sucio.",
+    "severity": "MEDIA",
+    "cost_estimate_pen": "S/ 200 - S/ 600"
+  },
+  "P0300": {
+    "system": "Motor (Ignición)",
+    "description": "Falla de encendido aleatoria/múltiple (Random/Multiple Cylinder Misfire Detected)",
+    "explanation": "Uno o más cilindros no están encendiendo la mezcla correctamente. Suele ser provocado por bujías gastadas, bobinas de encendido defectuoso o cables dañados.",
+    "severity": "CRÍTICA",
+    "cost_estimate_pen": "S/ 300 - S/ 1500"
+  },
+  "P0301": {
+    "system": "Motor (Ignición)",
+    "description": "Falla de encendido en el cilindro 1 (Cylinder 1 Misfire Detected)",
+    "explanation": "El cilindro 1 específicamente no está funcionando de manera óptima (no quema la mezcla). Revise la bujía y la bobina de encendido correspondiente al cilindro 1.",
+    "severity": "ALTA",
+    "cost_estimate_pen": "S/ 100 - S/ 400"
+  },
+  "P0420": {
+    "system": "Emisiones",
+    "description": "Eficiencia del sistema catalítico por debajo del umbral",
+    "explanation": "El convertidor catalítico no está filtrando los gases de escape de manera eficiente. Puede requerir reemplazo del catalizador o del sensor de oxígeno secundario.",
+    "severity": "MEDIA",
+    "cost_estimate_pen": "S/ 800 - S/ 3000"
+  },
+  "P0113": {
+    "system": "Sensores de Aire",
+    "description": "Entrada alta del circuito del sensor de temperatura del aire de admisión (IAT)",
+    "explanation": "El sensor IAT está registrando un valor de temperatura extremadamente frío, a menudo debido a un cable roto o desconectado.",
+    "severity": "BAJA",
+    "cost_estimate_pen": "S/ 50 - S/ 250"
+  },
+  "P0102": {
+    "system": "Sensores de Aire",
+    "description": "Entrada baja del circuito de flujo de masa o volumen de aire (MAF)",
+    "explanation": "El sensor MAF está leyendo una cantidad de flujo de aire más baja de lo esperado. Causado por un filtro de aire obstruido o un sensor MAF sucio.",
+    "severity": "ALTA",
+    "cost_estimate_pen": "S/ 100 - S/ 600"
+  }
+}

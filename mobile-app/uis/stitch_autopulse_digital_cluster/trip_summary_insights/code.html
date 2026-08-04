@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Trip Summary Overlay</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400&amp;family=JetBrains+Mono:wght@700&amp;family=Space+Grotesk:wght@600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "surface": "#131313",
+                      "secondary": "#ffbc7c",
+                      "on-primary-fixed": "#002022",
+                      "surface-container-high": "#2a2a2a",
+                      "inverse-surface": "#e5e2e1",
+                      "surface-tint": "#00dbe7",
+                      "on-surface": "#e5e2e1",
+                      "error": "#ffb4ab",
+                      "on-primary-fixed-variant": "#004f54",
+                      "inverse-primary": "#00696f",
+                      "primary-container": "#00f2ff",
+                      "surface-container-low": "#1c1b1b",
+                      "on-error": "#690005",
+                      "on-tertiary-fixed-variant": "#930005",
+                      "surface-dim": "#131313",
+                      "tertiary-fixed-dim": "#ffb4aa",
+                      "inverse-on-surface": "#313030",
+                      "surface-container-lowest": "#0e0e0e",
+                      "on-tertiary": "#690003",
+                      "surface-bright": "#3a3939",
+                      "background": "#131313",
+                      "secondary-container": "#fe9400",
+                      "on-background": "#e5e2e1",
+                      "on-primary": "#00363a",
+                      "on-secondary": "#4b2800",
+                      "outline-variant": "#3a494b",
+                      "on-secondary-fixed": "#2d1600",
+                      "on-secondary-fixed-variant": "#6a3b00",
+                      "error-container": "#93000a",
+                      "primary-fixed-dim": "#00dbe7",
+                      "tertiary-fixed": "#ffdad5",
+                      "on-surface-variant": "#b9cacb",
+                      "on-tertiary-fixed": "#410001",
+                      "on-tertiary-container": "#c3000a",
+                      "primary-fixed": "#74f5ff",
+                      "surface-variant": "#353534",
+                      "surface-container-highest": "#353534",
+                      "surface-container": "#201f1f",
+                      "on-error-container": "#ffdad6",
+                      "secondary-fixed-dim": "#ffb874",
+                      "tertiary": "#fff5f4",
+                      "tertiary-container": "#ffd0ca",
+                      "primary": "#e1fdff",
+                      "outline": "#849495",
+                      "secondary-fixed": "#ffdcbf",
+                      "on-primary-container": "#006a71",
+                      "on-secondary-container": "#633700"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "unit": "4px",
+                      "margin": "24px",
+                      "gutter": "16px",
+                      "container-max": "600px"
+              },
+              "fontFamily": {
+                      "display-gauge": [
+                              "Space Grotesk"
+                      ],
+                      "headline-lg": [
+                              "Space Grotesk"
+                      ],
+                      "body-md": [
+                              "Inter"
+                      ],
+                      "label-caps": [
+                              "JetBrains Mono"
+                      ]
+              },
+              "fontSize": {
+                      "display-gauge": [
+                              "48px",
+                              {
+                                      "lineHeight": "1.1",
+                                      "letterSpacing": "-0.04em",
+                                      "fontWeight": "700"
+                              }
+                      ],
+                      "headline-lg": [
+                              "32px",
+                              {
+                                      "lineHeight": "1.2",
+                                      "fontWeight": "600"
+                              }
+                      ],
+                      "body-md": [
+                              "16px",
+                              {
+                                      "lineHeight": "1.5",
+                                      "fontWeight": "400"
+                              }
+                      ],
+                      "label-caps": [
+                              "12px",
+                              {
+                                      "lineHeight": "1",
+                                      "letterSpacing": "0.1em",
+                                      "fontWeight": "700"
+                              }
+                      ]
+              }
+            }
+          }
+        }
+      </script>
+<style>
+        .material-symbols-outlined {
+          font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .bg-dashboard-blur {
+            background-image: radial-gradient(circle at center, rgba(0, 219, 231, 0.05) 0%, rgba(19, 19, 19, 1) 70%);
+        }
+      </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex items-center justify-center p-margin bg-dashboard-blur relative overflow-hidden">
+<!-- Background Texture to simulate dashboard behind overlay -->
+<div class="absolute inset-0 z-0 opacity-20 pointer-events-none" data-alt="A highly blurred, abstract background simulating a dark, high-tech vehicle dashboard at night. Subtle streaks of cyan and orange light blend into deep black shadows, creating an atmospheric, out-of-focus backdrop suitable for a hyper-luminescent user interface overlay." style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuCu3Kq5aHooZQjjH1BZiBBU5kzNTZDgkvH2tBplW7JdDguYrCpxYVMPxXXYO7Cnnu24z-My63xtbbMzYNkjWw9E5NRwHtCJmGGHUeU5A0ET6BexKRGSWvNKa5JUcLBZeaCmvFXgBMQOBArpUK2DU_6rBOaylF94P1XgwD1y2af0I2d9NQ6786N6k4-EvHdUqiwhYhLiXlz0sHTUgnlhfbQh2WlNeTyu7rI2S-Qq-nsEyHxuH95won1rsyaaZl6_gL3yFPAPoey04YM'); background-size: cover; background-position: center; filter: blur(20px);"></div>
+<!-- Main Overlay Container -->
+<main class="relative z-10 w-full max-w-container-max bg-surface-container-highest/60 backdrop-blur-xl border border-outline-variant/40 rounded-xl shadow-[0_0_40px_rgba(0,219,231,0.15)] flex flex-col overflow-hidden">
+<!-- Header Section -->
+<header class="flex flex-col items-center justify-center pt-10 pb-6 px-margin border-b border-outline-variant/30">
+<span class="material-symbols-outlined text-primary-fixed-dim text-display-gauge mb-2" style="font-variation-settings: 'FILL' 1;">
+                task_alt
+            </span>
+<h1 class="font-display-gauge text-display-gauge text-on-surface uppercase text-center drop-shadow-[0_0_12px_rgba(229,226,225,0.4)]">
+                Trip<br/>Completed
+            </h1>
+</header>
+<!-- Content Area -->
+<div class="p-margin flex flex-col gap-gutter">
+<!-- Stats Bento Grid -->
+<div class="grid grid-cols-2 gap-unit">
+<!-- Stat: Time -->
+<div class="bg-surface-container/50 border border-outline-variant/30 rounded-lg p-4 flex flex-col justify-between">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-outline text-body-md">timer</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">Total Time</span>
+</div>
+<div class="font-headline-lg text-headline-lg text-on-surface">
+                        00:42<span class="text-on-surface-variant text-body-md">:15</span>
+</div>
+</div>
+<!-- Stat: Distance -->
+<div class="bg-surface-container/50 border border-outline-variant/30 rounded-lg p-4 flex flex-col justify-between">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-outline text-body-md">route</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">Distance</span>
+</div>
+<div class="font-headline-lg text-headline-lg text-on-surface">
+                        24.8 <span class="text-on-surface-variant text-body-md uppercase">mi</span>
+</div>
+</div>
+<!-- Stat: Max Speed (Highlighted) -->
+<div class="bg-surface-container/50 border border-secondary-container/30 rounded-lg p-4 flex flex-col justify-between relative overflow-hidden group">
+<div class="absolute inset-0 bg-secondary-container/5 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+<div class="flex items-center gap-2 mb-2 relative z-10">
+<span class="material-symbols-outlined text-secondary-container text-body-md">speed</span>
+<span class="font-label-caps text-label-caps text-secondary uppercase">Max Speed</span>
+</div>
+<div class="font-headline-lg text-headline-lg text-secondary drop-shadow-[0_0_8px_rgba(254,148,0,0.5)] relative z-10">
+                        112 <span class="text-secondary/70 text-body-md uppercase">mph</span>
+</div>
+</div>
+<!-- Stat: Efficiency -->
+<div class="bg-surface-container/50 border border-outline-variant/30 rounded-lg p-4 flex flex-col justify-between">
+<div class="flex items-center gap-2 mb-2">
+<span class="material-symbols-outlined text-outline text-body-md">eco</span>
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase">Efficiency</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="font-headline-lg text-headline-lg text-primary-fixed-dim drop-shadow-[0_0_8px_rgba(0,219,231,0.5)]">94</span>
+<span class="font-headline-lg text-headline-lg text-primary-fixed-dim/70">%</span>
+</div>
+</div>
+</div>
+<!-- Stylized Map Section -->
+<div class="relative w-full h-32 rounded-lg border border-outline-variant/30 overflow-hidden bg-surface-container-low">
+<div class="absolute inset-0 bg-center bg-cover opacity-60 mix-blend-screen" data-alt="A stylized, top-down digital map view of a city grid at night, rendered in a high-contrast dark mode aesthetic. The streets are depicted in deep blacks and dark grays, illuminated by sparse, sharp cyan and electric blue lines representing routes. The overall mood is precise, technological, and devoid of clutter, perfectly matching a hyper-luminescent supercar diagnostic interface." data-location="Los Angeles" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuA8JSlbZcj2Pl8EmGHNERHYzKn6E6Isres7y8T_eTtxuBUGvDtbScC1SArR3v8nqIabZVa-qeDy7Hw9RV8LgGozW7WEZgBL0BKZgOdrbnyWBxx-r4Go4eewiHzL4Yd0tIp0pTbiBhAd4STfJIqOnKtM-iVmbLzb_I622Gy7HfvyrUt8FAFIFawt15DW2OuW_bA50B7AcuoIChWcWY9LTD-WShRMSrBNuHSoVUtwaJUU4QutWsyo2CKURTFDh7Em1UsiR3dOaPnE9rs'); filter: grayscale(100%) contrast(1.5);"></div>
+<!-- Map Overlay Gradient -->
+<div class="absolute inset-0 bg-gradient-to-t from-surface-container-highest/90 to-transparent"></div>
+<!-- Location Marker Pin -->
+<div class="absolute inset-0 flex items-center justify-center">
+<div class="relative">
+<div class="absolute inset-0 bg-primary-container rounded-full blur-md opacity-40 animate-pulse"></div>
+<span class="material-symbols-outlined text-primary-fixed-dim drop-shadow-[0_0_10px_rgba(0,219,231,0.8)] relative z-10" style="font-variation-settings: 'FILL' 1;">
+                            location_on
+                        </span>
+</div>
+</div>
+<div class="absolute bottom-2 left-3 z-10">
+<span class="font-label-caps text-label-caps text-on-surface-variant uppercase tracking-wider">Parked: Central Garage</span>
+</div>
+</div>
+<!-- Primary Action Button -->
+<button class="w-full mt-4 border-2 border-primary-fixed-dim bg-primary-fixed-dim/5 hover:bg-primary-fixed-dim/15 text-primary-fixed-dim font-label-caps text-label-caps py-4 rounded-lg uppercase shadow-[inset_0_0_20px_rgba(0,219,231,0.15)] transition-all duration-300 active:scale-[0.98] flex items-center justify-center gap-2 group">
+                CLOSE SUMMARY
+                <span class="material-symbols-outlined text-body-md group-hover:translate-x-1 transition-transform">
+                    arrow_forward
+                </span>
+</button>
+</div>
+</main>
+</body></html>

@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1784647771665,
+      "tag": "0000_product_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1784820191161,
+      "tag": "0001_wooden_darwin",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784820200000,
+      "tag": "0002_add_v3_telemetry_block_metadata",
+      "breakpoints": true
+    }
+  ]
+}

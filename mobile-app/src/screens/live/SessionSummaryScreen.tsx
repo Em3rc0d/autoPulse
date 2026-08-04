@@ -9,10 +9,10 @@ import { SessionIntegrityState } from '../../domain/telemetry/models/sessionSumm
 export default function SessionSummaryScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
-  const { vehicleId, sessionId } = route.params || {};
+  const { vehicleId, sessionId, duration = 0, isVirtual } = route.params || {};
 
   const { context } = useLocalContext();
-  const workspaceId = context?.activeWorkspaceId;
+  const workspaceId = context?.defaultWorkspaceId;
 
   const { vehicle } = useVehicle(vehicleId);
   const { summary, loading, progress, error } = useSessionSummary(workspaceId, sessionId);
@@ -32,6 +32,53 @@ export default function SessionSummaryScreen() {
     // Navigate back to history or garage
     navigation.navigate('GarageHome');
   };
+
+  if (isVirtual) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Session Summary</Text>
+        </View>
+
+        <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
+          <View style={styles.statusBanner}>
+            <View style={[styles.statusIcon, { borderColor: '#60a5fa' }]}>
+              <Text style={[styles.statusIconText, { color: '#60a5fa' }]}>✓</Text>
+            </View>
+            <Text style={styles.subtitle}>Simulation Saved</Text>
+            <Text style={styles.terminationText}>Development placebo only</Text>
+          </View>
+
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>Identity</Text>
+            <View style={styles.divider} />
+            <View style={styles.row}>
+              <Text style={styles.label}>Vehicle:</Text>
+              <Text style={styles.value}>{vehicle ? vehicle.alias : (vehicleId ? vehicleId.substring(0,8) : 'Unknown')}</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.label}>Session ID:</Text>
+              <Text style={styles.value}>{sessionId?.substring(0, 8)}...</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.label}>Acquisition Mode:</Text>
+              <Text style={[styles.value, { color: '#60a5fa' }]}>VIRTUAL_PREVIEW</Text>
+            </View>
+            <View style={styles.row}>
+              <Text style={styles.label}>Duration:</Text>
+              <Text style={styles.value}>{formatTime(duration)}</Text>
+            </View>
+          </View>
+        </ScrollView>
+
+        <View style={styles.footer}>
+          <TouchableOpacity style={styles.primaryButton} onPress={handleDone}>
+            <Text style={styles.primaryButtonText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
 
   if (error) {
     return (

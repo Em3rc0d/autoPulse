@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Analytics Dashboard - AutoPulse</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700&amp;family=Inter:wght@400&amp;family=JetBrains+Mono:wght@700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface": "#131313",
+                        "secondary": "#ffbc7c",
+                        "on-primary-fixed": "#002022",
+                        "surface-container-high": "#2a2a2a",
+                        "inverse-surface": "#e5e2e1",
+                        "surface-tint": "#00dbe7",
+                        "on-surface": "#e5e2e1",
+                        "error": "#ffb4ab",
+                        "on-primary-fixed-variant": "#004f54",
+                        "inverse-primary": "#00696f",
+                        "primary-container": "#00f2ff",
+                        "surface-container-low": "#1c1b1b",
+                        "on-error": "#690005",
+                        "on-tertiary-fixed-variant": "#930005",
+                        "surface-dim": "#131313",
+                        "tertiary-fixed-dim": "#ffb4aa",
+                        "inverse-on-surface": "#313030",
+                        "surface-container-lowest": "#0e0e0e",
+                        "on-tertiary": "#690003",
+                        "surface-bright": "#3a3939",
+                        "background": "#131313",
+                        "secondary-container": "#fe9400",
+                        "on-background": "#e5e2e1",
+                        "on-primary": "#00363a",
+                        "on-secondary": "#4b2800",
+                        "outline-variant": "#3a494b",
+                        "on-secondary-fixed": "#2d1600",
+                        "on-secondary-fixed-variant": "#6a3b00",
+                        "error-container": "#93000a",
+                        "primary-fixed-dim": "#00dbe7",
+                        "tertiary-fixed": "#ffdad5",
+                        "on-surface-variant": "#b9cacb",
+                        "on-tertiary-fixed": "#410001",
+                        "on-tertiary-container": "#c3000a",
+                        "primary-fixed": "#74f5ff",
+                        "surface-variant": "#353534",
+                        "surface-container-highest": "#353534",
+                        "surface-container": "#201f1f",
+                        "on-error-container": "#ffdad6",
+                        "secondary-fixed-dim": "#ffb874",
+                        "tertiary": "#fff5f4",
+                        "tertiary-container": "#ffd0ca",
+                        "primary": "#e1fdff",
+                        "outline": "#849495",
+                        "secondary-fixed": "#ffdcbf",
+                        "on-primary-container": "#006a71",
+                        "on-secondary-container": "#633700"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "unit": "4px",
+                        "margin": "24px",
+                        "gutter": "16px",
+                        "container-max": "600px"
+                    },
+                    "fontFamily": {
+                        "display-gauge": ["Space Grotesk"],
+                        "headline-lg": ["Space Grotesk"],
+                        "body-md": ["Inter"],
+                        "label-caps": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "display-gauge": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "700" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "label-caps": ["12px", { "lineHeight": "1", "letterSpacing": "0.1em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #050505; /* Level 0 Base */
+            color: #e5e2e1;
+            margin: 0;
+            padding-top: 64px; /* Space for TopAppBar */
+            padding-bottom: 80px; /* Space for BottomNavBar */
+        }
+        
+        .glass-card {
+            background: rgba(42, 42, 42, 0.4);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .glow-cyan {
+            box-shadow: 0 0 30px rgba(0, 219, 231, 0.2);
+        }
+
+        .glow-orange {
+            box-shadow: 0 0 30px rgba(254, 148, 0, 0.2);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="antialiased min-h-screen">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/30 shadow-[0_0_20px_rgba(0,219,231,0.1)] flex justify-between items-center px-margin h-16">
+<button class="text-on-surface-variant hover:text-primary-container transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">menu</span>
+</button>
+<h1 class="font-display-gauge text-display-gauge tracking-tighter text-primary-fixed-dim uppercase" style="font-size: 24px;">AUTOPULSE</h1>
+<button class="text-on-surface-variant hover:text-primary-container transition-colors active:scale-95 duration-200">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">account_circle</span>
+</button>
+</header>
+<main class="max-w-container-max mx-auto px-margin py-6 flex flex-col gap-gutter">
+<!-- Header -->
+<div class="mb-2">
+<h2 class="font-headline-lg text-headline-lg text-on-surface">Telemetry</h2>
+<p class="font-body-md text-body-md text-on-surface-variant">Real-time system analysis</p>
+</div>
+<!-- Bento Grid for Stats -->
+<div class="grid grid-cols-2 gap-gutter">
+<!-- Cumulative Metrics -->
+<div class="glass-card glow-cyan rounded-xl p-4 flex flex-col justify-between col-span-2">
+<div class="flex justify-between items-center mb-4">
+<span class="font-label-caps text-label-caps text-on-surface-variant">TOTAL DISTANCE</span>
+<span class="material-symbols-outlined text-primary-fixed-dim" style="font-size: 16px;">route</span>
+</div>
+<div class="font-display-gauge text-display-gauge text-primary-fixed-dim">
+                    12,450 <span class="text-xl text-outline">MI</span>
+</div>
+<div class="mt-4 h-1 w-full bg-surface-container rounded-full overflow-hidden">
+<div class="h-full bg-primary-fixed-dim w-[85%]"></div>
+</div>
+</div>
+<!-- Fuel / Battery -->
+<div class="glass-card rounded-xl p-4 flex flex-col">
+<span class="font-label-caps text-label-caps text-on-surface-variant mb-2">FUEL EXPENSE</span>
+<div class="font-headline-lg text-headline-lg text-on-surface">$420</div>
+<span class="font-body-md text-body-md text-outline mt-1 text-sm">This Month</span>
+</div>
+<div class="glass-card glow-orange rounded-xl p-4 flex flex-col">
+<span class="font-label-caps text-label-caps text-on-surface-variant mb-2">BATTERY CYCLE</span>
+<div class="font-headline-lg text-headline-lg text-secondary">84%</div>
+<span class="font-body-md text-body-md text-outline mt-1 text-sm">Degradation: Nominal</span>
+</div>
+</div>
+<!-- Telemetry Chart Placeholder -->
+<div class="glass-card rounded-xl p-4 min-h-[200px] flex flex-col relative overflow-hidden">
+<div class="flex justify-between items-center mb-4 z-10">
+<span class="font-label-caps text-label-caps text-on-surface-variant">SPEED TRENDS</span>
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-primary-fixed-dim animate-pulse"></div>
+<span class="font-label-caps text-label-caps text-primary-fixed-dim">LIVE</span>
+</div>
+</div>
+<!-- Decorative Graph Lines using gradients -->
+<div class="absolute bottom-0 left-0 w-full h-2/3 bg-gradient-to-t from-primary-fixed-dim/20 to-transparent z-0 opacity-50"></div>
+<div class="absolute bottom-4 left-4 right-4 h-1/2 border-b border-primary-fixed-dim/50 z-0">
+<!-- Simulate a jagged line with CSS clip-path or simple borders if needed, keeping it abstract for now -->
+<svg class="w-full h-full stroke-primary-fixed-dim fill-none" preserveaspectratio="none" viewbox="0 0 100 100">
+<polyline points="0,80 20,60 40,70 60,30 80,40 100,10" stroke-width="2" vector-effect="non-scaling-stroke"></polyline>
+</svg>
+</div>
+</div>
+<!-- Human Diagnosis Section -->
+<div class="mt-4">
+<h3 class="font-label-caps text-label-caps text-on-surface-variant mb-4">HUMAN DIAGNOSIS</h3>
+<div class="flex flex-col gap-unit">
+<div class="glass-card rounded-lg p-4 border-l-4 border-l-primary-fixed-dim flex items-center gap-4">
+<div class="bg-primary-fixed-dim/10 p-2 rounded-full text-primary-fixed-dim">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">earth_engine</span>
+</div>
+<div>
+<div class="font-body-md text-body-md text-on-surface font-semibold">Engine Health</div>
+<div class="font-body-md text-body-md text-primary-fixed-dim text-sm">Excellent condition. No misfires detected.</div>
+</div>
+</div>
+<div class="glass-card rounded-lg p-4 border-l-4 border-l-secondary flex items-center gap-4">
+<div class="bg-secondary/10 p-2 rounded-full text-secondary">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">battery_charging_full</span>
+</div>
+<div>
+<div class="font-body-md text-body-md text-on-surface font-semibold">Battery Status</div>
+<div class="font-body-md text-body-md text-secondary text-sm">Stable output. Temperature nominal at 34°C.</div>
+</div>
+</div>
+</div>
+</div>
+<button class="mt-4 w-full bg-surface-container-high border-2 border-primary-fixed-dim text-primary-fixed-dim font-label-caps text-label-caps py-4 rounded-xl uppercase tracking-widest hover:bg-primary-fixed-dim/10 transition-colors shadow-[inset_0_0_10px_rgba(0,219,231,0.2)]">
+            Run Full Diagnostic
+        </button>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full z-50 rounded-t-xl bg-surface-container-lowest/90 backdrop-blur-2xl border-t border-outline-variant/20 shadow-[0_-8px_32px_rgba(0,0,0,0.5)] flex justify-around items-center h-20 pb-safe px-4 hidden md:flex">
+<!-- Hiding on desktop based on strict layout rules, but keeping mobile view active -->
+</nav>
+<nav class="fixed bottom-0 w-full z-50 rounded-t-xl bg-surface-container-lowest/90 backdrop-blur-2xl border-t border-outline-variant/20 shadow-[0_-8px_32px_rgba(0,0,0,0.5)] flex justify-around items-center h-20 pb-safe px-4 md:hidden">
+<a class="flex flex-col items-center justify-center text-outline opacity-50 hover:opacity-100 transition-opacity active:scale-90 duration-300 ease-out" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 0;">home_max</span>
+<span class="font-label-caps text-label-caps text-[10px]">HOME</span>
+</a>
+<a class="flex flex-col items-center justify-center text-primary-fixed-dim drop-shadow-[0_0_8px_rgba(0,219,231,0.6)] active:scale-90 duration-300 ease-out" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 1;">analytics</span>
+<span class="font-label-caps text-label-caps text-[10px]">ANALYTICS</span>
+</a>
+<a class="flex flex-col items-center justify-center text-outline opacity-50 hover:opacity-100 transition-opacity active:scale-90 duration-300 ease-out" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 0;">settings_input_component</span>
+<span class="font-label-caps text-label-caps text-[10px]">CONNECTION</span>
+</a>
+</nav>
+</body></html>

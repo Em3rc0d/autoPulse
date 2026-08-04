@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AutoPulse - Digital Cluster</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@700&amp;family=Space+Grotesk:wght@600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface": "#131313",
+                        "secondary": "#ffbc7c",
+                        "on-primary-fixed": "#002022",
+                        "surface-container-high": "#2a2a2a",
+                        "inverse-surface": "#e5e2e1",
+                        "surface-tint": "#00dbe7",
+                        "on-surface": "#e5e2e1",
+                        "error": "#ffb4ab",
+                        "on-primary-fixed-variant": "#004f54",
+                        "inverse-primary": "#00696f",
+                        "primary-container": "#00f2ff",
+                        "surface-container-low": "#1c1b1b",
+                        "on-error": "#690005",
+                        "on-tertiary-fixed-variant": "#930005",
+                        "surface-dim": "#131313",
+                        "tertiary-fixed-dim": "#ffb4aa",
+                        "inverse-on-surface": "#313030",
+                        "surface-container-lowest": "#0e0e0e",
+                        "on-tertiary": "#690003",
+                        "surface-bright": "#3a3939",
+                        "background": "#131313",
+                        "secondary-container": "#fe9400",
+                        "on-background": "#e5e2e1",
+                        "on-primary": "#00363a",
+                        "on-secondary": "#4b2800",
+                        "outline-variant": "#3a494b",
+                        "on-secondary-fixed": "#2d1600",
+                        "on-secondary-fixed-variant": "#6a3b00",
+                        "error-container": "#93000a",
+                        "primary-fixed-dim": "#00dbe7",
+                        "tertiary-fixed": "#ffdad5",
+                        "on-surface-variant": "#b9cacb",
+                        "on-tertiary-fixed": "#410001",
+                        "on-tertiary-container": "#c3000a",
+                        "primary-fixed": "#74f5ff",
+                        "surface-variant": "#353534",
+                        "surface-container-highest": "#353534",
+                        "surface-container": "#201f1f",
+                        "on-error-container": "#ffdad6",
+                        "secondary-fixed-dim": "#ffb874",
+                        "tertiary": "#fff5f4",
+                        "tertiary-container": "#ffd0ca",
+                        "primary": "#e1fdff",
+                        "outline": "#849495",
+                        "secondary-fixed": "#ffdcbf",
+                        "on-primary-container": "#006a71",
+                        "on-secondary-container": "#633700"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "unit": "4px",
+                        "margin": "24px",
+                        "gutter": "16px",
+                        "container-max": "600px"
+                    },
+                    "fontFamily": {
+                        "display-gauge": ["Space Grotesk"],
+                        "headline-lg": ["Space Grotesk"],
+                        "body-md": ["Inter"],
+                        "label-caps": ["JetBrains Mono"]
+                    },
+                    "fontSize": {
+                        "display-gauge": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "700" }],
+                        "headline-lg": ["32px", { "lineHeight": "1.2", "fontWeight": "600" }],
+                        "body-md": ["16px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                        "label-caps": ["12px", { "lineHeight": "1", "letterSpacing": "0.1em", "fontWeight": "700" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            background-color: #050505;
+            color: #e5e2e1;
+        }
+        /* Custom Glowing Gauges based on Style Guidance */
+        .gauge-ring {
+            stroke: url(#cyan-gradient);
+            stroke-dasharray: 400;
+            stroke-dashoffset: 80; /* Adjust for RPM */
+            transition: stroke-dashoffset 0.5s ease;
+        }
+        .glow-bloom {
+            box-shadow: 0 0 30px rgba(0, 219, 231, 0.3);
+        }
+        .status-pulse {
+            animation: pulse 2s infinite alternate;
+        }
+        @keyframes pulse {
+            0% { opacity: 0.8; box-shadow: 0 0 10px rgba(0, 219, 231, 0.2); }
+            100% { opacity: 1; box-shadow: 0 0 25px rgba(0, 219, 231, 0.6); }
+        }
+        .glass-panel {
+            background: rgba(42, 42, 42, 0.3);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(132, 148, 149, 0.2);
+            border-top: 1px solid rgba(132, 148, 149, 0.4); /* top-down lighting */
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-surface text-on-surface min-h-screen flex flex-col font-body-md overflow-x-hidden selection:bg-primary-container selection:text-on-primary-container">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-surface/80 backdrop-blur-xl border-b border-outline-variant/30 shadow-[0_0_20px_rgba(0,219,231,0.1)] hidden md:flex">
+<div class="flex justify-between items-center px-margin h-16 w-full max-w-[1440px] mx-auto">
+<button class="text-on-surface-variant hover:text-primary-container transition-colors active:scale-95 duration-200 p-2 flex items-center justify-center">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">menu</span>
+</button>
+<h1 class="font-display-gauge text-display-gauge tracking-tighter text-primary-fixed-dim uppercase" style="font-size: 24px; letter-spacing: 0.1em;">AUTOPULSE</h1>
+<div class="flex items-center space-x-8">
+<nav class="flex space-x-6">
+<a class="text-primary-fixed-dim font-label-caps text-label-caps hover:text-primary-container transition-colors" href="#">HOME</a>
+<a class="text-on-surface-variant font-label-caps text-label-caps hover:text-primary-container transition-colors" href="#">ANALYTICS</a>
+<a class="text-on-surface-variant font-label-caps text-label-caps hover:text-primary-container transition-colors" href="#">CONNECTION</a>
+</nav>
+<button class="text-on-surface-variant hover:text-primary-container transition-colors active:scale-95 duration-200 p-2 flex items-center justify-center">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">account_circle</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="flex-1 w-full max-w-[1440px] mx-auto px-margin pt-12 md:pt-28 pb-32 flex flex-col items-center justify-center min-h-[795px]">
+<!-- Status Indicator -->
+<div class="mb-12 flex items-center justify-center space-x-3 status-pulse">
+<span class="w-3 h-3 rounded-full bg-primary-fixed-dim glow-bloom"></span>
+<span class="font-label-caps text-label-caps text-primary-fixed-dim tracking-widest uppercase">System Nominal</span>
+</div>
+<!-- Central Cluster: Tachometer & Speedometer -->
+<div class="relative w-full max-w-[500px] aspect-square flex items-center justify-center mb-16">
+<!-- Tachometer Arc SVG -->
+<svg class="absolute inset-0 w-full h-full transform -rotate-90 drop-shadow-[0_0_20px_rgba(0,219,231,0.2)]" viewbox="0 0 200 200">
+<defs>
+<lineargradient id="cyan-gradient" x1="0%" x2="100%" y1="0%" y2="100%">
+<stop offset="0%" stop-color="#00dbe7"></stop>
+<stop offset="100%" stop-color="#00696f"></stop>
+</lineargradient>
+</defs>
+<!-- Background Track -->
+<circle cx="100" cy="100" fill="none" opacity="0.3" r="85" stroke="#2a2a2a" stroke-dasharray="400" stroke-dashoffset="0" stroke-width="4"></circle>
+<!-- Active Arc (RPM) -->
+<circle class="gauge-ring" cx="100" cy="100" fill="none" r="85" stroke-linecap="round" stroke-width="4"></circle>
+</svg>
+<!-- Inner Glow & Speedometer Data -->
+<div class="absolute inset-4 rounded-full flex flex-col items-center justify-center glass-panel glow-bloom z-10" style="border-radius: 50%;">
+<span class="font-display-gauge text-display-gauge text-on-surface" style="font-size: 84px; line-height: 1;">142</span>
+<span class="font-label-caps text-label-caps text-outline tracking-widest mt-2">KM/H</span>
+<!-- Small RPM indicator inside -->
+<div class="mt-6 flex items-baseline space-x-1">
+<span class="font-display-gauge text-primary-fixed-dim text-2xl font-bold">4.2</span>
+<span class="font-label-caps text-label-caps text-outline">x1000 RPM</span>
+</div>
+</div>
+</div>
+<!-- Metrics Bento Grid -->
+<div class="w-full max-w-[800px] grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Battery Health -->
+<div class="glass-panel rounded-xl p-6 flex flex-col relative overflow-hidden group">
+<div class="flex justify-between items-start mb-4">
+<span class="font-label-caps text-label-caps text-outline">BATT HEALTH</span>
+<span class="material-symbols-outlined text-primary-fixed-dim" style="font-variation-settings: 'FILL' 0;">battery_charging_full</span>
+</div>
+<div class="flex items-end space-x-2 mt-auto">
+<span class="font-display-gauge text-headline-lg text-on-surface">98</span>
+<span class="font-label-caps text-label-caps text-outline mb-1">%</span>
+</div>
+<!-- Sparkline / Bar -->
+<div class="w-full h-1 bg-surface-container-high mt-4 rounded-full overflow-hidden">
+<div class="h-full bg-primary-fixed-dim w-[98%] shadow-[0_0_10px_rgba(0,219,231,0.5)]"></div>
+</div>
+</div>
+<!-- Coolant Temp -->
+<div class="glass-panel rounded-xl p-6 flex flex-col relative overflow-hidden group">
+<div class="flex justify-between items-start mb-4">
+<span class="font-label-caps text-label-caps text-outline">COOLANT</span>
+<span class="material-symbols-outlined text-secondary" style="font-variation-settings: 'FILL' 0;">thermostat</span>
+</div>
+<div class="flex items-end space-x-2 mt-auto">
+<span class="font-display-gauge text-headline-lg text-on-surface">85</span>
+<span class="font-label-caps text-label-caps text-outline mb-1">°C</span>
+</div>
+<!-- Gauge representation -->
+<div class="w-full flex space-x-1 mt-4">
+<div class="h-1 flex-1 bg-primary-fixed-dim opacity-40 rounded-full"></div>
+<div class="h-1 flex-1 bg-primary-fixed-dim rounded-full shadow-[0_0_10px_rgba(0,219,231,0.5)]"></div>
+<div class="h-1 flex-1 bg-secondary rounded-full opacity-20"></div>
+<div class="h-1 flex-1 bg-error rounded-full opacity-20"></div>
+</div>
+</div>
+<!-- Est Trip Cost / Efficiency -->
+<div class="glass-panel rounded-xl p-6 flex flex-col relative overflow-hidden group">
+<div class="flex justify-between items-start mb-4">
+<span class="font-label-caps text-label-caps text-outline">TRIP EST</span>
+<span class="material-symbols-outlined text-outline" style="font-variation-settings: 'FILL' 0;">payments</span>
+</div>
+<div class="flex items-end space-x-2 mt-auto">
+<span class="font-label-caps text-label-caps text-outline mb-1">$</span>
+<span class="font-display-gauge text-headline-lg text-on-surface">12.40</span>
+</div>
+<div class="mt-2 font-label-caps text-label-caps text-primary-fixed-dim opacity-80">
+                    18.5 kWh / 100km
+                </div>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (Mobile Only) -->
+<nav class="fixed bottom-0 w-full z-50 rounded-t-xl bg-surface-container-lowest/90 backdrop-blur-2xl border-t border-outline-variant/20 shadow-[0_-8px_32px_rgba(0,0,0,0.5)] flex justify-around items-center h-20 pb-safe px-4 md:hidden">
+<a class="flex flex-col items-center justify-center text-primary-fixed-dim drop-shadow-[0_0_8px_rgba(0,219,231,0.6)] active:scale-90 duration-300 ease-out hover:opacity-100 transition-opacity" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 1;">home_max</span>
+<span class="font-label-caps text-label-caps" style="font-size: 10px;">HOME</span>
+</a>
+<a class="flex flex-col items-center justify-center text-outline opacity-50 active:scale-90 duration-300 ease-out hover:opacity-100 transition-opacity" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 0;">analytics</span>
+<span class="font-label-caps text-label-caps" style="font-size: 10px;">ANALYTICS</span>
+</a>
+<a class="flex flex-col items-center justify-center text-outline opacity-50 active:scale-90 duration-300 ease-out hover:opacity-100 transition-opacity" href="#">
+<span class="material-symbols-outlined mb-1" style="font-variation-settings: 'FILL' 0;">settings_input_component</span>
+<span class="font-label-caps text-label-caps" style="font-size: 10px;">CONNECTION</span>
+</a>
+</nav>
+</body></html>

@@ -270,7 +270,8 @@ export default function LiveSessionScreen() {
     navigation.navigate('SessionSummary', {
       vehicleId,
       sessionId,
-      duration: secondsElapsed
+      duration: secondsElapsed,
+      isVirtual: adapterMode !== 'REAL_BLE'
     });
   };
 

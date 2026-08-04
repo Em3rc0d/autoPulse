@@ -9,7 +9,7 @@ module.exports = {
     }]
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(expo-crypto|expo-modules-core|@expo)/)'
+    'node_modules/(?!(expo-crypto|expo-sqlite|expo-modules-core|@expo)/)'
   ],
   modulePathIgnorePatterns: [
     '<rootDir>/node_modules/'
