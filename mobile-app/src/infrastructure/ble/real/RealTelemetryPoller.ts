@@ -117,6 +117,8 @@ export class RealTelemetryPoller {
           this.onDiagnostic({ type: 'PID_RETIRED_NO_DATA', pid });
         }
         
+        this.onData(result);
+        
         if (this.supportedPids.length === 0) {
           this.stop();
         }

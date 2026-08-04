@@ -45,7 +45,9 @@ describe('RealTelemetryPoller', () => {
 
     // 3rd NO_DATA - should retire
     await Promise.resolve();
+    expect(onData).toHaveBeenCalledTimes(3);
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({ type: 'PID_RETIRED_NO_DATA', pid: '010C' }));
+    expect(onDiagnostic).toHaveBeenCalledTimes(1);
     
     // Poller should stop since it was the only PID
     jest.advanceTimersByTime(100);

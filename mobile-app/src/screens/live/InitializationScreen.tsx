@@ -211,11 +211,11 @@ export default function InitializationScreen() {
               precision: coreSignalDefinitions[pid].precision,
               decoderVersion: '1.0',
               decoderKey: coreSignalDefinitions[pid].decoderKey,
-              origin: snapshot.directlyObservedPids?.includes(pid) ? 'DIRECTLY_OBSERVED' : 'BITMAP',
+              origin: isProbed ? 'PROBE' : (snapshot.directlyObservedPids?.includes(pid) ? 'DIRECTLY_OBSERVED' : 'BITMAP'),
               priority: coreSignalDefinitions[pid].priority,
               targetPeriodMs: 250,
               indexInBlock: index,
-              supportState: isProbed ? ('NOT_AVAILABLE' as any) : ('SUPPORTED' as any),
+              supportState: isProbed ? 'NOT_AVAILABLE' : 'SUPPORTED',
               localTargetIndex: index,
               localSignalIndex: index
             };

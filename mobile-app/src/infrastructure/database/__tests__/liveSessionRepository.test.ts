@@ -61,6 +61,22 @@ describe('LiveSessionRepository', () => {
       compatibilityProfileVersion: '1.0', discoveredAt: 1, protocolCode: '6',
       decoderCatalogVersion: '1.0', discoveryStatus: 'COMPLETED', rawDiscoveryHash: 'hash', createdAt: 1
     });
+
+    await db.insert(schema.obdParameterDefinitions).values({
+      id: '010C', namespace: 'OBD2', service: 1, parameterIdentifier: 12, technicalName: 'RPM', requestVersion: '1.0', createdAt: 1
+    });
+
+    await db.insert(schema.signalDefinitions).values({
+      id: '010C',
+      parameterDefinitionId: '010C',
+      signalKey: 'RPM',
+      name: 'Engine RPM',
+      numericType: 'float',
+      decoderKey: 'MODE01_010C',
+      decoderVersion: '1.0',
+      defaultPriority: 'HIGH',
+      createdAt: 1
+    });
   });
 
   afterAll(() => {
@@ -141,6 +157,31 @@ describe('LiveSessionRepository', () => {
       await repo.beginPreparation('WS_1', intSessionId);
       await repo.attachCapabilitySnapshot('WS_1', intSessionId, 'SNAP_1', '1.0', '6', 'BLE');
       await repo.activateSession('WS_1', intSessionId);
+
+      // Verify that attachSignalSnapshots accepts PROBE and NOT_AVAILABLE
+      await repo.attachSignalSnapshots('WS_1', intSessionId, [{
+        signalDefinitionId: '010C',
+        parameterDefinitionId: '010C',
+        service: 1,
+        pid: 12,
+        numericType: 'float',
+        scale: 1,
+        offset: 0,
+        precision: 0,
+        decoderKey: 'MODE01_010C',
+        decoderVersion: '1.0',
+        origin: 'PROBE',
+        priority: 'HIGH',
+        targetPeriodMs: 250,
+        supportState: 'NOT_AVAILABLE',
+        localTargetIndex: 0,
+        localSignalIndex: 0
+      }]);
+      const snapshotRow = await db.query.liveSessionSignalSnapshots.findFirst({
+        where: eq(schema.liveSessionSignalSnapshots.sessionId, intSessionId)
+      });
+      expect(snapshotRow?.origin).toBe('PROBE');
+      expect(snapshotRow?.supportState).toBe('NOT_AVAILABLE');
 
       // Connection drops -> INTERRUPTED
       await repo.interruptSession('WS_1', intSessionId, 'DISCONNECTED');
