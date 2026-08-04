@@ -68,11 +68,16 @@ describe('bootstrapProductDb', () => {
     expect(mockTx.insert).toHaveBeenCalledTimes(3); 
   });
 
-  it('validates existing context and rejects if installationId mismatches', async () => {
+  it('validates existing context and synchronizes installationId from DB if they mismatch', async () => {
     identityResultMock = [{ databaseKind: 'PRODUCT', installationId: 'inst-1' }];
-    contextResultMock = [{ installationId: 'inst-2' }];
+    contextResultMock = [{ installationId: 'inst-2', defaultWorkspaceId: 'ws-1', defaultOperatorId: 'op-1' }];
+    
+    mockTx.query.workspaces.findFirst.mockResolvedValueOnce({ id: 'ws-1' });
+    mockTx.query.operators.findFirst.mockResolvedValueOnce({ id: 'op-1' });
 
-    await expect(bootstrapProductDb(mockDb)).rejects.toThrow('LOCAL_CONTEXT_CORRUPT: database_identity.installation_id does not match local_app_context.installation_id');
+    const result = await bootstrapProductDb(mockDb);
+    expect(mockTx.update).toHaveBeenCalled();
+    expect(result.installationId).toBe('inst-1');
   });
 
   it('validates existing context and returns it if everything is correct', async () => {

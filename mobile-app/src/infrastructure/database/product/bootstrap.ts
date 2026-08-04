@@ -64,7 +64,18 @@ export async function bootstrapProductDb(db: ExpoSQLiteDatabase<typeof schema>) 
     const context = contexts[0];
 
     if (identityResult[0].installationId !== context.installationId) {
-      throw new Error('LOCAL_CONTEXT_CORRUPT: database_identity.installation_id does not match local_app_context.installation_id');
+      if (!identityResult[0].installationId) {
+        // Sync context -> DB
+        await tx.update(schema.databaseIdentity)
+          .set({ installationId: context.installationId })
+          .where(sql`database_kind = 'PRODUCT'`);
+      } else {
+        // Sync DB -> context
+        await tx.update(schema.localAppContext)
+          .set({ installationId: identityResult[0].installationId })
+          .where(sql`singleton_key = 1`);
+        context.installationId = identityResult[0].installationId;
+      }
     }
 
     const workspace = await tx.query.workspaces.findFirst({
