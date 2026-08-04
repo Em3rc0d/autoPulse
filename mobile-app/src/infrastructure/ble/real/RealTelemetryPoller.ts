@@ -8,18 +8,29 @@ type ObdCommandExecutor = {
 
 // We use CommandResult directly for 05E
 
+export interface PollerDiagnosticEvent {
+  type: 'PID_RETIRED_NO_DATA';
+  pid: string;
+}
+
 export class RealTelemetryPoller {
   private controller: ObdCommandExecutor;
   private supportedPids: string[];
   private isPolling: boolean = false;
   private onData: (data: CommandResult) => void;
+  private onDiagnostic?: (event: PollerDiagnosticEvent) => void;
   private intervalHandle: NodeJS.Timeout | null = null;
   private currentPidIndex: number = 0;
 
   // Track consecutive failures per PID
   private consecutiveFailures: Record<string, number> = {};
 
-  constructor(controller: ObdCommandExecutor, supportedPids: string[], onData: (data: CommandResult) => void) {
+  constructor(
+    controller: ObdCommandExecutor, 
+    supportedPids: string[], 
+    onData: (data: CommandResult) => void,
+    onDiagnostic?: (event: PollerDiagnosticEvent) => void
+  ) {
     this.controller = controller;
     // We only poll PIDs we know how to decode (and that are supported)
     this.supportedPids = supportedPids.filter(pid =>
@@ -32,6 +43,7 @@ export class RealTelemetryPoller {
     }
 
     this.onData = onData;
+    this.onDiagnostic = onDiagnostic;
   }
 
   public start(intervalMs: number = 250) {
@@ -86,6 +98,33 @@ export class RealTelemetryPoller {
   }
 
   private handleResult(pid: string, result: CommandResult) {
+    if (result.status === 'SUCCESS_DECODED' || result.status === 'SUCCESS_RAW') {
+      this.consecutiveFailures[pid] = 0;
+    } else if (result.status === 'NO_DATA') {
+      this.consecutiveFailures[pid] = (this.consecutiveFailures[pid] || 0) + 1;
+      
+      if (this.consecutiveFailures[pid] >= 3) {
+        console.log(`[RealTelemetryPoller] Retiring PID ${pid} after 3 consecutive NO_DATA`);
+        const indexToRemove = this.supportedPids.indexOf(pid);
+        if (indexToRemove !== -1) {
+          this.supportedPids.splice(indexToRemove, 1);
+          if (this.currentPidIndex >= indexToRemove && this.currentPidIndex > 0) {
+            this.currentPidIndex--;
+          }
+        }
+        
+        if (this.onDiagnostic) {
+          this.onDiagnostic({ type: 'PID_RETIRED_NO_DATA', pid });
+        }
+        
+        if (this.supportedPids.length === 0) {
+          this.stop();
+        }
+        return;
+      }
+    }
+    
+    // Do not retire on TIMEOUT, ELM_ERROR, or DISCONNECTED
     this.onData(result);
   }
 

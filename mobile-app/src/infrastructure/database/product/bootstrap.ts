@@ -28,6 +28,11 @@ export async function bootstrapProductDb(db: ExpoSQLiteDatabase<typeof schema>) 
       const operatorId = ProductIdGenerator.generate();
       const now = Date.now();
 
+      // Sync installationId to databaseIdentity
+      await tx.update(schema.databaseIdentity)
+        .set({ installationId })
+        .where(sql`database_kind = 'PRODUCT'`);
+
       await tx.insert(schema.workspaces).values({
         id: workspaceId,
         name: 'My Garage',
@@ -57,6 +62,10 @@ export async function bootstrapProductDb(db: ExpoSQLiteDatabase<typeof schema>) 
 
     // 5. If it exists, validate the references
     const context = contexts[0];
+
+    if (identityResult[0].installationId !== context.installationId) {
+      throw new Error('LOCAL_CONTEXT_CORRUPT: database_identity.installation_id does not match local_app_context.installation_id');
+    }
 
     const workspace = await tx.query.workspaces.findFirst({
       where: (ws, { eq }) => eq(ws.id, context.defaultWorkspaceId)

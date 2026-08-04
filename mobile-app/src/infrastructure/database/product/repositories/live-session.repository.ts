@@ -118,8 +118,8 @@ export class LiveSessionRepository {
         adapterInstanceId,
         status: 'CREATED',
         format: 'BINARY',
-        formatVersion: '2.0',
-        codec: 'BINARY_OBD2_V2',
+        formatVersion: '3.0',
+        codec: 'BINARY_OBD2_V3',
         chunkDurationMs: 5000,
         dictionaryVersion: '1.0',
         createdAt: now

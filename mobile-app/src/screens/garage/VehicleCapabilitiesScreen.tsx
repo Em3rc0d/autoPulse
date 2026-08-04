@@ -13,7 +13,7 @@ export default function VehicleCapabilitiesScreen() {
   const { vehicle } = useVehicle(vehicleId);
   const { context } = useLocalContext();
 
-  const { snapshot, parameters, loading } = useCapabilitySnapshot(context?.activeWorkspaceId, vehicleId);
+  const { snapshot, parameters, loading } = useCapabilitySnapshot(context?.defaultWorkspaceId, vehicleId);
 
   const getStatusColor = (supportState: string) => {
     switch (supportState) {

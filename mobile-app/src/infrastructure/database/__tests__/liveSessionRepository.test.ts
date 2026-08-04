@@ -77,6 +77,8 @@ describe('LiveSessionRepository', () => {
     const session = await db.query.liveSessions.findFirst({ where: eq(schema.liveSessions.id, activeSessionId) });
     expect(session).toBeDefined();
     expect(session?.status).toBe('CREATED');
+    expect(session?.formatVersion).toBe('3.0');
+    expect(session?.codec).toBe('BINARY_OBD2_V3');
 
     const events = await db.query.liveSessionEvents.findMany({ where: eq(schema.liveSessionEvents.sessionId, activeSessionId) });
     expect(events.length).toBe(1);

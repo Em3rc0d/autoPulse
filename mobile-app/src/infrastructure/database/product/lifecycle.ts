@@ -3,6 +3,7 @@ import { drizzle, ExpoSQLiteDatabase } from 'drizzle-orm/expo-sqlite';
 import { migrate } from 'drizzle-orm/expo-sqlite/migrator';
 import * as schema from './schema';
 import migrations from './migrations/migrations';
+import { bootstrapProductDb } from './bootstrap';
 
 export type LifecycleState = 'UNINITIALIZED' | 'INITIALIZING' | 'READY' | 'FAILED' | 'CLOSING' | 'CLOSED';
 
@@ -116,6 +117,8 @@ export async function initializeProductDb(): Promise<ExpoSQLiteDatabase<typeof s
       if (!identity || identity.database_kind !== 'PRODUCT') {
         throw new Error('UNKNOWN_DATABASE_IDENTITY: Migration failed to set database_identity to PRODUCT.');
       }
+
+      await bootstrapProductDb(dbInstance);
 
       currentState = 'READY';
       return dbInstance;

@@ -7,7 +7,10 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "postinstall": "patch-package",
-    "obd:replay:dev": "node scripts/obd-replay-server.js"
+    "obd:replay:dev": "node scripts/obd-replay-server.js",
+    "test": "jest --runInBand",
+    "typecheck": "tsc --noEmit",
+    "verify": "npm run typecheck && npm run test"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",

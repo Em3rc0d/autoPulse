@@ -8,7 +8,7 @@ jest.mock('../../../infrastructure/hooks/useVehicle', () => ({
 }));
 
 jest.mock('../../../infrastructure/hooks/useLocalContext', () => ({
-  useLocalContext: () => ({ context: { activeWorkspaceId: 'WS-1' } })
+  useLocalContext: () => ({ context: { defaultWorkspaceId: 'WS-1' } })
 }));
 
 jest.mock('../../../infrastructure/hooks/useCapabilitySnapshot', () => ({
@@ -51,5 +51,8 @@ describe('VehicleCapabilitiesScreen', () => {
 
     // Verify it doesn't crash or present as NOT_SUPPORTED simply because definition is missing
     expect(queryByText('NOT_SUPPORTED')).toBeFalsy();
+
+    // Verify useCapabilitySnapshot was called with the correct workspace and vehicle ID
+    expect(useCapabilitySnapshot).toHaveBeenCalledWith('WS-1', 'V-1');
   });
 });

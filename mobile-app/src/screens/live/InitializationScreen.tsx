@@ -183,38 +183,43 @@ export default function InitializationScreen() {
           '0105': { numericType: 'float', unit: '°C', decoderKey: 'MODE01_0105', precision: 1, priority: 'MEDIUM' },
           '0142': { numericType: 'float', unit: 'V', decoderKey: 'MODE01_0142', precision: 2, priority: 'LOW' }
         };
-
-        const pidsToUse = [...snapshot.supportedPids];
+        const discoveredSupportedPids = [...snapshot.supportedPids];
         const requiredLivePids = ['010C', '010D', '0105', '0142'];
-        const missingLivePids = requiredLivePids.filter(pid => !pidsToUse.includes(pid));
-        if (missingLivePids.length > 0) {
-          console.log(`[InitializationScreen] Injecting live polling fallbacks: ${missingLivePids.join(', ')}`);
-          pidsToUse.push(...missingLivePids);
+        const probeCandidatePids = requiredLivePids.filter(pid => !discoveredSupportedPids.includes(pid));
+        
+        const activePollingPids = [...discoveredSupportedPids];
+        if (probeCandidatePids.length > 0) {
+          console.log(`[InitializationScreen] Injecting live polling fallbacks: ${probeCandidatePids.join(', ')}`);
+          activePollingPids.push(...probeCandidatePids);
         }
-        liveSupportedPids = pidsToUse;
+        liveSupportedPids = activePollingPids;
 
-        const signals = pidsToUse
+        const signals = activePollingPids
           .filter(pid => coreSignalDefinitions[pid])
-          .map((pid, index) => ({
-          signalDefinitionId: pid,
-          parameterDefinitionId: pid,
-          service: 1,
-          pid: parseInt(pid.replace('01', ''), 16) || 0,
-          targetEcu: 0,
-          effectiveUnit: coreSignalDefinitions[pid].unit,
-          numericType: coreSignalDefinitions[pid].numericType,
-          scale: 1,
-          offset: 0,
-          precision: coreSignalDefinitions[pid].precision,
-          decoderKey: coreSignalDefinitions[pid].decoderKey,
-          decoderVersion: '1.0',
-          origin: snapshot.directlyObservedPids?.includes(pid) ? 'DIRECTLY_OBSERVED' : 'BITMAP',
-          priority: coreSignalDefinitions[pid].priority,
-          targetPeriodMs: 250,
-          supportState: 'SUPPORTED',
-          localTargetIndex: index,
-          localSignalIndex: index
-        }));
+          .map((pid, index) => {
+            const isProbed = probeCandidatePids.includes(pid);
+            return {
+              signalDefinitionId: pid,
+              parameterDefinitionId: pid,
+              service: 1,
+              pid: parseInt(pid.replace('01', ''), 16) || 0,
+              targetEcu: 0,
+              effectiveUnit: coreSignalDefinitions[pid].unit,
+              numericType: coreSignalDefinitions[pid].numericType,
+              scale: 1,
+              offset: 0,
+              precision: coreSignalDefinitions[pid].precision,
+              decoderVersion: '1.0',
+              decoderKey: coreSignalDefinitions[pid].decoderKey,
+              origin: snapshot.directlyObservedPids?.includes(pid) ? 'DIRECTLY_OBSERVED' : 'BITMAP',
+              priority: coreSignalDefinitions[pid].priority,
+              targetPeriodMs: 250,
+              indexInBlock: index,
+              supportState: isProbed ? ('NOT_AVAILABLE' as any) : ('SUPPORTED' as any),
+              localTargetIndex: index,
+              localSignalIndex: index
+            };
+          });
 
         if (signals.length === 0) {
           throw new Error('NO_SUPPORTED_CORE_SIGNALS: ECU responded, but no supported RPM/Speed/Coolant/Voltage signals were available.');

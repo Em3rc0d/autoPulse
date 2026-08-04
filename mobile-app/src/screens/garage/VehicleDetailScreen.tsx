@@ -12,7 +12,7 @@ export default function VehicleDetailScreen() {
   const vehicleId = route.params?.vehicleId;
   const { vehicle, loading, error } = useVehicle(vehicleId);
   const { context } = useLocalContext();
-  const { sessions, loading: sessionsLoading } = useVehicleSessions(context?.activeWorkspaceId, vehicleId);
+  const { sessions, loading: sessionsLoading } = useVehicleSessions(context?.defaultWorkspaceId, vehicleId);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
 
   const handleLiveSession = () => {
@@ -82,11 +82,11 @@ export default function VehicleDetailScreen() {
           <Text style={styles.sectionTitle}>HEALTH SNAPSHOT</Text>
           <View style={styles.healthContent}>
             <View style={styles.healthIcon}>
-              <Ionicons name="checkmark-circle" size={40} color="#34C759" />
+              <Ionicons name="help-circle" size={40} color="#8E8E93" />
             </View>
             <View style={styles.healthInfo}>
-              <Text style={styles.healthStatus}>No DTCs Found</Text>
-              <Text style={styles.healthTime}>Last checked: Never</Text>
+              <Text style={styles.healthStatus}>Vehicle not checked yet</Text>
+              <Text style={styles.healthTime}>Connect an adapter to obtain a health snapshot</Text>
             </View>
           </View>
         </View>
