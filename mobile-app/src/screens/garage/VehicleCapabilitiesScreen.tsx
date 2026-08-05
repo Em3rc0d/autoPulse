@@ -15,26 +15,37 @@ export default function VehicleCapabilitiesScreen() {
 
   const { snapshot, parameters, loading } = useCapabilitySnapshot(context?.defaultWorkspaceId, vehicleId);
 
-  const getStatusColor = (supportState: string) => {
-    switch (supportState) {
-      case 'SUPPORTED': return '#4ade80';
-      case 'NOT_SUPPORTED': return '#ef4444';
-      case 'NO_RESPONSE': return '#fb923c';
-      case 'TEMPORARILY_UNAVAILABLE': return '#fbbf24';
-      case 'NOT_TESTED': return '#9ca3af';
-      default: return '#9ca3af';
-    }
+  const getStatusColor = (supportState: string, outcome: string) => {
+    if (supportState === 'SUPPORTED') return '#4ade80';
+    if (supportState === 'NOT_SUPPORTED') return '#9ca3af'; // Not a failure, just not supported
+    
+    // UNKNOWN state logic
+    if (outcome === 'NOT_ATTEMPTED') return '#6b7280'; // Darker grey
+    if (['TIMEOUT', 'NO_DATA', 'NO_RESPONSE'].includes(outcome)) return '#fbbf24'; // Amber
+    if (['NEGATIVE_RESPONSE', 'INVALID_RESPONSE', 'TRANSPORT_ERROR'].includes(outcome)) return '#ef4444'; // Red
+    return '#9ca3af';
   };
 
   const getStatusLabel = (supportState: string) => {
     switch (supportState) {
       case 'SUPPORTED': return 'Supported';
       case 'NOT_SUPPORTED': return 'Not Supported';
-      case 'NO_RESPONSE': return 'No Response';
-      case 'TEMPORARILY_UNAVAILABLE': return 'Temp Unavailable';
-      case 'NOT_TESTED': return 'Not Tested';
+      case 'UNKNOWN': return 'Unknown';
       default: return supportState;
     }
+  };
+
+  const getEvidenceDescription = (origin: string, outcome: string) => {
+    if (outcome === 'NOT_ATTEMPTED') return 'Not tested';
+    if (origin === 'BITMAP' && outcome === 'SUCCESS') return 'Confirmed by bitmap';
+    if (origin === 'DIRECT_OBSERVATION' && outcome === 'SUCCESS') return 'Confirmed by direct response';
+    if (origin === 'REPLAY_FIXTURE' && outcome === 'SUCCESS') return 'Confirmed by laptop replay';
+    
+    if (origin === 'PROBE') {
+      const outcomeText = outcome.replace('_', ' ').toLowerCase();
+      return `Probe returned ${outcomeText.toUpperCase()}`;
+    }
+    return `Outcome: ${outcome}`;
   };
 
   const renderContent = () => {
@@ -82,20 +93,26 @@ export default function VehicleCapabilitiesScreen() {
             const fallbackService = param.service ?? (param.parameterDefinitionId ? parseInt(param.parameterDefinitionId.substring(0, 2), 16) : 0);
             const fallbackPid = param.parameterIdentifier ?? (param.parameterDefinitionId ? parseInt(param.parameterDefinitionId.substring(2, 4), 16) : 0);
 
+            const badgeColor = getStatusColor(param.supportState, param.discoveryOutcome);
+
             return (
             <View key={param.id} style={styles.paramCard}>
               <View style={styles.paramHeader}>
                 <Text style={styles.paramName}>{param.technicalName ?? 'Unknown Parameter'}</Text>
-                <View style={[styles.statusBadge, { borderColor: getStatusColor(param.supportState) }]}>
-                  <Text style={[styles.statusBadgeText, { color: getStatusColor(param.supportState) }]}>
+                <View style={[styles.statusBadge, { borderColor: badgeColor }]}>
+                  <Text style={[styles.statusBadgeText, { color: badgeColor }]}>
                     {getStatusLabel(param.supportState)}
                   </Text>
                 </View>
               </View>
-              <Text style={styles.paramPid}>Mode {fallbackService.toString(16).padStart(2, '0').toUpperCase()} PID {fallbackPid.toString(16).padStart(2, '0').toUpperCase()} (ECU {param.ecuAddress.toString(16).toUpperCase()})</Text>
+              <Text style={styles.paramPid}>Mode {fallbackService.toString(16).padStart(2, '0').toUpperCase()} · PID {fallbackPid.toString(16).padStart(2, '0').toUpperCase()} (ECU {param.ecuAddress.toString(16).toUpperCase()})</Text>
+              
+              <Text style={styles.paramEvidence}>{getEvidenceDescription(param.evidenceOrigin, param.discoveryOutcome)}</Text>
 
               {param.errorCode && (
-                <Text style={styles.paramError}>Error Code: {param.errorCode}</Text>
+                <View style={styles.errorContainer}>
+                  <Text style={styles.paramError}>{param.errorCode}</Text>
+                </View>
               )}
             </View>
             );
@@ -168,8 +185,32 @@ const styles = StyleSheet.create({
   },
   paramHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
   paramName: { color: '#e5e7eb', fontSize: 15, fontFamily: 'Inter_500Medium', flex: 1, marginRight: 8 },
-  paramPid: { color: '#6b7280', fontSize: 12, fontFamily: 'SpaceMono_400Regular' },
-  paramError: { color: '#ef4444', fontSize: 12, fontFamily: 'SpaceMono_400Regular', marginTop: 4 },
+  paramPid: {
+    color: '#9ca3af',
+    fontSize: 12,
+    fontFamily: 'SpaceMono_400Regular',
+    marginTop: 4,
+  },
+  paramEvidence: {
+    color: '#6b7280',
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    marginTop: 4,
+    fontStyle: 'italic',
+  },
+  errorContainer: {
+    marginTop: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  paramError: {
+    color: '#ef4444',
+    fontSize: 12,
+    fontFamily: 'SpaceMono_700Bold',
+  },
 
   statusBadge: {
     paddingHorizontal: 8,

@@ -13,6 +13,9 @@ export type ParameterInput = {
   ecuAddress: number;
   parameterDefinitionId: string;
   supportState: string;
+  evidenceOrigin: string;
+  discoveryOutcome: string;
+  errorCode?: string;
 };
 
 export class CapabilitySnapshotRepository {
@@ -25,6 +28,7 @@ export class CapabilitySnapshotRepository {
     profileVersion: string,
     protocolCode: string,
     transportType: string,
+    discoveryStatus: string,
     ecus: ECUInput[],
     parameters: ParameterInput[]
   ) {
@@ -41,7 +45,7 @@ export class CapabilitySnapshotRepository {
         discoveredAt: now,
         protocolCode,
         decoderCatalogVersion: '1.0',
-        discoveryStatus: 'COMPLETED',
+        discoveryStatus,
         rawDiscoveryHash: '0x0',
         createdAt: now
       } as any).returning();
@@ -65,7 +69,9 @@ export class CapabilitySnapshotRepository {
             ecuAddress: param.ecuAddress,
             parameterDefinitionId: param.parameterDefinitionId,
             supportState: param.supportState,
-            discoveryOutcome: 'SUCCESS',
+            evidenceOrigin: param.evidenceOrigin,
+            discoveryOutcome: param.discoveryOutcome,
+            errorCode: param.errorCode || null,
             discoveredAt: now
           }))
         );
@@ -97,6 +103,7 @@ export class CapabilitySnapshotRepository {
       id: schema.vehicleCapabilityParameters.id,
       ecuAddress: schema.vehicleCapabilityParameters.ecuAddress,
       supportState: schema.vehicleCapabilityParameters.supportState,
+      evidenceOrigin: schema.vehicleCapabilityParameters.evidenceOrigin,
       discoveryOutcome: schema.vehicleCapabilityParameters.discoveryOutcome,
       errorCode: schema.vehicleCapabilityParameters.errorCode,
       technicalName: schema.obdParameterDefinitions.technicalName,

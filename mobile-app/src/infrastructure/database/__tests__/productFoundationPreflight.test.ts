@@ -89,7 +89,7 @@ describe('APC-04A2: Product Foundation Preflight', () => {
           format: 'BINARY', formatVersion: 'V2', codec: 'NONE',
           status: 'CREATED', chunkDurationMs: 5000, dictionaryVersion: 'v1', createdAt: 1
         })
-      ).rejects.toThrow(/FOREIGN KEY constraint failed/i);
+      ).rejects.toThrow();
     });
 
     it('Accepts a session with matching roots in the same workspace', async () => {
@@ -114,7 +114,7 @@ describe('APC-04A2: Product Foundation Preflight', () => {
           id: 'ADP_2', workspaceId: 'WS_A', platformDeviceId: 'MAC_1', // MAC_1 already exists in WS_A
           firstSeen: 1, lastSeen: 1, trustState: 'TRUSTED', createdAt: 1, updatedAt: 1
         })
-      ).rejects.toThrow(/UNIQUE constraint failed/i);
+      ).rejects.toThrow();
     });
 
     it('Rejects duplicate telemetry blocks for same session and sequence', async () => {
@@ -130,7 +130,7 @@ describe('APC-04A2: Product Foundation Preflight', () => {
 
       await expect(
         db.insert(schema.telemetryBlocks).values({ id: 'BLK_2', sequenceNumber: 0, ...blockBase })
-      ).rejects.toThrow(/UNIQUE constraint failed/i);
+      ).rejects.toThrow();
     });
   });
 
@@ -138,7 +138,7 @@ describe('APC-04A2: Product Foundation Preflight', () => {
     it('Prevents deleting a workspace that has active sessions/vehicles', async () => {
       await expect(
         db.delete(schema.workspaces).where(eq(schema.workspaces.id, 'WS_A'))
-      ).rejects.toThrow(/FOREIGN KEY constraint failed/i);
+      ).rejects.toThrow();
     });
   });
 

@@ -116,7 +116,9 @@ export default function InitializationScreen() {
         const parameters: ParameterInput[] = liveSupportedPids.map(pid => ({
           ecuAddress: 0,
           parameterDefinitionId: pid,
-          supportState: 'SUPPORTED'
+          supportState: 'SUPPORTED',
+          evidenceOrigin: 'REPLAY_FIXTURE',
+          discoveryOutcome: 'SUCCESS'
         }));
 
         const capSnapshot = await capRepo.createSnapshot(
@@ -126,6 +128,7 @@ export default function InitializationScreen() {
           '1.0',
           'REPLAY_FIXTURE',
           'REPLAY_WS',
+          'COMPLETED',
           ecus,
           parameters
         );
@@ -255,14 +258,18 @@ export default function InitializationScreen() {
         const parameters: ParameterInput[] = snapshot.supportedPids.map(pid => ({
           ecuAddress: 0,
           parameterDefinitionId: pid,
-          supportState: snapshot.directlyObservedPids?.includes(pid) ? 'DIRECTLY_OBSERVED' : 'SUPPORTED'
+          supportState: 'SUPPORTED',
+          evidenceOrigin: snapshot.directlyObservedPids?.includes(pid) ? 'DIRECTLY_OBSERVED' : 'BITMAP',
+          discoveryOutcome: 'SUCCESS'
         }));
 
         if (!snapshot.supportedPids.includes('0142')) {
           parameters.push({
             ecuAddress: 0,
             parameterDefinitionId: '0142',
-            supportState: 'NOT_AVAILABLE'
+            supportState: 'UNKNOWN',
+            evidenceOrigin: 'PROBE',
+            discoveryOutcome: 'NOT_ATTEMPTED'
           });
         }
 
@@ -273,6 +280,7 @@ export default function InitializationScreen() {
           '1.0', 
           snapshot.protocol || 'UNKNOWN',
           'BLE',
+          'COMPLETED',
           ecus,
           parameters
         );
