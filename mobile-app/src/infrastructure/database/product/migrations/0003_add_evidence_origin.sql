@@ -6,7 +6,7 @@ UPDATE `vehicle_capability_parameters`
 SET 
   `evidence_origin` = CASE 
     WHEN `support_state` = 'DIRECTLY_OBSERVED' THEN 'DIRECT_OBSERVATION'
-    WHEN `support_state` = 'SUPPORTED' AND (SELECT `protocol_code` FROM `vehicle_capability_snapshots` WHERE `id` = `snapshot_id`) = 'REPLAY_SIMULATED' THEN 'REPLAY_FIXTURE'
+    WHEN `support_state` = 'SUPPORTED' AND (SELECT `protocol_code` FROM `vehicle_capability_snapshots` WHERE `id` = `snapshot_id`) IN ('REPLAY_SIMULATED', 'REPLAY_FIXTURE') THEN 'REPLAY_FIXTURE'
     WHEN `support_state` IN ('SUPPORTED', 'NOT_SUPPORTED') THEN 'BITMAP'
     WHEN `support_state` IN ('NOT_AVAILABLE', 'NO_RESPONSE', 'TEMPORARILY_UNAVAILABLE', 'NOT_TESTED') THEN 'PROBE'
     ELSE 'UNKNOWN'
