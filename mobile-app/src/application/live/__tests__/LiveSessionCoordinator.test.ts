@@ -5,12 +5,13 @@ jest.mock('react-native', () => ({
   }
 }));
 
-import { RealLiveSessionController } from '../RealLiveSessionController';
+import { LiveSessionCoordinator } from '../LiveSessionCoordinator';
 
-describe('RealLiveSessionController Integration', () => {
+describe('LiveSessionCoordinator Integration', () => {
   let mockPoller: any;
   let mockSessionRepo: any;
   let mockTelemetryRepo: any;
+  let mockLease: any;
 
   beforeEach(() => {
     mockPoller = {
@@ -23,15 +24,19 @@ describe('RealLiveSessionController Integration', () => {
       requestStop: jest.fn().mockResolvedValue(undefined),
     };
     mockTelemetryRepo = {};
+    mockLease = {
+      executor: { isConnected: true },
+      sourceType: 'REAL_BLE',
+      release: jest.fn().mockResolvedValue(undefined)
+    };
   });
 
-  const createController = () => {
-    const ctrl = new RealLiveSessionController(
+  const createCoordinator = () => {
+    const ctrl = new LiveSessionCoordinator(
       mockSessionRepo as any,
       mockTelemetryRepo as any,
       'ws1',
       'sess1',
-      'conn1',
       ['010C', '010D']
     );
     // Stub out actual telemetry operations for pure lifecycle testing
@@ -43,14 +48,12 @@ describe('RealLiveSessionController Integration', () => {
       getHasFailed: jest.fn().mockReturnValue(false)
     };
     (ctrl as any).poller = mockPoller;
+    (ctrl as any).lease = mockLease;
     return ctrl;
   };
 
   it('Controller start is idempotent', async () => {
-    const ctrl = createController();
-
-    // We stub activeBleController inside the test environment if needed, but here we can just skip start and mock it manually or mock activeBleController globally.
-    // Instead of testing start details, we test idempotent stop/cleanup which don't require BLE.
+    const ctrl = createCoordinator();
     ctrl['currentState'] = 'ACTIVE';
     ctrl['commitQueue'] = {
       drain: jest.fn().mockResolvedValue(undefined),
@@ -59,11 +62,8 @@ describe('RealLiveSessionController Integration', () => {
   });
 
   it('Double Stop shares terminal promise', async () => {
-    const ctrl = createController();
+    const ctrl = createCoordinator();
     ctrl['currentState'] = 'ACTIVE';
-
-    // mock activeBleController
-    (global as any).activeBleController = { releaseConnection: jest.fn() };
 
     const p1 = ctrl.stopSession();
     const p2 = ctrl.stopSession();
@@ -73,12 +73,12 @@ describe('RealLiveSessionController Integration', () => {
 
     expect(mockSessionRepo.requestStop).toHaveBeenCalledTimes(1);
     expect(mockSessionRepo.completeSession).toHaveBeenCalledTimes(1);
+    expect(mockLease.release).toHaveBeenCalledTimes(1);
   });
 
   it('Failed final block prevents COMPLETED', async () => {
-    const ctrl = createController();
+    const ctrl = createCoordinator();
     ctrl['currentState'] = 'ACTIVE';
-    (global as any).activeBleController = { releaseConnection: jest.fn() };
 
     (ctrl as any).commitQueue.getHasFailed = jest.fn().mockReturnValue(true);
 
@@ -90,9 +90,8 @@ describe('RealLiveSessionController Integration', () => {
   });
 
   it('Disconnect produces INTERRUPTED once', async () => {
-    const ctrl = createController();
+    const ctrl = createCoordinator();
     ctrl['currentState'] = 'ACTIVE';
-    (global as any).activeBleController = { releaseConnection: jest.fn() };
 
     await ctrl.handleUnexpectedDisconnect('DEVICE_DISCONNECTED');
     await ctrl.handleUnexpectedDisconnect('DEVICE_DISCONNECTED'); // Second call
@@ -103,9 +102,8 @@ describe('RealLiveSessionController Integration', () => {
   });
 
   it('Background produces INTERRUPTED once', async () => {
-    const ctrl = createController();
+    const ctrl = createCoordinator();
     ctrl['currentState'] = 'ACTIVE';
-    (global as any).activeBleController = { releaseConnection: jest.fn() };
 
     // Force background
     ctrl.forceCleanup();
@@ -116,9 +114,8 @@ describe('RealLiveSessionController Integration', () => {
   });
 
   it('Stop/disconnect race has one terminal state', async () => {
-    const ctrl = createController();
+    const ctrl = createCoordinator();
     ctrl['currentState'] = 'ACTIVE';
-    (global as any).activeBleController = { releaseConnection: jest.fn() };
 
     const p1 = ctrl.stopSession();
     const p2 = ctrl.handleUnexpectedDisconnect('RACE');

@@ -47,10 +47,12 @@ export interface SessionSummaryResult {
   // Persistence Stats
   readonly expectedBlocksCount: number;
   readonly foundBlocksCount: number;
+  readonly validBlocksCount: number;
   readonly completeBlocksCount: number;
   readonly partialBlocksCount: number;
   readonly corruptedBlocksCount: number;
   readonly unsupportedBlocksCount: number;
+  readonly missingBlocksCount: number;
 
   readonly firstWindowIndex?: number;
   readonly lastWindowIndex?: number;

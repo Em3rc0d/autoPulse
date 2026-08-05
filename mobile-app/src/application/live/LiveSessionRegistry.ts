@@ -1,13 +1,13 @@
-import { RealLiveSessionController } from './RealLiveSessionController';
+import { LiveSessionCoordinator } from './LiveSessionCoordinator';
 
 class LiveSessionRegistry {
-  private controllers: Map<string, RealLiveSessionController> = new Map();
+  private controllers: Map<string, LiveSessionCoordinator> = new Map();
 
-  getController(sessionId: string): RealLiveSessionController | undefined {
+  getController(sessionId: string): LiveSessionCoordinator | undefined {
     return this.controllers.get(sessionId);
   }
 
-  registerController(sessionId: string, controller: RealLiveSessionController) {
+  registerController(sessionId: string, controller: LiveSessionCoordinator) {
     this.controllers.set(sessionId, controller);
   }
 

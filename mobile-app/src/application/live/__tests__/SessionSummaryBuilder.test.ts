@@ -37,6 +37,7 @@ describe('SessionSummaryBuilder', () => {
       workspaceId: 'ws-1',
       vehicleId: 'veh-1',
       adapterInstanceId: 'VIRTUAL',
+      transportType: 'LAPTOP_REPLAY',
       status: 'COMPLETED',
       startedAt: 1000,
       endedAt: 2000,
@@ -139,7 +140,8 @@ describe('SessionSummaryBuilder', () => {
       id: 's-1',
       workspaceId: 'ws-1',
       vehicleId: 'v-1',
-      status: 'INTERRUPTED'
+      status: 'INTERRUPTED',
+      totalBlocks: 1
     });
 
     mockTelemetryBlockRepository.getAllBlocksForSession.mockResolvedValue([

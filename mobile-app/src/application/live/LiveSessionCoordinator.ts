@@ -1,8 +1,5 @@
 import { NativeEventSubscription, Platform } from 'react-native';
-import ReactNativeForegroundService from '@supersami/rn-foreground-service';
-import { RealObdController } from '../../infrastructure/ble/real/RealObdController';
 import { RealTelemetryPoller } from '../../infrastructure/ble/real/RealTelemetryPoller';
-import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { ITelemetryBlockRepository } from '../../domain/telemetry/repositories/TelemetryBlockRepository';
 import { TelemetryCommitQueue, CommitQueueEvent } from './TelemetryCommitQueue';
@@ -11,11 +8,12 @@ import { ObdAcquisitionMapper } from '../../domain/telemetry/factories/ObdAcquis
 import { TelemetryBlockAssembler } from '../../domain/telemetry/logic/TelemetryBlockAssembler';
 import { BinaryObd2V3BlockMapper } from '../../infrastructure/telemetry-codecs/binary-obd2-v3/BinaryObd2V3BlockMapper';
 import { BinaryObd2V3Codec } from '../../infrastructure/telemetry-codecs/binary-obd2-v3/BinaryObd2V3Codec';
+import { ObdSessionLease } from './ports/ObdCommandExecutor';
 
 export type RecordingStatus = 'NOT_STARTED' | 'RECORDING' | 'FLUSHING' | 'DEGRADED' | 'FAILED' | 'CLOSED';
 
-export class RealLiveSessionController {
-  private obdController: RealObdController | null = null;
+export class LiveSessionCoordinator {
+  private lease: ObdSessionLease | null = null;
   public poller: RealTelemetryPoller | null = null;
 
   private currentState: 'CREATED' | 'ACTIVE' | 'STOPPING' | 'COMPLETED' | 'INTERRUPTED' = 'CREATED';
@@ -27,33 +25,35 @@ export class RealLiveSessionController {
   private assembler: TelemetryBlockAssembler | null = null;
   private codec = new BinaryObd2V3Codec();
   private commitQueue: TelemetryCommitQueue | null = null;
-  private appStateSubscription: NativeEventSubscription | null = null;
 
   private terminalPromise: Promise<void> | null = null;
+  
+  // Timeout for draining the queue on stop
+  private readonly DRAIN_TIMEOUT_MS = 3000; 
 
   constructor(
     private sessionRepo: LiveSessionRepository,
     private telemetryRepo: ITelemetryBlockRepository,
     private workspaceId: string,
     public sessionId: string,
-    private connectionHandleId: string,
     private supportedPids: string[]
   ) {}
 
   public async start(
+    lease: ObdSessionLease,
     onUiUpdate: (result: CommandResult) => void,
     onRecordingError: (err: string) => void
   ) {
     if (this.currentState !== 'CREATED') return;
     this.currentState = 'ACTIVE';
 
-    const conn = activeBleController.getConnection(this.connectionHandleId);
-    if (!conn) {
+    this.lease = lease;
+
+    if (!this.lease.executor.isConnected) {
       this.handleUnexpectedDisconnect('CONNECTION_LOST');
       return;
     }
 
-    this.obdController = new RealObdController(conn);
     this.recordingStartedAt = Date.now();
     this.assembler = new TelemetryBlockAssembler(this.sessionId, this.recordingStartedAt, 5000);
 
@@ -64,7 +64,7 @@ export class RealLiveSessionController {
       (event) => this.handleCommitEvent(event, onRecordingError)
     );
 
-    this.poller = new RealTelemetryPoller(this.obdController, this.supportedPids, (result) => {
+    this.poller = new RealTelemetryPoller(this.lease.executor, this.supportedPids, (result) => {
       this.handleCommandResult(result, onUiUpdate);
     });
 
@@ -75,6 +75,11 @@ export class RealLiveSessionController {
 
   private handleCommandResult(result: CommandResult, onUiUpdate: (res: CommandResult) => void) {
     if (this.currentState !== 'ACTIVE') return;
+
+    if (result.status === 'DISCONNECTED') {
+       this.handleUnexpectedDisconnect('CONNECTION_LOST');
+       return;
+    }
 
     // Give UI the update
     onUiUpdate(result);
@@ -146,22 +151,32 @@ export class RealLiveSessionController {
       }
     }
 
+    let drainCompleted = true;
     if (this.commitQueue) {
-      await this.commitQueue.drain();
+      try {
+        const drainPromise = this.commitQueue.drain();
+        const timeoutPromise = new Promise<void>((_, reject) => {
+          setTimeout(() => reject(new Error('DRAIN_TIMEOUT')), this.DRAIN_TIMEOUT_MS);
+        });
+        await Promise.race([drainPromise, timeoutPromise]);
+      } catch (err: any) {
+        if (err.message === 'DRAIN_TIMEOUT') {
+           drainCompleted = false;
+        }
+      }
     }
 
-    if (this.obdController) {
-      this.obdController.disconnect();
+    if (this.lease) {
+      await this.lease.release();
     }
 
-    activeBleController.releaseConnection();
     this.recordingStatus = 'CLOSED';
 
-    if (mode === 'NORMAL' && !this.commitQueue?.getHasFailed()) {
+    if (mode === 'NORMAL' && drainCompleted && !this.commitQueue?.getHasFailed()) {
        await this.sessionRepo.completeSession(this.workspaceId, this.sessionId);
        this.currentState = 'COMPLETED';
     } else {
-       const failReason = reason || 'TELEMETRY_PERSISTENCE_FAILED';
+       const failReason = reason || (drainCompleted ? 'TELEMETRY_PERSISTENCE_FAILED' : 'DRAIN_TIMEOUT');
        try {
          await this.sessionRepo.interruptSession(this.workspaceId, this.sessionId, failReason);
        } catch (err) {

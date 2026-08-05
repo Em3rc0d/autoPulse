@@ -159,17 +159,51 @@ export default function ConnectObdScreen() {
     });
   };
 
-  const startLaptopReplay = () => {
-    const replaySessionId = `replay_${Math.random().toString(36).substr(2, 9)}`;
+  const startLaptopReplay = async () => {
+    if (!localContext || !productDb) {
+      setUiState('FAILED');
+      return;
+    }
+
     const cleanHost = replayHost.trim().replace(/^wss?:\/\//, '').replace(/\/.*$/, '');
-    navigation.navigate('LiveSession', {
-      vehicleId,
-      sessionId: replaySessionId,
-      adapterMode: 'REPLAY_WS',
-      replayUrl: `http://${cleanHost}:8765`,
-      supportedPids: ['010C', '010D', '0105', '0142'],
-      initialAdapterVoltage: '13.8V'
-    });
+    const replayUrl = `http://${cleanHost}:8765`;
+
+    try {
+      setUiState('CONNECTING');
+      // Validate server
+      const response = await fetch(`${replayUrl}/health`);
+      if (!response.ok) {
+        throw new Error('Replay server not healthy');
+      }
+
+      const adapterRepo = new AdapterRepository(productDb);
+      const sessionRepo = new LiveSessionRepository(productDb);
+
+      const adapter = await adapterRepo.upsertAdapter(localContext.defaultWorkspaceId, {
+        alias: 'AutoPulse Laptop Replay',
+        platformDeviceId: `REPLAY::${cleanHost}:8765`,
+        trustState: 'INTERNAL_REPLAY'
+      });
+
+      const sessionId = await sessionRepo.createSession(
+        localContext.defaultWorkspaceId,
+        vehicleId,
+        localContext.defaultOperatorId,
+        adapter.id
+      );
+
+      setUiState('IDLE');
+      navigation.navigate('Initialization', {
+        vehicleId,
+        sessionId,
+        adapterMode: 'REPLAY_WS',
+        replayUrl,
+        adapterInstanceId: adapter.id
+      });
+    } catch (err) {
+      console.error('Failed to start laptop replay:', err);
+      setUiState('FAILED');
+    }
   };
 
   return (

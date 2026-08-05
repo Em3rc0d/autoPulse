@@ -3,13 +3,17 @@ import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'rea
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useVehicle } from '../../infrastructure/hooks/useVehicle';
 import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
-import { RealObdController } from '../../infrastructure/ble/real/RealObdController';
+import { ObdCommandProcessor } from '../../infrastructure/ble/real/ObdCommandProcessor';
+import { BleRawTransport } from '../../infrastructure/ble/real/BleRawTransport';
+import { ReplayRawTransport } from '../../infrastructure/obd-replay/ReplayRawTransport';
 import { RealObdInitialization } from '../../infrastructure/ble/real/RealObdInitialization';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalContext } from '../../infrastructure/hooks/useLocalContext';
 import { useProductDb } from '../../infrastructure/hooks/useProductDb';
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { CapabilitySnapshotRepository, ECUInput, ParameterInput } from '../../infrastructure/database/product/repositories/capability-snapshot.repository';
+import { liveSessionEvents } from '../../infrastructure/database/product/schema/live';
+import { ProductIdGenerator } from '../../infrastructure/database/product/uuidv7';
 
 import { useKeepAwake } from 'expo-keep-awake';
 
@@ -18,7 +22,7 @@ export default function InitializationScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
 
-  const { vehicleId, sessionId, adapterMode, connectionHandleId, adapterInstanceId } = route.params || {};
+  const { vehicleId, sessionId, adapterMode, connectionHandleId, adapterInstanceId, replayUrl } = route.params || {};
   const [activeSessionId, setActiveSessionId] = useState<string | null>(sessionId || null);
 
   const { vehicle, loading: vehicleLoading } = useVehicle(vehicleId);
@@ -32,7 +36,7 @@ export default function InitializationScreen() {
   ]);
 
   const [realSteps, setRealSteps] = useState([
-    { id: '1', label: 'BLE adapter connected', status: 'pending' },
+    { id: '1', label: 'Adapter connected', status: 'pending' },
     { id: '2', label: 'ELM327 identified', status: 'pending' },
     { id: '3', label: 'Configuring adapter', status: 'pending' },
     { id: '4', label: 'Detecting vehicle protocol', status: 'pending' },
@@ -48,27 +52,24 @@ export default function InitializationScreen() {
   const productDb = useProductDb();
   const { context: localContext, loading: contextLoading } = useLocalContext();
 
-  const executeRealInitialization = useCallback(async () => {
+  const executeInitialization = useCallback(async () => {
     if (initializationStarted.current) return;
     initializationStarted.current = true;
     setInitError(null);
-    console.log('[InitializationScreen] executeRealInitialization started.');
 
     if (contextLoading) {
-       console.log('[InitializationScreen] Wait, context is still loading.');
        initializationStarted.current = false;
-       return; // Wait until loaded
+       return; 
     }
 
     if (!localContext || !productDb) {
-      console.log('[InitializationScreen] Error: LOCAL_CONTEXT_UNAVAILABLE');
-      setInitError('LOCAL_CONTEXT_UNAVAILABLE: Cannot initialize real session without context.');
+      setInitError('LOCAL_CONTEXT_UNAVAILABLE: Cannot initialize session without context.');
       initializationStarted.current = false;
       return;
     }
 
     if (!adapterInstanceId) {
-      setInitError('ADAPTER_INSTANCE_UNAVAILABLE: Cannot initialize a real session without a persisted adapter instance.');
+      setInitError('ADAPTER_INSTANCE_UNAVAILABLE: Cannot initialize session without a persisted adapter instance.');
       initializationStarted.current = false;
       return;
     }
@@ -99,12 +100,118 @@ export default function InitializationScreen() {
         preparationBegun.current = true;
       }
     } catch (err) {
-      console.error('Failed to begin preparation:', err);
       setInitError(`SESSION_PREPARATION_FAILED: ${err instanceof Error ? err.message : 'Could not prepare session.'}`);
       initializationStarted.current = false;
       return;
     }
 
+    if (adapterMode === 'REPLAY_WS') {
+      // LAPTOP REPLAY INITIALIZATION
+      try {
+        setRealSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
+        setCurrentStepIndex(realSteps.length);
+
+        const ecus: ECUInput[] = [{ address: 0, protocol: 'REPLAY_FIXTURE' }];
+        const liveSupportedPids = ['010C', '010D', '0105', '0142'];
+        const parameters: ParameterInput[] = liveSupportedPids.map(pid => ({
+          ecuAddress: 0,
+          parameterDefinitionId: pid,
+          supportState: 'SUPPORTED'
+        }));
+
+        const capSnapshot = await capRepo.createSnapshot(
+          localContext.defaultWorkspaceId,
+          vehicleId,
+          adapterInstanceId,
+          '1.0',
+          'REPLAY_FIXTURE',
+          'REPLAY_WS',
+          ecus,
+          parameters
+        );
+
+        const coreSignalDefinitions: Record<string, {
+          numericType: string;
+          unit: string;
+          decoderKey: string;
+          precision: number;
+          priority: string;
+        }> = {
+          '010C': { numericType: 'float', unit: 'RPM', decoderKey: 'MODE01_010C', precision: 0, priority: 'HIGH' },
+          '010D': { numericType: 'integer', unit: 'km/h', decoderKey: 'MODE01_010D', precision: 0, priority: 'HIGH' },
+          '0105': { numericType: 'float', unit: '°C', decoderKey: 'MODE01_0105', precision: 1, priority: 'MEDIUM' },
+          '0142': { numericType: 'float', unit: 'V', decoderKey: 'MODE01_0142', precision: 2, priority: 'LOW' }
+        };
+
+        const signals = liveSupportedPids
+          .map((pid, index) => ({
+            signalDefinitionId: pid,
+            parameterDefinitionId: pid,
+            service: 1,
+            pid: parseInt(pid.replace('01', ''), 16) || 0,
+            targetEcu: 0,
+            effectiveUnit: coreSignalDefinitions[pid].unit,
+            numericType: coreSignalDefinitions[pid].numericType,
+            scale: 1,
+            offset: 0,
+            precision: coreSignalDefinitions[pid].precision,
+            decoderVersion: '1.0',
+            decoderKey: coreSignalDefinitions[pid].decoderKey,
+            origin: 'BITMAP',
+            priority: coreSignalDefinitions[pid].priority,
+            targetPeriodMs: 250,
+            indexInBlock: index,
+            supportState: 'SUPPORTED',
+            localTargetIndex: index,
+            localSignalIndex: index
+          }));
+
+        await sessionRepo.attachCapabilitySnapshot(
+          localContext.defaultWorkspaceId,
+          sessionIdForRun,
+          capSnapshot.id,
+          '1.0',
+          'REPLAY_FIXTURE',
+          'LAPTOP_REPLAY' // transportType
+        );
+
+        await sessionRepo.attachSignalSnapshots(localContext.defaultWorkspaceId, sessionIdForRun, signals);
+
+        // Inject REPLAY_SOURCE_ATTACHED event
+        await productDb.insert(liveSessionEvents).values({
+          id: ProductIdGenerator.generate(),
+          sessionId: sessionIdForRun,
+          eventSequence: 9999, // arbitrary large number for synthetic
+          eventType: 'REPLAY_SOURCE_ATTACHED',
+          source: 'SYSTEM',
+          severity: 'INFO',
+          timestampMs: Date.now(),
+          sessionOffsetMs: 0,
+          detailsSchemaVersion: '1.0',
+          detailsJson: JSON.stringify({ replayUrl }),
+          createdAt: Date.now()
+        } as any);
+
+        await sessionRepo.activateSession(localContext.defaultWorkspaceId, sessionIdForRun);
+
+        setTimeout(() => {
+          navigation.navigate('LiveSession', {
+            vehicleId,
+            sessionId: sessionIdForRun,
+            adapterMode: 'REPLAY_WS',
+            replayUrl,
+            supportedPids: liveSupportedPids,
+            initialAdapterVoltage: '13.8V'
+          });
+        }, 500);
+      } catch (err) {
+        setInitError(`REPLAY_INIT_FAILED: ${err instanceof Error ? err.message : 'Could not persist synthetic session activation.'}`);
+        initializationStarted.current = false;
+      }
+      return;
+    }
+
+    // REAL_BLE INITIALIZATION
     const conn = activeBleController.getConnection(connectionHandleId);
     if (!connectionHandleId || !conn) {
       setInitError('CONNECTION_LOST: Adapter connection handle is missing or no longer active.');
@@ -112,17 +219,18 @@ export default function InitializationScreen() {
       return;
     }
 
-    let controller: RealObdController | null = null;
+    const transport = new BleRawTransport(conn);
+    const controller = new ObdCommandProcessor(transport);
+
     try {
-      controller = new RealObdController(conn);
-      const initialization = new RealObdInitialization(controller, (stepIndex) => {
+      const initialization = new RealObdInitialization(controller as any, (stepIndex) => {
         setRealSteps(prev => {
           const newSteps = [...prev];
           for (let i = 0; i < stepIndex; i++) {
             newSteps[i].status = 'done';
           }
           if (stepIndex < newSteps.length) {
-            newSteps[stepIndex].status = 'pending'; // Active step
+            newSteps[stepIndex].status = 'pending';
           }
           setCurrentStepIndex(stepIndex);
           return newSteps;
@@ -133,7 +241,7 @@ export default function InitializationScreen() {
 
       if (!snapshot.initializationSuccessful) {
         setInitError(`Could not communicate with the vehicle ECU\n\nAdapter connection: OK\nELM327 response: ${snapshot.failureReason || 'UNKNOWN'}`);
-        if (controller) controller.disconnect();
+        transport.disconnect();
         initializationStarted.current = false;
         return;
       }
@@ -142,7 +250,6 @@ export default function InitializationScreen() {
       setCurrentStepIndex(realSteps.length);
       let liveSupportedPids = [...snapshot.supportedPids];
 
-      // Persist capabilities
       try {
         const ecus: ECUInput[] = [{ address: 0, protocol: snapshot.protocol || 'UNKNOWN' }];
         const parameters: ParameterInput[] = snapshot.supportedPids.map(pid => ({
@@ -151,7 +258,6 @@ export default function InitializationScreen() {
           supportState: snapshot.directlyObservedPids?.includes(pid) ? 'DIRECTLY_OBSERVED' : 'SUPPORTED'
         }));
 
-        // Add 0142 as NOT_AVAILABLE if not in supportedPids
         if (!snapshot.supportedPids.includes('0142')) {
           parameters.push({
             ecuAddress: 0,
@@ -164,7 +270,7 @@ export default function InitializationScreen() {
           localContext.defaultWorkspaceId,
           vehicleId,
           adapterInstanceId,
-          '1.0', // profile version
+          '1.0', 
           snapshot.protocol || 'UNKNOWN',
           'BLE',
           ecus,
@@ -189,7 +295,6 @@ export default function InitializationScreen() {
         
         const activePollingPids = [...discoveredSupportedPids];
         if (probeCandidatePids.length > 0) {
-          console.log(`[InitializationScreen] Injecting live polling fallbacks: ${probeCandidatePids.join(', ')}`);
           activePollingPids.push(...probeCandidatePids);
         }
         liveSupportedPids = activePollingPids;
@@ -231,20 +336,17 @@ export default function InitializationScreen() {
           capSnapshot.id,
           '1.0',
           snapshot.protocol || 'UNKNOWN',
-          'BLE'
+          'REAL_BLE'
         );
 
         await sessionRepo.attachSignalSnapshots(localContext.defaultWorkspaceId, sessionIdForRun, signals);
         await sessionRepo.activateSession(localContext.defaultWorkspaceId, sessionIdForRun);
       } catch (err) {
-        console.error('Failed to persist capabilities/activation:', err);
         try {
           await sessionRepo.failSession(localContext.defaultWorkspaceId, sessionIdForRun, 'ACTIVATION_PERSISTENCE_FAILED');
-        } catch (failErr) {
-          console.error('Failed to mark initialization as failed:', failErr);
-        }
+        } catch (failErr) {}
         setInitError(`SESSION_ACTIVATION_FAILED: ${err instanceof Error ? err.message : 'Could not persist session activation.'}`);
-        if (controller) controller.disconnect();
+        transport.disconnect();
         initializationStarted.current = false;
         return;
       }
@@ -262,10 +364,10 @@ export default function InitializationScreen() {
 
     } catch (error) {
       setInitError('OBD_INIT_FAILED: Unexpected error during initialization.');
-      if (controller) controller.disconnect();
+      transport.disconnect();
       initializationStarted.current = false;
     }
-  }, [activeSessionId, adapterInstanceId, connectionHandleId, navigation, sessionId, vehicleId, realSteps.length, contextLoading, localContext, productDb]);
+  }, [activeSessionId, adapterInstanceId, connectionHandleId, navigation, sessionId, vehicleId, realSteps.length, contextLoading, localContext, productDb, adapterMode, replayUrl]);
 
   useEffect(() => {
     if (!adapterMode) {
@@ -290,15 +392,14 @@ export default function InitializationScreen() {
         }, 500);
         return () => clearTimeout(finishTimer);
       }
-    } else if (adapterMode === 'REAL_BLE') {
+    } else if (adapterMode === 'REAL_BLE' || adapterMode === 'REPLAY_WS') {
       if (!contextLoading && !initializationStarted.current && !initError) {
-        console.log('[InitializationScreen] Triggering executeRealInitialization (context is ready)');
-        executeRealInitialization();
+        executeInitialization();
       }
     } else {
        setInitError(`INVALID_SESSION_ORIGIN: Unknown adapter mode ${adapterMode}`);
     }
-  }, [currentStepIndex, virtualSteps.length, adapterMode, executeRealInitialization, initError, navigation, sessionId, vehicleId, contextLoading]);
+  }, [currentStepIndex, virtualSteps.length, adapterMode, executeInitialization, initError, navigation, sessionId, vehicleId, contextLoading]);
 
   const handleRetry = () => {
     setRealSteps(prev => prev.map(s => ({ ...s, status: 'pending' })));
@@ -307,7 +408,7 @@ export default function InitializationScreen() {
     setInitError(null);
   };
 
-  const activeSteps = adapterMode === 'REAL_BLE' ? realSteps : virtualSteps;
+  const activeSteps = (adapterMode === 'REAL_BLE' || adapterMode === 'REPLAY_WS') ? realSteps : virtualSteps;
 
   if (initError) {
     return (
@@ -315,7 +416,7 @@ export default function InitializationScreen() {
         <Ionicons name="warning" size={48} color="#ef4444" style={{ marginBottom: 16 }} />
         <Text style={styles.errorText}>{initError}</Text>
 
-        {adapterMode === 'REAL_BLE' && (
+        {(adapterMode === 'REAL_BLE' || adapterMode === 'REPLAY_WS') && (
           <TouchableOpacity style={[styles.primaryButton, { marginBottom: 16 }]} onPress={handleRetry}>
             <Text style={styles.primaryButtonText}>Retry ECU Connection</Text>
           </TouchableOpacity>
@@ -357,7 +458,6 @@ export default function InitializationScreen() {
           const isDone = step.status === 'done';
           const isPending = step.status === 'pending' && !isActive;
 
-          // For the protocol detection step (index 3), show waiting sub-text if active
           const isDetectingProtocol = isActive && step.id === '4';
 
           return (
@@ -448,7 +548,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   warningBox: {
-    backgroundColor: 'rgba(234, 179, 8, 0.2)', // yellow with opacity
+    backgroundColor: 'rgba(234, 179, 8, 0.2)',
     borderBottomWidth: 1,
     borderBottomColor: '#eab308',
     padding: 12,

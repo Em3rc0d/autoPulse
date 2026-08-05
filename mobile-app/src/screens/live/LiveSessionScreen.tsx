@@ -14,12 +14,14 @@ import { liveSessionRegistry } from '../../application/live/LiveSessionRegistry'
 import { useSignalTracker } from './components/useSignalTracker';
 import { AppConfig } from '../../application/config';
 import { DiagnosticsLogScreen } from './DiagnosticsLogScreen';
-import { ReplayObdController } from '../../infrastructure/obd-replay/ReplayObdController';
-import { RealTelemetryPoller } from '../../infrastructure/ble/real/RealTelemetryPoller';
 import { TelemetryBlockRepository } from '../../infrastructure/database/product/repositories/TelemetryBlockRepository';
-import { RealLiveSessionController } from '../../application/live/RealLiveSessionController';
+import { LiveSessionCoordinator } from '../../application/live/LiveSessionCoordinator';
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
+import { BleRawTransport } from '../../infrastructure/ble/real/BleRawTransport';
+import { ReplayRawTransport } from '../../infrastructure/obd-replay/ReplayRawTransport';
+import { ObdCommandProcessor } from '../../infrastructure/ble/real/ObdCommandProcessor';
+import { ObdSessionLease } from '../../application/live/ports/ObdCommandExecutor';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -32,17 +34,16 @@ export default function LiveSessionScreen() {
   const { vehicle, loading: vehicleLoading } = useVehicle(vehicleId);
 
   const [secondsElapsed, setSecondsElapsed] = useState(0);
-  const [dataPoints, setDataPoints] = useState<number[]>([]); // For the graph
+  const [dataPoints, setDataPoints] = useState<number[]>([]); 
 
   const useGeneric = AppConfig.GENERIC_ADVISORY_PROFILES_ENABLED;
 
-  // Usamos 1500ms como expected poll interval para evitar falsos STALE cuando el poller interroga muchos PIDs (ciclos de >1s)
   const rpmTracker = useSignalTracker('ENGINE_RPM', useGeneric ? DEMO_PROFILES.ENGINE_RPM : { ...DEMO_PROFILES.ENGINE_RPM, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
   const speedTracker = useSignalTracker('VEHICLE_SPEED', useGeneric ? DEMO_PROFILES.VEHICLE_SPEED : { ...DEMO_PROFILES.VEHICLE_SPEED, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
   const coolantTracker = useSignalTracker('ENGINE_COOLANT', useGeneric ? DEMO_PROFILES.ENGINE_COOLANT : { ...DEMO_PROFILES.ENGINE_COOLANT, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
   const voltageTracker = useSignalTracker('CONTROL_VOLTAGE', useGeneric ? DEMO_PROFILES.CONTROL_VOLTAGE : { ...DEMO_PROFILES.CONTROL_VOLTAGE, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
 
-  const [sessionController, setSessionController] = useState<RealLiveSessionController | null>(null);
+  const [sessionCoordinator, setSessionCoordinator] = useState<LiveSessionCoordinator | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
@@ -50,6 +51,7 @@ export default function LiveSessionScreen() {
   const { context: localContext } = useLocalContext();
 
   const isStopping = React.useRef(false);
+  const coordinatorStarted = React.useRef(false);
 
   useEffect(() => {
     if (initialAdapterVoltage && voltageTracker.value === null) {
@@ -77,7 +79,6 @@ export default function LiveSessionScreen() {
           }
         }
 
-        // Start the foreground service after permissions are handled
         try {
           ReactNativeForegroundService.start({
             id: 1234,
@@ -102,8 +103,6 @@ export default function LiveSessionScreen() {
       }
     };
   }, []);
-
-
 
   // Timer
   useEffect(() => {
@@ -147,106 +146,105 @@ export default function LiveSessionScreen() {
     const voltagePrev = typeof voltageTracker.value === 'number' ? voltageTracker.value : 14.1;
     const drift = (Math.random() - 0.5) * 0.05;
 
-    // Virtual is always running
     const virtualRpmCtx = { value: 800, quality: 'VALID' as any, observedAt: Date.now() };
     voltageTracker.update(Math.max(13.8, Math.min(14.4, voltagePrev + drift)), 'VALID', { rpm: virtualRpmCtx });
     }, 500);
     return () => clearInterval(simulator);
   }, [adapterMode, dataPoints]);
 
-  // Real Poller
+  // Real or Replay Coordinator
   useEffect(() => {
-    if (adapterMode !== 'REAL_BLE' || !localContext || !productDb) return;
+    if ((adapterMode !== 'REAL_BLE' && adapterMode !== 'REPLAY_WS') || !localContext || !productDb) return;
+    if (coordinatorStarted.current) return;
+    coordinatorStarted.current = true;
 
-    let controller = liveSessionRegistry.getController(sessionId);
-    if (!controller) {
+    let coordinator = liveSessionRegistry.getController(sessionId) as LiveSessionCoordinator;
+    if (!coordinator) {
       const sessionRepo = new LiveSessionRepository(productDb);
       const telemetryRepo = new TelemetryBlockRepository(productDb);
-      controller = new RealLiveSessionController(
+      coordinator = new LiveSessionCoordinator(
         sessionRepo,
         telemetryRepo,
         localContext.defaultWorkspaceId,
         sessionId,
-        connectionHandleId,
         supportedPids || []
       );
-      liveSessionRegistry.registerController(sessionId, controller);
+      liveSessionRegistry.registerController(sessionId, coordinator);
     }
 
-    controller.start((result) => {
-      if (result.status === 'NO_DATA' || result.status === 'TIMEOUT' || result.status === 'INVALID_RESPONSE' || result.status === 'ELM_ERROR') {
-         // handle unavailable/degraded in UI by updating trackers with null and appropriate quality
-         // Here we just let the useSignalTracker handle STALE over time.
-         return;
-      }
+    setSessionCoordinator(coordinator);
 
-      const reading = result.status === 'SUCCESS_DECODED' ? result.decodedValues[0] : null;
-      if (reading && reading.value !== null) {
-        const speedCtx = speedTracker.getContextSnapshot();
-        const rpmCtx = rpmTracker.getContextSnapshot();
+    const setupLeaseAndStart = async () => {
+      try {
+        let lease: ObdSessionLease;
 
-        if (reading.type === 'RPM') {
-          setDataPoints(prev => {
-            const newPoints = [...prev, reading.value as number];
-            if (newPoints.length > 20) newPoints.shift();
-            return newPoints;
-          });
-          rpmTracker.update(reading.value as number, 'VALID', { speed: speedCtx });
+        if (adapterMode === 'REAL_BLE') {
+          const conn = activeBleController.getConnection(connectionHandleId);
+          if (!conn) throw new Error('CONNECTION_LOST');
+          
+          const transport = new BleRawTransport(conn);
+          const executor = new ObdCommandProcessor(transport);
+
+          lease = {
+            executor,
+            sourceType: 'REAL_BLE',
+            release: async () => {
+              transport.disconnect();
+              activeBleController.releaseConnection();
+            }
+          };
+        } else {
+          // REPLAY_WS
+          const transport = new ReplayRawTransport(replayUrl);
+          await transport.connect();
+          const executor = new ObdCommandProcessor(transport);
+
+          lease = {
+            executor,
+            sourceType: 'LAPTOP_REPLAY',
+            release: async () => {
+              transport.disconnect();
+            }
+          };
         }
-        if (reading.type === 'SPEED') speedTracker.update(reading.value as number, 'VALID');
-        if (reading.type === 'COOLANT') coolantTracker.update(reading.value as number, 'VALID');
-        if (reading.type === 'VOLTAGE') voltageTracker.update(reading.value as number, 'VALID', { rpm: rpmCtx });
+
+        await coordinator.start(
+          lease,
+          (result) => {
+            if (result.status === 'NO_DATA' || result.status === 'TIMEOUT' || result.status === 'INVALID_RESPONSE' || result.status === 'ELM_ERROR') {
+               return;
+            }
+
+            const reading = result.status === 'SUCCESS_DECODED' ? result.decodedValues[0] : null;
+            if (reading && reading.value !== null) {
+              const speedCtx = speedTracker.getContextSnapshot();
+              const rpmCtx = rpmTracker.getContextSnapshot();
+
+              if (reading.type === 'RPM') {
+                setDataPoints(prev => {
+                  const newPoints = [...prev, reading.value as number];
+                  if (newPoints.length > 20) newPoints.shift();
+                  return newPoints;
+                });
+                rpmTracker.update(reading.value as number, 'VALID', { speed: speedCtx });
+              }
+              if (reading.type === 'SPEED') speedTracker.update(reading.value as number, 'VALID');
+              if (reading.type === 'COOLANT') coolantTracker.update(reading.value as number, 'VALID');
+              if (reading.type === 'VOLTAGE') voltageTracker.update(reading.value as number, 'VALID', { rpm: rpmCtx });
+            }
+          },
+          (err) => {
+            setSessionError(err);
+          }
+        );
+      } catch (err: any) {
+        setSessionError(err.message || 'Failed to start session');
       }
-    }, (error) => {
-      setSessionError(error);
-    });
-
-    setSessionController(controller);
-
-    return () => {
-      // Don't kill it on unmount because we want it stable.
-      // We will only cleanup when stop is pressed.
     };
-  }, [adapterMode, connectionHandleId, supportedPids, localContext, productDb]);
 
-  // Laptop OBD replay over WebSocket.
-  useEffect(() => {
-    if (adapterMode !== 'REPLAY_WS' || !replayUrl) return;
+    setupLeaseAndStart();
 
-    const controller = new ReplayObdController(replayUrl);
-    const poller = new RealTelemetryPoller(controller, adapterMode === 'REPLAY_WS' ? ['010C', '010D', '0105', 'ATRV'] : (supportedPids || ['010C', '010D', '0105', '0142']), (result) => {
-      const reading = result.status === 'SUCCESS_DECODED' ? result.decodedValues[0] : null;
-      if (!reading) return;
-
-      const speedCtx = speedTracker.getContextSnapshot();
-      const rpmCtx = rpmTracker.getContextSnapshot();
-
-      if (reading.value !== null) {
-        if (reading.type === 'RPM') {
-          setDataPoints(prev => {
-            const newPoints = [...prev, reading.value as number];
-            if (newPoints.length > 20) newPoints.shift();
-            return newPoints;
-          });
-          rpmTracker.update(reading.value as number, 'VALID', { speed: speedCtx });
-        }
-        if (reading.type === 'SPEED') speedTracker.update(reading.value as number, 'VALID');
-        if (reading.type === 'COOLANT') coolantTracker.update(reading.value as number, 'VALID');
-        if (reading.type === 'VOLTAGE') voltageTracker.update(reading.value as number, 'VALID', { rpm: rpmCtx });
-      }
-    });
-
-    controller.connect()
-      .then(() => poller.start(300))
-      .catch((error) => {
-        console.error('[OBD Replay] Connection failed', error);
-      });
-
-    return () => {
-      poller.stop();
-      controller.disconnect();
-    };
-  }, [adapterMode, replayUrl, supportedPids]);
+  }, [adapterMode, connectionHandleId, supportedPids, replayUrl, localContext, productDb]);
 
   const formatTime = (totalSeconds: number) => {
     const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
@@ -255,11 +253,11 @@ export default function LiveSessionScreen() {
   };
 
   const handleStop = async () => {
-    if (isStopping.current) return; // Prevent double tap
+    if (isStopping.current) return;
     isStopping.current = true;
 
-    if (sessionController) {
-      await sessionController.stopSession();
+    if (sessionCoordinator) {
+      await sessionCoordinator.stopSession();
       liveSessionRegistry.unregisterController(sessionId);
     } else {
       if (typeof activeBleController !== 'undefined') {
@@ -271,7 +269,7 @@ export default function LiveSessionScreen() {
       vehicleId,
       sessionId,
       duration: secondsElapsed,
-      isVirtual: adapterMode !== 'REAL_BLE'
+      isVirtual: adapterMode !== 'REAL_BLE' && adapterMode !== 'REPLAY_WS'
     });
   };
 
@@ -298,7 +296,7 @@ export default function LiveSessionScreen() {
           <Text style={styles.timerText}>{formatTime(secondsElapsed)}</Text>
         </View>
 
-        {adapterMode === 'REAL_BLE' && (
+        {(adapterMode === 'REAL_BLE' || adapterMode === 'REPLAY_WS') && (
           <TouchableOpacity style={styles.diagButton} onPress={() => setShowDiagnostics(true)}>
             <Text style={styles.diagButtonText}>Logs</Text>
           </TouchableOpacity>
@@ -312,8 +310,10 @@ export default function LiveSessionScreen() {
           </Text>
         </View>
       ) : adapterMode === 'REPLAY_WS' ? (
-        <View style={[styles.badgeContainer, { backgroundColor: '#60a5fa' }]}>
-          <Text style={styles.badgeText}>LAPTOP · OBD RAW REPLAY</Text>
+        <View style={[styles.badgeContainer, { backgroundColor: sessionError ? '#ef4444' : '#60a5fa' }]}>
+          <Text style={styles.badgeText}>
+            {sessionError ? `RECORDING FAILED: ${sessionError}` : 'LAPTOP · OBD RAW REPLAY'}
+          </Text>
         </View>
       ) : (
         <View style={styles.badgeContainer}>
@@ -322,7 +322,6 @@ export default function LiveSessionScreen() {
       )}
 
       <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 100 }}>
-
         <View style={styles.grid}>
           <LiveMetricCard
             label="Engine RPM"
@@ -395,7 +394,6 @@ export default function LiveSessionScreen() {
             </View>
           )}
         </View>
-
       </ScrollView>
 
       <View style={styles.footer}>
