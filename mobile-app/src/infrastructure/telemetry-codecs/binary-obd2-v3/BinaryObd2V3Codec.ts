@@ -33,11 +33,24 @@ export class BinaryObd2V3Codec {
   }
 
   private encodeString(str: string): Uint8Array {
-    return new TextEncoder().encode(str);
+    const utf8 = unescape(encodeURIComponent(str));
+    const arr = new Uint8Array(utf8.length);
+    for (let i = 0; i < utf8.length; i++) {
+      arr[i] = utf8.charCodeAt(i);
+    }
+    return arr;
   }
 
   private decodeString(bytes: Uint8Array): string {
-    return new TextDecoder().decode(bytes);
+    let str = '';
+    for (let i = 0; i < bytes.length; i++) {
+      str += String.fromCharCode(bytes[i]);
+    }
+    try {
+      return decodeURIComponent(escape(str));
+    } catch(e) {
+      return str;
+    }
   }
 
   encode(block: UnencodedTelemetryBlock): EncodedTelemetryBlock {
