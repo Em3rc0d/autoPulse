@@ -1,17 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Modal, PermissionsAndroid, Platform } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, PermissionsAndroid, Platform, SafeAreaView } from 'react-native';
 import ReactNativeForegroundService from '@supersami/rn-foreground-service';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { LineChart } from 'react-native-chart-kit';
-import { Dimensions } from 'react-native';
 import { useVehicle } from '../../infrastructure/hooks/useVehicle';
 import { useLocalContext } from '../../infrastructure/hooks/useLocalContext';
 import { useProductDb } from '../../infrastructure/hooks/useProductDb';
 import { LiveMetricCard } from './components/LiveMetricCard';
+import { LiveHistoryChart, DataPoint } from './components/LiveHistoryChart';
+import { MetricDetailSheet } from './components/MetricDetailSheet';
 import { DEMO_PROFILES } from '../../domain/telemetry/SignalProfiles';
 import { liveSessionRegistry } from '../../application/live/LiveSessionRegistry';
-import { useSignalTracker } from './components/useSignalTracker';
+import { useLiveSignalTracking } from '../../infrastructure/hooks/useLiveSignalTracking';
+import { DynamicLiveMetricCard, DynamicLiveMetricCardRef, formatSignalLabel } from './components/DynamicLiveMetricCard';
 import { AppConfig } from '../../application/config';
 import { DiagnosticsLogScreen } from './DiagnosticsLogScreen';
 import { TelemetryBlockRepository } from '../../infrastructure/database/product/repositories/TelemetryBlockRepository';
@@ -22,85 +23,100 @@ import { BleRawTransport } from '../../infrastructure/ble/real/BleRawTransport';
 import { ReplayRawTransport } from '../../infrastructure/obd-replay/ReplayRawTransport';
 import { ObdCommandProcessor } from '../../infrastructure/ble/real/ObdCommandProcessor';
 import { ObdSessionLease } from '../../application/live/ports/ObdCommandExecutor';
-
-const screenWidth = Dimensions.get('window').width;
+import { obdTransportRegistry } from '../../application/live/ObdTransportRegistry';
 
 export default function LiveSessionScreen() {
   useKeepAwake();
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
-  const { vehicleId, sessionId, adapterMode, connectionHandleId, supportedPids, initialAdapterVoltage, replayUrl } = route.params || {};
+  const { vehicleId, sessionId, adapterMode, connectionHandleId, resolvedPollingSet, initialAdapterVoltage, replayUrl } = route.params || {};
 
-  const { vehicle, loading: vehicleLoading } = useVehicle(vehicleId);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Capture unhandled promise rejections that bubble up in this screen's lifecycle
+    const rejectionTracker = (event: any) => {
+      console.error('CAPTURED UNHANDLED REJECTION:', event);
+      if (event && event.reason) {
+         setSessionError(`Unhandled Rejection:\nMessage: ${event.reason.message || event.reason}\nStack: ${event.reason.stack || 'No stack'}`);
+      }
+    };
+    
+    if (typeof global !== 'undefined' && (global as any).onunhandledrejection !== undefined) {
+      const original = (global as any).onunhandledrejection;
+      (global as any).onunhandledrejection = (err: any) => {
+        rejectionTracker({ reason: err });
+        if (original) original(err);
+      };
+      return () => { (global as any).onunhandledrejection = original; };
+    }
+  }, []);
+
+  const { vehicle } = useVehicle(vehicleId);
 
   const [secondsElapsed, setSecondsElapsed] = useState(0);
-  const [dataPoints, setDataPoints] = useState<number[]>([]); 
 
-  const useGeneric = AppConfig.GENERIC_ADVISORY_PROFILES_ENABLED;
+  const [histories, setHistories] = useState<Record<string, DataPoint[]>>({});
+  const [selectedMetricId, setSelectedMetricId] = useState<string>('ENGINE_RPM');
+  const [detailVisible, setDetailVisible] = useState(false);
 
-  const rpmTracker = useSignalTracker('ENGINE_RPM', useGeneric ? DEMO_PROFILES.ENGINE_RPM : { ...DEMO_PROFILES.ENGINE_RPM, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
-  const speedTracker = useSignalTracker('VEHICLE_SPEED', useGeneric ? DEMO_PROFILES.VEHICLE_SPEED : { ...DEMO_PROFILES.VEHICLE_SPEED, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
-  const coolantTracker = useSignalTracker('ENGINE_COOLANT', useGeneric ? DEMO_PROFILES.ENGINE_COOLANT : { ...DEMO_PROFILES.ENGINE_COOLANT, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
-  const voltageTracker = useSignalTracker('CONTROL_VOLTAGE', useGeneric ? DEMO_PROFILES.CONTROL_VOLTAGE : { ...DEMO_PROFILES.CONTROL_VOLTAGE, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
+  const { signals } = useLiveSignalTracking(sessionId);
+  const cardsRef = useRef<Record<string, DynamicLiveMetricCardRef>>({});
 
   const [sessionCoordinator, setSessionCoordinator] = useState<LiveSessionCoordinator | null>(null);
-  const [sessionError, setSessionError] = useState<string | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   const productDb = useProductDb();
   const { context: localContext } = useLocalContext();
 
-  const isStopping = React.useRef(false);
-  const coordinatorStarted = React.useRef(false);
+  const isStopping = useRef(false);
+  const coordinatorStarted = useRef(false);
 
   useEffect(() => {
-    if (initialAdapterVoltage && voltageTracker.value === null) {
+    if (initialAdapterVoltage && cardsRef.current['ADAPTER_VOLTAGE']) {
       const match = String(initialAdapterVoltage).match(/(\d+(?:\.\d+)?)/);
-      voltageTracker.update(match ? Number(match[1]) : null, match ? 'VALID' : 'UNAVAILABLE');
+      cardsRef.current['ADAPTER_VOLTAGE'].update(match ? Number(match[1]) : null, match ? 'VALID' : 'UNAVAILABLE');
     }
   }, [initialAdapterVoltage]);
+
+  useEffect(() => {
+    if (!productDb || !localContext || !sessionId) return;
+    const sessionRepo = new LiveSessionRepository(productDb);
+    sessionRepo.getSessionById(localContext.defaultWorkspaceId, sessionId).then(session => {
+       console.log(`[LIVE SESSION] sessionId=${sessionId} monitoringProfile=${session?.monitoringProfile} adapterMode=${adapterMode}`);
+    }).catch(console.error);
+  }, [productDb, localContext, sessionId, adapterMode]);
 
   useEffect(() => {
     async function requestPermissions() {
       if (Platform.OS === 'android') {
         const permsToRequest = [];
-        if (Platform.Version >= 33) {
-          permsToRequest.push(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
-        }
-        if (Platform.Version >= 31) {
-          permsToRequest.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
-        }
+        if (Platform.Version >= 33) permsToRequest.push(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+        if (Platform.Version >= 31) permsToRequest.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
 
         if (permsToRequest.length > 0) {
-          try {
-            await PermissionsAndroid.requestMultiple(permsToRequest);
-          } catch (err) {
-            console.warn('Failed to request permissions', err);
-          }
+          try { await PermissionsAndroid.requestMultiple(permsToRequest); } catch (err) {}
         }
-
         try {
           ReactNativeForegroundService.start({
             id: 1234,
             title: "AutoPulse",
-            message: "Conexión OBD2 activa leyendo telemetría...",
+            message: "Conexión activa",
             icon: "ic_launcher",
             button: false,
             button2: false,
             setOnlyAlertOnce: "true",
             color: "#000000",
           });
-        } catch (err) {
-          console.warn('Failed to start foreground service', err);
-        }
+        } catch (err) {}
       }
     }
-    requestPermissions();
+    requestPermissions().catch(err => {
+      console.error('Unhandled Rejection in requestPermissions:', err);
+    });
 
     return () => {
-      if (Platform.OS === 'android') {
-        ReactNativeForegroundService.stopAll();
-      }
+      if (Platform.OS === 'android') ReactNativeForegroundService.stopAll();
     };
   }, []);
 
@@ -112,45 +128,62 @@ export default function LiveSessionScreen() {
     return () => clearInterval(timer);
   }, []);
 
+  const addPointToHistory = (signalId: string, value: number) => {
+    const now = Date.now();
+    setHistories(prev => {
+      const arr = prev[signalId] || [];
+      const windowStart = now - 35000;
+      return { ...prev, [signalId]: [...arr.filter(p => p.timestamp >= windowStart), { timestamp: now, value }] };
+    });
+  };
+
+  // Create stable configuration keys
+  const stableSignalKey = [...new Set(signals.map(s => s.signalDefinitionId))].sort().join('|');
+
+  const signalsRef = useRef(signals);
+  useEffect(() => {
+    signalsRef.current = signals;
+  }, [signals]);
+
+  const historiesRef = useRef(histories);
+  useEffect(() => {
+    historiesRef.current = histories;
+  }, [histories]);
+
   // Virtual Simulator
   useEffect(() => {
     if (adapterMode !== 'VIRTUAL_PREVIEW') return;
+    if (!stableSignalKey) return; // Wait for signals
 
-    if (dataPoints.length === 0) {
-       setDataPoints([800]);
-    }
+    console.log(`[VIRTUAL INIT] Starting simulator for signals: ${stableSignalKey}`);
 
     const simulator = setInterval(() => {
-      setDataPoints(prev => {
-        const lastVal = prev.length > 0 ? prev[prev.length - 1] : 800;
-        const drift = (Math.random() - 0.45) * 80;
-        const nextVal = Math.max(800, Math.min(6500, lastVal + drift));
-        const newPoints = [...prev, nextVal];
-        if (newPoints.length > 20) newPoints.shift();
-      const speedCtx = { value: speedTracker.value, quality: speedTracker.advisoryState.quality, observedAt: speedTracker.lastUpdateAt };
-      const rpmCtx = { value: rpmTracker.value, quality: rpmTracker.advisoryState.quality, observedAt: rpmTracker.lastUpdateAt };
+      signalsRef.current.forEach(s => {
+        const id = s.signalDefinitionId;
+        const lastArr = historiesRef.current[id] || [];
+        const lastVal = lastArr.length > 0 ? lastArr[lastArr.length - 1].value : 0;
+        let nextVal = lastVal;
+        
+        if (id === 'ENGINE_RPM') nextVal = Math.max(800, Math.min(6500, (lastVal || 800) + (Math.random() - 0.45) * 80));
+        else if (id === 'VEHICLE_SPEED') nextVal = Math.max(0, (lastVal || 0) + (Math.random() - 0.5));
+        else if (id === 'ENGINE_COOLANT') nextVal = Math.min(105, (lastVal || 90) + (Math.random() * 0.05));
+        else if (id === 'CONTROL_MODULE_VOLTAGE' || id === 'ADAPTER_VOLTAGE') nextVal = Math.max(13.8, Math.min(14.4, (lastVal || 14.1) + (Math.random() - 0.5) * 0.05));
+        else nextVal = (lastVal || 10) + Math.random() * 2 - 1; 
 
-      rpmTracker.update(nextVal, 'VALID', { speed: speedCtx });
-      return newPoints;
-    });
-
-    const numPrev = typeof speedTracker.value === 'number' ? speedTracker.value : 0;
-    const lastRpm = dataPoints.length > 0 ? dataPoints[dataPoints.length - 1] : 800;
-    const targetSpeed = (lastRpm / 6500) * 120;
-    const diff = targetSpeed - numPrev;
-    speedTracker.update(Math.max(0, numPrev + (diff * 0.1) + (Math.random() - 0.5)), 'VALID');
-
-    const coolantPrev = typeof coolantTracker.value === 'number' ? coolantTracker.value : 90;
-    coolantTracker.update(Math.min(105, coolantPrev + (Math.random() * 0.05)), 'VALID');
-
-    const voltagePrev = typeof voltageTracker.value === 'number' ? voltageTracker.value : 14.1;
-    const drift = (Math.random() - 0.5) * 0.05;
-
-    const virtualRpmCtx = { value: 800, quality: 'VALID' as any, observedAt: Date.now() };
-    voltageTracker.update(Math.max(13.8, Math.min(14.4, voltagePrev + drift)), 'VALID', { rpm: virtualRpmCtx });
+        // Less noisy dispatch log
+        // console.log(`[LIVE DISPATCH] ${id} → value = ${nextVal}`);
+        addPointToHistory(id, nextVal);
+        if (cardsRef.current[id]) {
+           cardsRef.current[id].update(nextVal, 'VALID');
+        }
+      });
     }, 500);
-    return () => clearInterval(simulator);
-  }, [adapterMode, dataPoints]);
+
+    return () => {
+      console.log(`[VIRTUAL CLEANUP] Stopping simulator for signals: ${stableSignalKey}`);
+      clearInterval(simulator);
+    };
+  }, [sessionId, adapterMode, stableSignalKey]);
 
   // Real or Replay Coordinator
   useEffect(() => {
@@ -167,38 +200,39 @@ export default function LiveSessionScreen() {
         telemetryRepo,
         localContext.defaultWorkspaceId,
         sessionId,
-        supportedPids || []
+        resolvedPollingSet || []
       );
       liveSessionRegistry.registerController(sessionId, coordinator);
     }
-
     setSessionCoordinator(coordinator);
 
     const setupLeaseAndStart = async () => {
       try {
         let lease: ObdSessionLease;
-
         if (adapterMode === 'REAL_BLE') {
           const conn = activeBleController.getConnection(connectionHandleId);
           if (!conn) throw new Error('CONNECTION_LOST');
           
-          const transport = new BleRawTransport(conn);
-          const executor = new ObdCommandProcessor(transport);
+          const executor = obdTransportRegistry.take(connectionHandleId);
+          if (!executor) {
+             const sessionRepo = new LiveSessionRepository(productDb);
+             await sessionRepo.failSession(localContext.defaultWorkspaceId, sessionId, 'HANDOFF_FAILED');
+             activeBleController.releaseConnection();
+             throw new Error('CONNECTION_LOST: Transport handoff failed.');
+          }
 
           lease = {
             executor,
             sourceType: 'REAL_BLE',
             release: async () => {
-              transport.disconnect();
+              executor.disconnect();
               activeBleController.releaseConnection();
             }
           };
         } else {
-          // REPLAY_WS
           const transport = new ReplayRawTransport(replayUrl);
           await transport.connect();
           const executor = new ObdCommandProcessor(transport);
-
           lease = {
             executor,
             sourceType: 'LAPTOP_REPLAY',
@@ -211,40 +245,35 @@ export default function LiveSessionScreen() {
         await coordinator.start(
           lease,
           (result) => {
-            if (result.status === 'NO_DATA' || result.status === 'TIMEOUT' || result.status === 'INVALID_RESPONSE' || result.status === 'ELM_ERROR') {
-               return;
-            }
-
+            if (result.status === 'NO_DATA' || result.status === 'TIMEOUT' || result.status === 'INVALID_RESPONSE' || result.status === 'ELM_ERROR') return;
             const reading = result.status === 'SUCCESS_DECODED' ? result.decodedValues[0] : null;
             if (reading && reading.value !== null) {
-              const speedCtx = speedTracker.getContextSnapshot();
-              const rpmCtx = rpmTracker.getContextSnapshot();
+              const speedCtx = cardsRef.current['VEHICLE_SPEED']?.getContextSnapshot();
+              const rpmCtx = cardsRef.current['ENGINE_RPM']?.getContextSnapshot();
+              
+              const type = reading.type;
+              addPointToHistory(type, reading.value as number);
+              
+              let contextObj: any = undefined;
+              if (type === 'ENGINE_RPM') contextObj = { speed: speedCtx };
+              else if (type === 'CONTROL_MODULE_VOLTAGE') contextObj = { rpm: rpmCtx };
 
-              if (reading.type === 'RPM') {
-                setDataPoints(prev => {
-                  const newPoints = [...prev, reading.value as number];
-                  if (newPoints.length > 20) newPoints.shift();
-                  return newPoints;
-                });
-                rpmTracker.update(reading.value as number, 'VALID', { speed: speedCtx });
+              if (cardsRef.current[type]) {
+                cardsRef.current[type].update(reading.value as number, 'VALID', contextObj);
               }
-              if (reading.type === 'SPEED') speedTracker.update(reading.value as number, 'VALID');
-              if (reading.type === 'COOLANT') coolantTracker.update(reading.value as number, 'VALID');
-              if (reading.type === 'VOLTAGE') voltageTracker.update(reading.value as number, 'VALID', { rpm: rpmCtx });
             }
           },
-          (err) => {
-            setSessionError(err);
-          }
+          (err) => { setSessionError(err); }
         );
       } catch (err: any) {
         setSessionError(err.message || 'Failed to start session');
       }
     };
-
-    setupLeaseAndStart();
-
-  }, [adapterMode, connectionHandleId, supportedPids, replayUrl, localContext, productDb]);
+    setupLeaseAndStart().catch(err => {
+      console.error('Unhandled Rejection in setupLeaseAndStart:', err);
+      setSessionError('Failed to start session: ' + (err.message || 'Unknown error'));
+    });
+  }, [adapterMode, connectionHandleId, resolvedPollingSet, replayUrl, localContext, productDb]);
 
   const formatTime = (totalSeconds: number) => {
     const m = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
@@ -253,259 +282,178 @@ export default function LiveSessionScreen() {
   };
 
   const handleStop = async () => {
-    if (isStopping.current) return;
-    isStopping.current = true;
+    try {
+      if (isStopping.current) return;
+      isStopping.current = true;
 
-    if (sessionCoordinator) {
-      await sessionCoordinator.stopSession();
-      liveSessionRegistry.unregisterController(sessionId);
-    } else {
-      if (typeof activeBleController !== 'undefined') {
-        activeBleController.releaseConnection();
+      if (sessionCoordinator) {
+        await sessionCoordinator.stopSession();
+        liveSessionRegistry.unregisterController(sessionId);
+      } else {
+        // Virtual mode: no coordinator, but we must finalize the session in DB
+        if (productDb && localContext) {
+          const sessionRepo = new LiveSessionRepository(productDb);
+          await sessionRepo.completeSession(localContext.defaultWorkspaceId, sessionId);
+        }
+        
+        if (typeof activeBleController !== 'undefined') {
+          activeBleController.releaseConnection();
+        }
       }
-    }
 
-    navigation.navigate('SessionSummary', {
-      vehicleId,
-      sessionId,
-      duration: secondsElapsed,
-      isVirtual: adapterMode !== 'REAL_BLE' && adapterMode !== 'REPLAY_WS'
-    });
+      navigation.replace('SessionSummary', {
+        vehicleId,
+        sessionId,
+        duration: secondsElapsed,
+        isVirtual: adapterMode !== 'REAL_BLE' && adapterMode !== 'REPLAY_WS'
+      });
+    } catch (err: any) {
+      console.error('Unhandled Rejection in handleStop:', err);
+      setSessionError('Stop failed: ' + (err.message || 'Unknown error'));
+      isStopping.current = false;
+    }
   };
 
+  const activeHistory = histories[selectedMetricId] || [];
+
+  const activeSignal = signals.find(s => s.signalDefinitionId === selectedMetricId);
+  const activeLabel = activeSignal?.signalDefinitionId ? formatSignalLabel(activeSignal.signalDefinitionId) : 'UNKNOWN';
+  const activeUnit = activeSignal?.effectiveUnit || '';
+  
+  const activeRef = cardsRef.current[selectedMetricId];
+  const activeState = activeRef ? activeRef.getContextSnapshot() : { quality: 'UNAVAILABLE' };
+  const activeValue = activeRef ? activeRef.getContextSnapshot().value : null;
+  const activeColor = activeRef?.getContextSnapshot().quality === 'INVALID' ? '#ef4444' : '#4ade80';
+
+  // Voltage naming logic
+  const isEcuVoltage = resolvedPollingSet?.includes('0142');
+  const voltageOriginLabel = isEcuVoltage ? 'ECU' : 'Adapter';
+  const voltageCardLabel = isEcuVoltage ? 'ECU VOLT' : 'VOLTAGE';
+
+  const originText = adapterMode === 'REAL_BLE' ? 'ECU' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual';
+
+  // Instance tracking
+  const instanceId = useRef(Math.floor(Math.random() * 10000)).current;
+
+  useEffect(() => {
+    console.log(`[LIVE INSTANCE] instance=${instanceId} sessionId=${sessionId} MOUNTED`);
+    return () => console.log(`[LIVE INSTANCE] instance=${instanceId} UNMOUNTED`);
+  }, [instanceId, sessionId]);
+
+  // Log exactly what we are about to render
+  console.log(`[LIVE CARD MODEL] instance=${instanceId} sessionId=${sessionId} signals=${signals.map(s => s.signalDefinitionId).join(', ')}`);
+
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Live Telemetry</Text>
-          {vehicleLoading ? (
-            <Text style={styles.subtitle}>Loading vehicle...</Text>
-          ) : vehicle ? (
-            <View>
-              <Text style={styles.vehicleAlias}>{vehicle.alias}</Text>
-              <Text style={styles.subtitle}>{vehicle.make} {vehicle.model} · {vehicle.year}</Text>
-              <Text style={styles.technicalText}>
-                {adapterMode === 'REAL_BLE' ? `ECU Direct · Session ${sessionId?.substring(0, 8)}...` : adapterMode === 'REPLAY_WS' ? `Laptop replay · Session ${sessionId?.substring(0, 8)}...` : `Virtual preview · Session ${sessionId?.substring(0, 8)}...`}
-              </Text>
-            </View>
-          ) : (
-            <Text style={styles.subtitle}>Vehicle unavailable</Text>
-          )}
+    <SafeAreaView style={styles.container}>
+      <View style={styles.headerCompact}>
+        <View style={styles.headerLeft}>
+          <View style={[styles.liveDot, { backgroundColor: sessionError ? '#ef4444' : '#4ade80' }]} />
+          <Text style={styles.headerTitle}>LIVE</Text>
+          <Text style={styles.headerSeparator}>·</Text>
+          <Text style={styles.headerAlias}>{vehicle?.alias || 'Unknown'}</Text>
         </View>
-        <View style={styles.timerContainer}>
+        <View style={styles.headerRight}>
           <Text style={styles.timerText}>{formatTime(secondsElapsed)}</Text>
-        </View>
-
-        {(adapterMode === 'REAL_BLE' || adapterMode === 'REPLAY_WS') && (
-          <TouchableOpacity style={styles.diagButton} onPress={() => setShowDiagnostics(true)}>
-            <Text style={styles.diagButtonText}>Logs</Text>
+          <TouchableOpacity style={styles.stopIconBtn} onPress={handleStop}>
+            <View style={styles.stopSquare} />
           </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.content}>
+        {sessionError && (
+          <View style={{ backgroundColor: '#fee2e2', padding: 12, borderRadius: 8, marginBottom: 16 }}>
+             <Text style={{ color: '#b91c1c', fontFamily: 'SpaceMono_400Regular', fontSize: 11 }}>{sessionError}</Text>
+          </View>
         )}
-      </View>
-
-      {adapterMode === 'REAL_BLE' ? (
-        <View style={[styles.badgeContainer, { backgroundColor: sessionError ? '#ef4444' : '#10b981' }]}>
-          <Text style={styles.badgeText}>
-            {sessionError ? `RECORDING FAILED: ${sessionError}` : 'LIVE · ECU DATA'}
-          </Text>
-        </View>
-      ) : adapterMode === 'REPLAY_WS' ? (
-        <View style={[styles.badgeContainer, { backgroundColor: sessionError ? '#ef4444' : '#60a5fa' }]}>
-          <Text style={styles.badgeText}>
-            {sessionError ? `RECORDING FAILED: ${sessionError}` : 'LAPTOP · OBD RAW REPLAY'}
-          </Text>
-        </View>
-      ) : (
-        <View style={styles.badgeContainer}>
-          <Text style={styles.badgeText}>VIRTUAL · SIMULATED DATA / DEVELOPMENT ONLY</Text>
-        </View>
-      )}
-
-      <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 100 }}>
         <View style={styles.grid}>
-          <LiveMetricCard
-            label="Engine RPM"
-            value={rpmTracker.value}
-            unit="rpm"
-            state={rpmTracker.advisoryState}
-            stats={rpmTracker.stats}
-            profile={DEMO_PROFILES.ENGINE_RPM}
-            origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'}
-            testID="live-metric-card-engine-rpm"
-          />
-          <LiveMetricCard
-            label="Vehicle Speed"
-            value={speedTracker.value}
-            unit="km/h"
-            state={speedTracker.advisoryState}
-            stats={speedTracker.stats}
-            profile={DEMO_PROFILES.VEHICLE_SPEED}
-            origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'}
-            testID="live-metric-card-vehicle-speed"
-          />
-          <LiveMetricCard
-            label="Engine Coolant"
-            value={coolantTracker.value}
-            unit="°C"
-            state={coolantTracker.advisoryState}
-            stats={coolantTracker.stats}
-            profile={DEMO_PROFILES.ENGINE_COOLANT}
-            origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'}
-            testID="live-metric-card-engine-coolant"
-          />
-          <LiveMetricCard
-            label="Control Voltage"
-            value={voltageTracker.value}
-            unit="V"
-            state={voltageTracker.advisoryState}
-            stats={voltageTracker.stats}
-            profile={DEMO_PROFILES.CONTROL_VOLTAGE}
-            origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'}
-            testID="live-metric-card-control-voltage"
-          />
-        </View>
-
-        <View style={styles.chartContainer}>
-          <Text style={styles.chartTitle}>RPM History</Text>
-          {dataPoints.length > 0 ? (
-            <LineChart
-              data={{
-                labels: [],
-                datasets: [{ data: dataPoints }]
+          {signals.map(s => (
+            <DynamicLiveMetricCard
+              key={s.signalDefinitionId}
+              signal={s}
+              isSelected={selectedMetricId === s.signalDefinitionId}
+              onSelect={setSelectedMetricId}
+              ref={(el) => {
+                if (el) cardsRef.current[s.signalDefinitionId] = el;
               }}
-              width={screenWidth - 48}
-              height={220}
-              chartConfig={{
-                backgroundColor: '#1f2937',
-                backgroundGradientFrom: '#1f2937',
-                backgroundGradientTo: '#1f2937',
-                decimalPlaces: 0,
-                color: (opacity = 1) => `rgba(74, 222, 128, ${opacity})`,
-                labelColor: (opacity = 1) => `rgba(255, 255, 255, ${opacity})`,
-                style: { borderRadius: 16 },
-                propsForDots: { r: '3', strokeWidth: '1', stroke: '#4ade80' }
-              }}
-              bezier
-              style={{ marginVertical: 8, borderRadius: 12 }}
             />
-          ) : (
-            <View style={{ height: 220, justifyContent: 'center', alignItems: 'center' }}>
-              <Text style={{ color: '#6b7280', fontFamily: 'Inter_500Medium' }}>Waiting for RPM data...</Text>
-            </View>
-          )}
+          ))}
         </View>
-      </ScrollView>
 
-      <View style={styles.footer}>
-        <TouchableOpacity style={styles.stopButton} onPress={handleStop}>
-          <Text style={styles.stopButtonText}>Stop Session</Text>
-        </TouchableOpacity>
+        <LiveHistoryChart
+          dataPoints={activeHistory}
+          metricLabel={activeLabel}
+          unit={activeUnit}
+          onPress={() => setDetailVisible(true)}
+          accentColor={activeColor}
+        />
       </View>
 
-      <Modal visible={showDiagnostics} animationType="slide" presentationStyle="pageSheet">
-        <DiagnosticsLogScreen onClose={() => setShowDiagnostics(false)} />
-      </Modal>
-    </View>
+      {detailVisible && (
+        <MetricDetailSheet
+          visible={detailVisible}
+          onClose={() => setDetailVisible(false)}
+          label={activeLabel}
+          value={activeValue}
+          unit={activeUnit}
+          state={activeState}
+          stats={activeRef ? activeRef.getStats() : {}}
+          profile={DEMO_PROFILES[selectedMetricId as keyof typeof DEMO_PROFILES] as any}
+          origin={originText}
+        />
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0e1417' },
-  header: {
+  headerCompact: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 24,
-    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
     backgroundColor: '#1a2227',
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a3439'
   },
-  title: { color: '#fff', fontSize: 20, fontFamily: 'Inter_600SemiBold', marginBottom: 8 },
-  vehicleAlias: {
-    color: '#fff',
-    fontSize: 16,
-    fontFamily: 'Inter_600SemiBold',
-  },
-  subtitle: { color: '#9ca3af', fontSize: 13, fontFamily: 'Inter_400Regular' },
-  technicalText: {
-    color: '#4b5563',
-    fontSize: 10,
-    fontFamily: 'SpaceMono_400Regular',
-    marginTop: 4,
-  },
-  timerContainer: {
-    backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ef4444',
-  },
-  timerText: { color: '#ef4444', fontFamily: 'SpaceMono_700Bold', fontSize: 16 },
-  diagButton: {
-    backgroundColor: '#374151',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-    marginLeft: 8,
-  },
-  diagButtonText: {
-    color: '#d1d5db',
-    fontSize: 12,
-    fontFamily: 'Inter_600SemiBold',
-  },
-  badgeContainer: {
-    backgroundColor: '#ca8a04',
-    paddingVertical: 4,
+  headerLeft: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  badgeText: {
-    color: '#000',
-    fontSize: 12,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: 1,
+  liveDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6
   },
-  content: { flex: 1, padding: 24 },
+  headerTitle: { color: '#fff', fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 1 },
+  headerSeparator: { color: '#6b7280', fontSize: 14, marginHorizontal: 8 },
+  headerAlias: { color: '#d1d5db', fontSize: 14, fontFamily: 'Inter_500Medium' },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timerText: { color: '#9ca3af', fontFamily: 'SpaceMono_400Regular', fontSize: 13, marginRight: 16 },
+  stopIconBtn: {
+    padding: 8,
+  },
+  stopSquare: {
+    width: 14,
+    height: 14,
+    backgroundColor: '#ef4444',
+    borderRadius: 2
+  },
+  content: { 
+    flex: 1, 
+    padding: 16,
+    flexDirection: 'column'
+  },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginBottom: 24,
-  },
-  card: {
-    width: '48%',
-    backgroundColor: '#1f2937',
-    padding: 16,
-    borderRadius: 12,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#374151',
-  },
-  cardLabel: { color: '#9ca3af', fontSize: 12, fontFamily: 'Inter_500Medium', marginBottom: 8 },
-  cardValue: { color: '#fff', fontSize: 24, fontFamily: 'SpaceMono_700Bold' },
-  originText: { color: '#6b7280', fontSize: 10, fontFamily: 'SpaceMono_400Regular', marginTop: 4 },
-  chartContainer: {
-    backgroundColor: '#1f2937',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#374151',
-  },
-  chartTitle: { color: '#d1d5db', fontSize: 14, fontFamily: 'Inter_600SemiBold', marginBottom: 16 },
-  footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 24,
-    backgroundColor: '#1a2227',
-    borderTopWidth: 1,
-    borderTopColor: '#2a3439',
-  },
-  stopButton: {
-    backgroundColor: '#ef4444',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  stopButtonText: { color: '#fff', fontSize: 16, fontFamily: 'Inter_600SemiBold' }
+  }
 });

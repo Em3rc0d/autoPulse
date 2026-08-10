@@ -45,36 +45,77 @@ export class ObdDecoder {
         }
         break;
 
-      case '0C': // RPM
-        if (bytes.length >= 2) {
-          const rpm = ((bytes[0] * 256) + bytes[1]) / 4;
-          return { type: 'RPM', value: rpm, unit: 'RPM' };
-        }
-        break;
-
-      case '0D': // Speed
+      case '04': // Engine Load
         if (bytes.length >= 1) {
-          return { type: 'SPEED', value: bytes[0], unit: 'km/h' };
-        }
-        break;
-
-      case '42': // Control Module Voltage
-        if (bytes.length >= 2) {
-          const voltage = ((bytes[0] * 256) + bytes[1]) / 1000;
-          return { type: 'VOLTAGE', value: voltage, unit: 'V' };
+          return { type: 'ENGINE_LOAD', value: (bytes[0] * 100) / 255, unit: '%' };
         }
         break;
 
       case '05': // Coolant
         if (bytes.length >= 1) {
-          return { type: 'COOLANT', value: bytes[0] - 40, unit: '°C' };
+          return { type: 'ENGINE_COOLANT', value: bytes[0] - 40, unit: '°C' };
+        }
+        break;
+
+      case '0B': // MAP
+        if (bytes.length >= 1) {
+          return { type: 'MAP', value: bytes[0], unit: 'kPa' };
+        }
+        break;
+
+      case '0C': // RPM
+        if (bytes.length >= 2) {
+          const rpm = ((bytes[0] * 256) + bytes[1]) / 4;
+          return { type: 'ENGINE_RPM', value: rpm, unit: 'RPM' };
+        }
+        break;
+
+      case '0D': // Speed
+        if (bytes.length >= 1) {
+          return { type: 'VEHICLE_SPEED', value: bytes[0], unit: 'km/h' };
+        }
+        break;
+
+      case '0E': // Timing Advance
+        if (bytes.length >= 1) {
+          return { type: 'TIMING_ADVANCE', value: (bytes[0] / 2) - 64, unit: 'deg' };
+        }
+        break;
+
+      case '0F': // Intake Air Temp
+        if (bytes.length >= 1) {
+          return { type: 'INTAKE_TEMP', value: bytes[0] - 40, unit: '°C' };
+        }
+        break;
+
+      case '10': // MAF
+        if (bytes.length >= 2) {
+          return { type: 'MAF', value: ((bytes[0] * 256) + bytes[1]) / 100, unit: 'g/s' };
+        }
+        break;
+
+      case '11': // Throttle Position
+        if (bytes.length >= 1) {
+          return { type: 'THROTTLE_POSITION', value: (bytes[0] * 100) / 255, unit: '%' };
+        }
+        break;
+
+      case '2F': // Fuel Level
+        if (bytes.length >= 1) {
+          return { type: 'FUEL_LEVEL', value: (bytes[0] * 100) / 255, unit: '%' };
         }
         break;
 
       case '42': // Control Module Voltage
         if (bytes.length >= 2) {
           const voltage = ((bytes[0] * 256) + bytes[1]) / 1000;
-          return { type: 'VOLTAGE', value: voltage, unit: 'V' };
+          return { type: 'CONTROL_MODULE_VOLTAGE', value: voltage, unit: 'V' };
+        }
+        break;
+
+      case '5C': // Engine Oil Temp
+        if (bytes.length >= 1) {
+          return { type: 'ENGINE_OIL_TEMP', value: bytes[0] - 40, unit: '°C' };
         }
         break;
     }

@@ -29,6 +29,20 @@
       "when": 1784820300000,
       "tag": "0003_add_evidence_origin",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1784820400000,
+      "tag": "0004_add_monitoring_profile",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1784820500000,
+      "tag": "0005_canonicalize_signal_keys",
+      "breakpoints": true
     }
   ]
 }

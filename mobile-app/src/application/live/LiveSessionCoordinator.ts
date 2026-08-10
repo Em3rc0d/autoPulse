@@ -36,7 +36,7 @@ export class LiveSessionCoordinator {
     private telemetryRepo: ITelemetryBlockRepository,
     private workspaceId: string,
     public sessionId: string,
-    private supportedPids: string[]
+    private resolvedPollingSet: string[]
   ) {}
 
   public async start(
@@ -64,7 +64,7 @@ export class LiveSessionCoordinator {
       (event) => this.handleCommitEvent(event, onRecordingError)
     );
 
-    this.poller = new RealTelemetryPoller(this.lease.executor, this.supportedPids, (result) => {
+    this.poller = new RealTelemetryPoller(this.lease.executor, this.resolvedPollingSet, (result) => {
       this.handleCommandResult(result, onUiUpdate);
     });
 

@@ -3,6 +3,7 @@ import { CommandRequest, CommandResult } from '../../../infrastructure/ble/real/
 export interface ObdCommandExecutor {
   isConnected: boolean;
   executeCommand(request: CommandRequest): Promise<CommandResult>;
+  disconnect(): void;
 }
 
 export interface ObdSessionLease {

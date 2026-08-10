@@ -4,7 +4,7 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useVehicle } from '../../infrastructure/hooks/useVehicle';
 import { useLocalContext } from '../../infrastructure/hooks/useLocalContext';
-import { useVehicleSessions } from '../../infrastructure/hooks/useVehicleSessions';
+import { useLatestSession } from '../../infrastructure/hooks/useSessions';
 
 export default function VehicleDetailScreen() {
   const route = useRoute<any>();
@@ -12,11 +12,16 @@ export default function VehicleDetailScreen() {
   const vehicleId = route.params?.vehicleId;
   const { vehicle, loading, error } = useVehicle(vehicleId);
   const { context } = useLocalContext();
-  const { sessions, loading: sessionsLoading } = useVehicleSessions(context?.defaultWorkspaceId, vehicleId);
+  const { latestSession, loading: sessionLoading } = useLatestSession({ workspaceId: context?.defaultWorkspaceId, vehicleId });
   const [isMenuVisible, setIsMenuVisible] = useState(false);
 
   const handleLiveSession = () => {
-    navigation.navigate('Live', { screen: 'ConnectObd', params: { vehicleId } });
+    console.log(`[LIVE DATA ENTRY] requestedProfile=GENERAL`);
+    navigation.navigate('Live', { screen: 'ConnectObd', params: { vehicleId, monitoringProfile: 'GENERAL' } });
+  };
+
+  const handleDrivingModes = () => {
+    navigation.navigate('Live', { screen: 'DriveModes', params: { vehicleId } });
   };
 
   const handleCapabilities = () => {
@@ -91,7 +96,7 @@ export default function VehicleDetailScreen() {
           </View>
         </View>
 
-        {/* Action Grid (2x2) */}
+        {/* Action Grid */}
         <View style={styles.actionGrid}>
           <View style={styles.actionRow}>
             <TouchableOpacity style={[styles.actionCard, styles.actionCardLive]} onPress={handleLiveSession}>
@@ -99,18 +104,26 @@ export default function VehicleDetailScreen() {
                 <Ionicons name="speedometer-outline" size={24} color="#FF6B00" />
               </View>
               <Text style={[styles.actionText, { color: '#FF6B00' }]}>LIVE DATA</Text>
-              <Text style={styles.actionSubText}>Connect an OBD2 adapter</Text>
+              <Text style={styles.actionSubText}>Classic OBD cockpit</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.actionCard} onPress={handleCapabilities}>
+            <TouchableOpacity style={[styles.actionCard, { borderColor: 'rgba(59, 130, 246, 0.5)', backgroundColor: 'rgba(59, 130, 246, 0.05)' }]} onPress={handleDrivingModes}>
               <View style={styles.cardHeader}>
-                <Ionicons name="build-outline" size={24} color="#3b82f6" />
+                <Ionicons name="car-sport-outline" size={24} color="#3b82f6" />
               </View>
-              <Text style={[styles.actionText, { color: '#3b82f6' }]}>CAPABILITIES</Text>
-              <Text style={styles.actionSubText}>Supported parameters</Text>
+              <Text style={[styles.actionText, { color: '#3b82f6' }]}>DRIVING MODES</Text>
+              <Text style={styles.actionSubText}>Select monitoring profiles</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.actionRow}>
+            <TouchableOpacity style={styles.actionCard} onPress={handleCapabilities}>
+              <View style={styles.cardHeader}>
+                <Ionicons name="build-outline" size={24} color="#888" />
+              </View>
+              <Text style={[styles.actionText, { color: '#888' }]}>DETECTED SIGNALS</Text>
+              <Text style={styles.actionSubText}>Discovered parameters</Text>
+            </TouchableOpacity>
+
             <View style={[styles.actionCard, styles.actionCardDisabled]}>
               <View style={styles.cardHeader}>
                 <Ionicons name="stats-chart-outline" size={24} color="#555" />
@@ -119,51 +132,23 @@ export default function VehicleDetailScreen() {
                 </View>
               </View>
               <Text style={[styles.actionText, { color: '#888' }]}>ANALYTICS</Text>
-              <Text style={[styles.actionSubText, { color: '#555' }]}>Available after recorded sessions</Text>
-            </View>
-            <View style={[styles.actionCard, styles.actionCardDisabled]}>
-              <View style={styles.cardHeader}>
-                <Ionicons name="document-text-outline" size={24} color="#555" />
-                <View style={styles.badgeCheck}>
-                  <Text style={styles.badgeText}>CHECK</Text>
-                </View>
-              </View>
-              <Text style={[styles.actionText, { color: '#888' }]}>REPORTS</Text>
-              <Text style={[styles.actionSubText, { color: '#555' }]}>Available with AutoPulse Check</Text>
+              <Text style={[styles.actionSubText, { color: '#555' }]}>Available after recording</Text>
             </View>
           </View>
         </View>
 
-        {/* Recent Sessions */}
-        <View style={styles.sessionsContainer}>
-          <Text style={styles.sectionTitle}>RECENT SESSIONS</Text>
-          {sessionsLoading ? (
-            <ActivityIndicator size="small" color="#FF6B00" style={{ marginTop: 24 }} />
-          ) : sessions.length === 0 ? (
-            <View style={styles.emptySessions}>
-              <Text style={styles.emptySessionsText}>No recent sessions recorded.</Text>
-            </View>
-          ) : (
-            sessions.map(session => (
-              <TouchableOpacity
-                key={session.id}
-                style={styles.sessionCard}
-                onPress={() => navigation.navigate('Live', { screen: 'SessionSummary', params: { vehicleId, sessionId: session.id } })}
-              >
-                <View style={styles.sessionHeader}>
-                  <Text style={styles.sessionDate}>{new Date(session.startedAt).toLocaleString()}</Text>
-                  <Text style={[styles.sessionStatus, session.status === 'COMPLETED' ? { color: '#4ade80' } : { color: '#fbbf24' }]}>
-                    {session.status}
-                  </Text>
-                </View>
-                <View style={styles.sessionDetails}>
-                  <Text style={styles.sessionDetailText}>Adapter: {session.adapterInstanceId}</Text>
-                  <Text style={styles.sessionDetailText}>Blocks: {session.totalBlocks}</Text>
-                </View>
-              </TouchableOpacity>
-            ))
-          )}
-        </View>
+        {/* Optional Last Session Link */}
+        {latestSession && !sessionLoading && (
+          <TouchableOpacity 
+            style={styles.lastSessionLink} 
+            onPress={() => navigation.navigate('History', { vehicleId })}
+          >
+            <Text style={styles.lastSessionText}>
+              Last session · {new Date(latestSession.startedAt).toLocaleDateString()} {new Date(latestSession.startedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Text>
+            <Ionicons name="chevron-forward" size={16} color="#8E8E93" />
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Action Sheet Modal */}
@@ -413,55 +398,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 4,
   },
-  sessionsContainer: {
-    flex: 1,
-  },
-  emptySessions: {
-    flex: 1,
-    backgroundColor: '#111518',
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#2A3136',
-    borderStyle: 'dashed',
-    minHeight: 120,
-  },
-  emptySessionsText: {
-    color: '#8E8E93',
-    fontFamily: 'Inter_400Regular',
-    fontSize: 14,
-  },
-  sessionCard: {
-    backgroundColor: '#111518',
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#2A3136',
-  },
-  sessionHeader: {
+  lastSessionLink: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
   },
-  sessionDate: {
-    color: '#FFF',
+  lastSessionText: {
+    color: '#8E8E93',
     fontFamily: 'Inter_500Medium',
     fontSize: 14,
-  },
-  sessionStatus: {
-    fontFamily: 'SpaceGrotesk_700Bold',
-    fontSize: 12,
-  },
-  sessionDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  sessionDetailText: {
-    color: '#8E8E93',
-    fontFamily: 'SpaceMono_400Regular',
-    fontSize: 12,
   },
   modalOverlay: {
     flex: 1,

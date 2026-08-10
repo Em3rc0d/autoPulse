@@ -1,6 +1,6 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
-import VehicleCapabilitiesScreen from '../VehicleCapabilitiesScreen';
+import DetectedSignalsScreen from '../DetectedSignalsScreen';
 import { useCapabilitySnapshot } from '../../../infrastructure/hooks/useCapabilitySnapshot';
 
 jest.mock('../../../infrastructure/hooks/useVehicle', () => ({
@@ -42,7 +42,7 @@ describe('VehicleCapabilitiesScreen', () => {
       ]
     });
 
-    const { getByText, queryByText } = render(<VehicleCapabilitiesScreen />);
+    const { getByText, queryByText } = render(<DetectedSignalsScreen />);
 
     // Verify it remains visible and shows fallback names
     expect(getByText('Unknown Parameter')).toBeTruthy();

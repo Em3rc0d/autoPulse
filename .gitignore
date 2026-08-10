@@ -82,3 +82,4 @@ obd_pasted_logs.txt
 mobile-app/static_check_output*.txt
 mobile-app/snapshot_output*.txt
 mobile-app/benchmark_results*.json
+mobile-app/scripts/logs.txt

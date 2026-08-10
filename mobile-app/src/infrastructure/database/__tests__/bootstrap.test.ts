@@ -29,6 +29,7 @@ describe('bootstrapProductDb', () => {
       }),
       insert: jest.fn().mockReturnThis(),
       values: jest.fn().mockReturnThis(),
+      onConflictDoNothing: jest.fn().mockReturnThis(),
       returning: jest.fn(),
       update: jest.fn().mockReturnThis(),
       set: jest.fn().mockReturnThis(),
@@ -65,7 +66,7 @@ describe('bootstrapProductDb', () => {
     
     expect(result).toBe(generatedContext);
     expect(mockTx.update).toHaveBeenCalled();
-    expect(mockTx.insert).toHaveBeenCalledTimes(3); 
+    expect(mockTx.insert).toHaveBeenCalledTimes(5); 
   });
 
   describe('installationId reconciliation matrix', () => {

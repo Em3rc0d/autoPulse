@@ -6,20 +6,20 @@ export class ContextualAdvisoryEvaluator {
     profile: SignalAdvisoryProfile,
     context?: AdvisoryContext
   ): SignalAdvisoryStatus {
-    const signalId = profile.signalId;
+    const signalId = profile?.signalId;
 
     if (signalId === 'ENGINE_RPM') {
       return this.evaluateRpm(value, profile, context);
     }
-    if (signalId === 'CONTROL_VOLTAGE') {
+    if (signalId === 'CONTROL_MODULE_VOLTAGE') {
       return this.evaluateVoltage(value, profile, context);
     }
 
     // Default static band evaluation
-    return this.evaluateStaticBands(value, profile.bands);
+    return this.evaluateStaticBands(value, profile?.bands);
   }
 
-  private static evaluateStaticBands(value: number, bands: any[]): SignalAdvisoryStatus {
+  private static evaluateStaticBands(value: number, bands: any[] = []): SignalAdvisoryStatus {
     for (const band of bands) {
       const min = band.min ?? -Infinity;
       const max = band.max ?? Infinity;

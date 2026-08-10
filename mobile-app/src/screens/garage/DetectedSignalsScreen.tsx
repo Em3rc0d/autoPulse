@@ -99,13 +99,13 @@ export default function VehicleCapabilitiesScreen() {
             <View key={param.id} style={styles.paramCard}>
               <View style={styles.paramHeader}>
                 <Text style={styles.paramName}>{param.technicalName ?? 'Unknown Parameter'}</Text>
-                <View style={[styles.statusBadge, { borderColor: badgeColor }]}>
-                  <Text style={[styles.statusBadgeText, { color: badgeColor }]}>
+                <View style={[styles.statusBadge, { borderColor: badgeColor, borderWidth: 0, paddingHorizontal: 0 }]}>
+                  <Text style={[styles.statusBadgeText, { color: badgeColor, fontWeight: '700' }]}>
+                    {param.supportState === 'SUPPORTED' ? '✓ ' : '— '}
                     {getStatusLabel(param.supportState)}
                   </Text>
                 </View>
               </View>
-              <Text style={styles.paramPid}>Mode {fallbackService.toString(16).padStart(2, '0').toUpperCase()} · PID {fallbackPid.toString(16).padStart(2, '0').toUpperCase()} (ECU {param.ecuAddress.toString(16).toUpperCase()})</Text>
               
               <Text style={styles.paramEvidence}>{getEvidenceDescription(param.evidenceOrigin, param.discoveryOutcome)}</Text>
 
@@ -129,8 +129,8 @@ export default function VehicleCapabilitiesScreen() {
           <Ionicons name="arrow-back" size={24} color="#FFF" />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
-          <Text style={styles.title}>Capabilities</Text>
-          <Text style={styles.subtitle}>{vehicle?.alias || 'Loading...'}</Text>
+          <Text style={styles.title}>DETECTED SIGNALS</Text>
+          <Text style={styles.subtitle}>Last scan</Text>
         </View>
         <View style={{ width: 40 }} />
       </View>

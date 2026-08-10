@@ -56,6 +56,11 @@ export class BleRawTransport implements RawTransport {
       console.log(`[BleRawTransport] Response received for ${command}. Reason: ${rawResponse.completionReason}`);
       BleDebugLogger.log(`RX (${rawResponse.completionReason}): ${JSON.stringify(rawResponse.accumulatedText)}`);
 
+      if (rawResponse.completionReason === 'DISCONNECTED') {
+        this.isConnected = false;
+        throw new Error('DISCONNECTED');
+      }
+
       return rawResponse;
     } catch (e: any) {
       console.log(`[BleRawTransport] Error executing ${command}:`, e.message);

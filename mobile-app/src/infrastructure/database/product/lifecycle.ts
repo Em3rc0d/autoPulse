@@ -23,7 +23,16 @@ async function seedCoreObdDefinitions(database: SQLite.SQLiteDatabase) {
     ['010C', 'MODE_01', 1, 0x0c, 'Engine RPM'],
     ['010D', 'MODE_01', 1, 0x0d, 'Vehicle speed'],
     ['0105', 'MODE_01', 1, 0x05, 'Engine coolant temperature'],
-    ['0142', 'MODE_01', 1, 0x42, 'Control module voltage']
+    ['0142', 'MODE_01', 1, 0x42, 'Control module voltage'],
+    ['ATRV', 'ELM_AT', 0, 0, 'Adapter Voltage'],
+    ['0104', 'MODE_01', 1, 0x04, 'Calculated engine load'],
+    ['010B', 'MODE_01', 1, 0x0b, 'Intake manifold absolute pressure'],
+    ['010E', 'MODE_01', 1, 0x0e, 'Timing advance'],
+    ['010F', 'MODE_01', 1, 0x0f, 'Intake air temperature'],
+    ['0110', 'MODE_01', 1, 0x10, 'MAF air flow rate'],
+    ['0111', 'MODE_01', 1, 0x11, 'Throttle position'],
+    ['012F', 'MODE_01', 1, 0x2f, 'Fuel Level Input'],
+    ['015C', 'MODE_01', 1, 0x5c, 'Engine oil temperature']
   ] as const;
 
   for (const [id, namespace, service, pid, technicalName] of parameters) {
@@ -36,14 +45,34 @@ async function seedCoreObdDefinitions(database: SQLite.SQLiteDatabase) {
   const signals = [
     ['010C', '010C', 'ENGINE_RPM', 'Engine RPM', 'RPM', 'float', 'MODE01_010C', '1.0', 1, 0, 0, 'HIGH'],
     ['010D', '010D', 'VEHICLE_SPEED', 'Vehicle speed', 'km/h', 'integer', 'MODE01_010D', '1.0', 1, 0, 0, 'HIGH'],
-    ['0105', '0105', 'COOLANT_TEMP', 'Engine coolant temperature', '°C', 'float', 'MODE01_0105', '1.0', 1, 0, 1, 'MEDIUM'],
-    ['0142', '0142', 'CONTROL_MODULE_VOLTAGE', 'Control module voltage', 'V', 'float', 'MODE01_0142', '1.0', 1, 0, 2, 'LOW']
+    ['0105', '0105', 'ENGINE_COOLANT', 'Engine coolant temperature', '°C', 'float', 'MODE01_0105', '1.0', 1, 0, 1, 'MEDIUM'],
+    ['0142', '0142', 'CONTROL_MODULE_VOLTAGE', 'Control module voltage', 'V', 'float', 'MODE01_0142', '1.0', 1, 0, 2, 'LOW'],
+    ['ATRV', 'ATRV', 'ADAPTER_VOLTAGE', 'Adapter voltage', 'V', 'float', 'AT_ATRV', '1.0', 1, 0, 1, 'LOW'],
+    ['0104', '0104', 'ENGINE_LOAD', 'Calculated engine load', '%', 'float', 'MODE01_0104', '1.0', 1, 0, 1, 'MEDIUM'],
+    ['010B', '010B', 'MAP', 'Intake manifold absolute pressure', 'kPa', 'integer', 'MODE01_010B', '1.0', 1, 0, 0, 'MEDIUM'],
+    ['010E', '010E', 'TIMING_ADVANCE', 'Timing advance', 'deg', 'float', 'MODE01_010E', '1.0', 1, 0, 1, 'LOW'],
+    ['010F', '010F', 'INTAKE_TEMP', 'Intake air temperature', '°C', 'float', 'MODE01_010F', '1.0', 1, 0, 1, 'LOW'],
+    ['0110', '0110', 'MAF', 'MAF air flow rate', 'g/s', 'float', 'MODE01_0110', '1.0', 1, 0, 2, 'MEDIUM'],
+    ['0111', '0111', 'THROTTLE_POSITION', 'Throttle position', '%', 'float', 'MODE01_0111', '1.0', 1, 0, 1, 'MEDIUM'],
+    ['012F', '012F', 'FUEL_LEVEL', 'Fuel Level Input', '%', 'float', 'MODE01_012F', '1.0', 1, 0, 1, 'LOW'],
+    ['015C', '015C', 'ENGINE_OIL_TEMP', 'Engine oil temperature', '°C', 'float', 'MODE01_015C', '1.0', 1, 0, 1, 'LOW']
   ] as const;
 
   for (const [id, parameterDefinitionId, signalKey, name, unit, numericType, decoderKey, decoderVersion, scale, offset, precision, priority] of signals) {
     await database.runAsync(
       'INSERT OR IGNORE INTO signal_definitions (id, parameter_definition_id, signal_key, name, canonical_unit, numeric_type, decoder_key, decoder_version, scale, offset, precision, default_priority, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [id, parameterDefinitionId, signalKey, name, unit, numericType, decoderKey, decoderVersion, scale, offset, precision, priority, now]
+    );
+  }
+
+  // Pre-seed generic Mode 01 (0x01-0xFF) to satisfy FK constraints for discovered capabilities.
+  // We use "Unmapped Mode 01 Parameter" to clarify these are placeholders for ECU-discovered capabilities,
+  // not fully interpreted canonical J1979 definitions.
+  for (let i = 1; i <= 255; i++) {
+    const hex = i.toString(16).padStart(2, '0').toUpperCase();
+    await database.runAsync(
+      'INSERT OR IGNORE INTO obd_parameter_definitions (id, namespace, service, parameter_identifier, technical_name, request_version, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [`01${hex}`, 'MODE_01', 1, i, `Unmapped Mode 01 Parameter 0x${hex}`, '1.0', now]
     );
   }
 }

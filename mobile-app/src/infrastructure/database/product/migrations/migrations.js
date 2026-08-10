@@ -5,6 +5,8 @@ import m0000 from './0000_product_foundation.sql';
 import m0001 from './0001_wooden_darwin.sql';
 import m0002 from './0002_add_v3_telemetry_block_metadata.sql';
 import m0003 from './0003_add_evidence_origin.sql';
+import m0004 from './0004_add_monitoring_profile.sql';
+import m0005 from './0005_canonicalize_signal_keys.sql';
 
   export default {
     journal,
@@ -12,7 +14,9 @@ import m0003 from './0003_add_evidence_origin.sql';
       m0000,
 m0001,
 m0002,
-m0003
+m0003,
+m0004,
+m0005
     }
   }
   

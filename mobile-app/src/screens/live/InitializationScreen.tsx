@@ -7,12 +7,17 @@ import { ObdCommandProcessor } from '../../infrastructure/ble/real/ObdCommandPro
 import { BleRawTransport } from '../../infrastructure/ble/real/BleRawTransport';
 import { ReplayRawTransport } from '../../infrastructure/obd-replay/ReplayRawTransport';
 import { RealObdInitialization } from '../../infrastructure/ble/real/RealObdInitialization';
+import { obdTransportRegistry } from '../../application/live/ObdTransportRegistry';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalContext } from '../../infrastructure/hooks/useLocalContext';
 import { useProductDb } from '../../infrastructure/hooks/useProductDb';
+import { OBD_SIGNAL_REGISTRY } from '../../domain/telemetry/ObdSignalRegistry';
+import { resolveDrivingModeSignals, MonitoringProfile } from '../../domain/telemetry/DrivingModes';
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { CapabilitySnapshotRepository, ECUInput, ParameterInput } from '../../infrastructure/database/product/repositories/capability-snapshot.repository';
 import { liveSessionEvents } from '../../infrastructure/database/product/schema/live';
+import { signalDefinitions } from '../../infrastructure/database/product/schema/signals';
+import { inArray } from 'drizzle-orm';
 import { ProductIdGenerator } from '../../infrastructure/database/product/uuidv7';
 
 import { useKeepAwake } from 'expo-keep-awake';
@@ -22,8 +27,10 @@ export default function InitializationScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
 
-  const { vehicleId, sessionId, adapterMode, connectionHandleId, adapterInstanceId, replayUrl } = route.params || {};
+  const { vehicleId, sessionId, adapterMode, connectionHandleId, adapterInstanceId, replayUrl, monitoringProfile: routeProfile } = route.params || {};
   const [activeSessionId, setActiveSessionId] = useState<string | null>(sessionId || null);
+
+  console.log(`[INITIALIZATION ENTRY] route.monitoringProfile=${routeProfile} adapterMode=${adapterMode} sessionId=${sessionId}`);
 
   const { vehicle, loading: vehicleLoading } = useVehicle(vehicleId);
 
@@ -44,33 +51,47 @@ export default function InitializationScreen() {
     { id: '6', label: 'Preparing live session', status: 'pending' },
   ]);
 
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const [initError, setInitError] = useState<string | null>(null);
-  const initializationStarted = React.useRef(false);
-  const preparationBegun = React.useRef(false);
+  const currentStepIndexState = useState(0);
+  const currentStepIndex = currentStepIndexState[0];
+  const setCurrentStepIndex = currentStepIndexState[1];
+  const initErrorState = useState<string | null>(null);
+  const initError = initErrorState[0];
+  const setInitError = initErrorState[1];
+  const attemptStatus = React.useRef<'IDLE' | 'RUNNING' | 'COMPLETED' | 'CANCELLED' | 'FAILED'>('IDLE');
+  const attemptKey = React.useRef<string>('');
+  const transportRef = React.useRef<BleRawTransport | null>(null);
+  const hasHandedOffRef = React.useRef<boolean>(false);
 
   const productDb = useProductDb();
   const { context: localContext, loading: contextLoading } = useLocalContext();
 
   const executeInitialization = useCallback(async () => {
-    if (initializationStarted.current) return;
-    initializationStarted.current = true;
+    const currentAttemptKey = `${vehicleId}|${adapterMode}|${sessionId || activeSessionId}|${routeProfile || 'GENERAL'}`;
+    
+    if (attemptStatus.current === 'RUNNING' || attemptStatus.current === 'COMPLETED') {
+      if (attemptKey.current === currentAttemptKey) {
+        return;
+      }
+    }
+
+    attemptStatus.current = 'RUNNING';
+    attemptKey.current = currentAttemptKey;
     setInitError(null);
 
     if (contextLoading) {
-       initializationStarted.current = false;
+       attemptStatus.current = 'IDLE';
        return; 
     }
 
     if (!localContext || !productDb) {
       setInitError('LOCAL_CONTEXT_UNAVAILABLE: Cannot initialize session without context.');
-      initializationStarted.current = false;
+      attemptStatus.current = 'FAILED';
       return;
     }
 
     if (!adapterInstanceId) {
       setInitError('ADAPTER_INSTANCE_UNAVAILABLE: Cannot initialize session without a persisted adapter instance.');
-      initializationStarted.current = false;
+      attemptStatus.current = 'FAILED';
       return;
     }
 
@@ -79,29 +100,32 @@ export default function InitializationScreen() {
     let sessionIdForRun = activeSessionId || sessionId;
 
     try {
-      if (!preparationBegun.current) {
-        try {
-          await sessionRepo.beginPreparation(localContext.defaultWorkspaceId, sessionIdForRun);
-        } catch (err: any) {
-          const message = err?.message || '';
-          if (message.includes('FAILED -> PREPARING')) {
-            sessionIdForRun = await sessionRepo.createSession(
-              localContext.defaultWorkspaceId,
-              vehicleId,
-              localContext.defaultOperatorId,
-              adapterInstanceId
-            );
-            setActiveSessionId(sessionIdForRun);
-            await sessionRepo.beginPreparation(localContext.defaultWorkspaceId, sessionIdForRun);
-          } else {
-            throw err;
-          }
+      if (sessionIdForRun) {
+        const session = await sessionRepo.getSessionById(localContext.defaultWorkspaceId, sessionIdForRun);
+        if (session && session.status !== 'CREATED') {
+          sessionIdForRun = await sessionRepo.createSession(
+            localContext.defaultWorkspaceId,
+            vehicleId,
+            localContext.defaultOperatorId,
+            adapterInstanceId,
+            routeProfile || 'GENERAL'
+          );
+          setActiveSessionId(sessionIdForRun);
         }
-        preparationBegun.current = true;
+      } else {
+        sessionIdForRun = await sessionRepo.createSession(
+          localContext.defaultWorkspaceId,
+          vehicleId,
+          localContext.defaultOperatorId,
+          adapterInstanceId,
+          routeProfile || 'GENERAL'
+        );
+        setActiveSessionId(sessionIdForRun);
       }
+      await sessionRepo.beginPreparation(localContext.defaultWorkspaceId, sessionIdForRun);
     } catch (err) {
       setInitError(`SESSION_PREPARATION_FAILED: ${err instanceof Error ? err.message : 'Could not prepare session.'}`);
-      initializationStarted.current = false;
+      attemptStatus.current = 'FAILED';
       return;
     }
 
@@ -111,11 +135,29 @@ export default function InitializationScreen() {
         setRealSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
         setCurrentStepIndex(realSteps.length);
 
+        const session = await sessionRepo.getSessionById(localContext.defaultWorkspaceId, sessionIdForRun);
+        const monitoringProfile = session?.monitoringProfile || 'GENERAL';
+
+        // Replay fixture supports exactly these signals. 0142 is known to return 7F0112 (Not Supported) in the fixture.
+        const replaySupportedCanonicalIds = new Set([
+          'ENGINE_RPM',
+          'VEHICLE_SPEED',
+          'ENGINE_COOLANT',
+          'ADAPTER_VOLTAGE',
+          'ENGINE_LOAD',
+          'MAP'
+        ]);
+
+        const resolvedCanonicalIds = resolveDrivingModeSignals(
+          monitoringProfile as MonitoringProfile,
+          replaySupportedCanonicalIds,
+          4
+        );
+
         const ecus: ECUInput[] = [{ address: 0, protocol: 'REPLAY_FIXTURE' }];
-        const liveSupportedPids = ['010C', '010D', '0105', '0142'];
-        const parameters: ParameterInput[] = liveSupportedPids.map(pid => ({
+        const parameters: ParameterInput[] = resolvedCanonicalIds.map(cId => ({
           ecuAddress: 0,
-          parameterDefinitionId: pid,
+          parameterDefinitionId: OBD_SIGNAL_REGISTRY[cId]?.command || '',
           supportState: 'SUPPORTED',
           evidenceOrigin: 'REPLAY_FIXTURE',
           discoveryOutcome: 'SUCCESS'
@@ -133,41 +175,37 @@ export default function InitializationScreen() {
           parameters
         );
 
-        const coreSignalDefinitions: Record<string, {
-          numericType: string;
-          unit: string;
-          decoderKey: string;
-          precision: number;
-          priority: string;
-        }> = {
-          '010C': { numericType: 'float', unit: 'RPM', decoderKey: 'MODE01_010C', precision: 0, priority: 'HIGH' },
-          '010D': { numericType: 'integer', unit: 'km/h', decoderKey: 'MODE01_010D', precision: 0, priority: 'HIGH' },
-          '0105': { numericType: 'float', unit: '°C', decoderKey: 'MODE01_0105', precision: 1, priority: 'MEDIUM' },
-          '0142': { numericType: 'float', unit: 'V', decoderKey: 'MODE01_0142', precision: 2, priority: 'LOW' }
-        };
+        const sigDefs = await productDb.select().from(signalDefinitions).where(inArray(signalDefinitions.signalKey, resolvedCanonicalIds));
+        const sigDefMap = new Map(sigDefs.map(row => [row.signalKey, row]));
 
-        const signals = liveSupportedPids
-          .map((pid, index) => ({
-            signalDefinitionId: pid,
-            parameterDefinitionId: pid,
-            service: 1,
-            pid: parseInt(pid.replace('01', ''), 16) || 0,
+        const signals = resolvedCanonicalIds.map((canonicalId, index) => {
+          const registryEntry = OBD_SIGNAL_REGISTRY[canonicalId];
+          const dbDef = sigDefMap.get(canonicalId);
+          if (!dbDef) throw new Error(`MISSING_SIGNAL_DEF: ${canonicalId}`);
+
+          const pidStr = registryEntry.command || '';
+          return {
+            signalDefinitionId: dbDef.id,
+            parameterDefinitionId: dbDef.parameterDefinitionId,
+            service: pidStr.startsWith('01') ? 1 : 0,
+            pid: pidStr.startsWith('01') ? parseInt(pidStr.replace('01', ''), 16) : 0,
             targetEcu: 0,
-            effectiveUnit: coreSignalDefinitions[pid].unit,
-            numericType: coreSignalDefinitions[pid].numericType,
-            scale: 1,
-            offset: 0,
-            precision: coreSignalDefinitions[pid].precision,
-            decoderVersion: '1.0',
-            decoderKey: coreSignalDefinitions[pid].decoderKey,
-            origin: 'BITMAP',
-            priority: coreSignalDefinitions[pid].priority,
+            effectiveUnit: registryEntry.unit,
+            numericType: dbDef.numericType,
+            scale: dbDef.scale,
+            offset: dbDef.offset,
+            precision: dbDef.precision,
+            decoderVersion: dbDef.decoderVersion,
+            decoderKey: dbDef.decoderKey,
+            origin: pidStr === 'ATRV' ? 'ADAPTER' : 'REPLAY_FIXTURE',
+            priority: dbDef.defaultPriority,
             targetPeriodMs: 250,
             indexInBlock: index,
             supportState: 'SUPPORTED',
             localTargetIndex: index,
             localSignalIndex: index
-          }));
+          };
+        });
 
         await sessionRepo.attachCapabilitySnapshot(
           localContext.defaultWorkspaceId,
@@ -175,7 +213,7 @@ export default function InitializationScreen() {
           capSnapshot.id,
           '1.0',
           'REPLAY_FIXTURE',
-          'LAPTOP_REPLAY' // transportType
+          'LAPTOP_REPLAY'
         );
 
         await sessionRepo.attachSignalSnapshots(localContext.defaultWorkspaceId, sessionIdForRun, signals);
@@ -197,19 +235,21 @@ export default function InitializationScreen() {
 
         await sessionRepo.activateSession(localContext.defaultWorkspaceId, sessionIdForRun);
 
+        attemptStatus.current = 'COMPLETED';
+
         setTimeout(() => {
-          navigation.navigate('LiveSession', {
+          navigation.replace('LiveSession', {
             vehicleId,
             sessionId: sessionIdForRun,
             adapterMode: 'REPLAY_WS',
             replayUrl,
-            supportedPids: liveSupportedPids,
+            resolvedPollingSet: resolvedCanonicalIds.map(cId => OBD_SIGNAL_REGISTRY[cId]?.command).filter(c => !!c),
             initialAdapterVoltage: '13.8V'
           });
         }, 500);
       } catch (err) {
         setInitError(`REPLAY_INIT_FAILED: ${err instanceof Error ? err.message : 'Could not persist synthetic session activation.'}`);
-        initializationStarted.current = false;
+        attemptStatus.current = 'FAILED';
       }
       return;
     }
@@ -218,12 +258,29 @@ export default function InitializationScreen() {
     const conn = activeBleController.getConnection(connectionHandleId);
     if (!connectionHandleId || !conn) {
       setInitError('CONNECTION_LOST: Adapter connection handle is missing or no longer active.');
-      initializationStarted.current = false;
+      attemptStatus.current = 'FAILED';
+      return;
+    }
+
+    try {
+      const isActuallyConnected = await conn.device.isConnected();
+      if (!isActuallyConnected) {
+        activeBleController.releaseConnection();
+        setInitError('CONNECTION_LOST: The Bluetooth device disconnected unexpectedly.');
+        attemptStatus.current = 'FAILED';
+        return;
+      }
+    } catch (e) {
+      setInitError('CONNECTION_LOST: Could not verify Bluetooth device connection status.');
+      attemptStatus.current = 'FAILED';
       return;
     }
 
     const transport = new BleRawTransport(conn);
     const controller = new ObdCommandProcessor(transport);
+    
+    // Store transport in a ref so we can clean it up if unmounted
+    transportRef.current = transport;
 
     try {
       const initialization = new RealObdInitialization(controller as any, (stepIndex) => {
@@ -243,9 +300,18 @@ export default function InitializationScreen() {
       const snapshot = await initialization.execute();
 
       if (!snapshot.initializationSuccessful) {
-        setInitError(`Could not communicate with the vehicle ECU\n\nAdapter connection: OK\nELM327 response: ${snapshot.failureReason || 'UNKNOWN'}`);
+        try {
+          await sessionRepo.failSession(localContext.defaultWorkspaceId, sessionIdForRun, 'OBD_INITIALIZATION_FAILED');
+        } catch (failErr) {}
+
+        if (snapshot.failureReason?.includes('DISCONNECTED')) {
+          setInitError(`CONNECTION_LOST: The adapter disconnected or the communication pipeline was destroyed.\n\nELM327 response: ${snapshot.failureReason}`);
+          activeBleController.releaseConnection();
+        } else {
+          setInitError(`OBD_INITIALIZATION_FAILED: Could not communicate with the vehicle ECU\n\nAdapter connection: OK\nELM327 response: ${snapshot.failureReason || 'UNKNOWN'}`);
+        }
         transport.disconnect();
-        initializationStarted.current = false;
+        attemptStatus.current = 'FAILED';
         return;
       }
 
@@ -253,7 +319,7 @@ export default function InitializationScreen() {
       setCurrentStepIndex(realSteps.length);
       let liveSupportedPids = [...snapshot.supportedPids];
 
-      try {
+
         const ecus: ECUInput[] = [{ address: 0, protocol: snapshot.protocol || 'UNKNOWN' }];
         const parameters: ParameterInput[] = snapshot.supportedPids.map(pid => ({
           ecuAddress: 0,
@@ -264,118 +330,165 @@ export default function InitializationScreen() {
         }));
 
         if (!snapshot.supportedPids.includes('0142')) {
+          const probeResult = snapshot.rawDiscovery?.find(d => d.command === '0142');
           parameters.push({
             ecuAddress: 0,
             parameterDefinitionId: '0142',
-            supportState: 'UNKNOWN',
+            supportState: probeResult ? 'NOT_SUPPORTED' : 'UNKNOWN',
             evidenceOrigin: 'PROBE',
-            discoveryOutcome: 'NOT_ATTEMPTED'
+            discoveryOutcome: probeResult ? 'NEGATIVE_RESPONSE' : 'NOT_ATTEMPTED'
           });
         }
 
-        const capSnapshot = await capRepo.createSnapshot(
-          localContext.defaultWorkspaceId,
-          vehicleId,
-          adapterInstanceId,
-          '1.0', 
-          snapshot.protocol || 'UNKNOWN',
-          'BLE',
-          'COMPLETED',
-          ecus,
-          parameters
-        );
-
-        const coreSignalDefinitions: Record<string, {
-          numericType: string;
-          unit: string;
-          decoderKey: string;
-          precision: number;
-          priority: string;
-        }> = {
-          '010C': { numericType: 'float', unit: 'RPM', decoderKey: 'MODE01_010C', precision: 0, priority: 'HIGH' },
-          '010D': { numericType: 'integer', unit: 'km/h', decoderKey: 'MODE01_010D', precision: 0, priority: 'HIGH' },
-          '0105': { numericType: 'float', unit: '°C', decoderKey: 'MODE01_0105', precision: 1, priority: 'MEDIUM' },
-          '0142': { numericType: 'float', unit: 'V', decoderKey: 'MODE01_0142', precision: 2, priority: 'LOW' }
-        };
-        const discoveredSupportedPids = [...snapshot.supportedPids];
-        const requiredLivePids = ['010C', '010D', '0105', '0142'];
-        const probeCandidatePids = requiredLivePids.filter(pid => !discoveredSupportedPids.includes(pid));
-        
-        const activePollingPids = [...discoveredSupportedPids];
-        if (probeCandidatePids.length > 0) {
-          activePollingPids.push(...probeCandidatePids);
+        let capSnapshot;
+        try {
+          capSnapshot = await capRepo.createSnapshot(
+            localContext.defaultWorkspaceId,
+            vehicleId,
+            adapterInstanceId,
+            '1.0', 
+            snapshot.protocol || 'UNKNOWN',
+            'BLE',
+            'COMPLETED',
+            ecus,
+            parameters
+          );
+        } catch (err) {
+          try {
+            await sessionRepo.failSession(localContext.defaultWorkspaceId, sessionIdForRun, 'CAPABILITY_PERSISTENCE_FAILED');
+          } catch (failErr) {}
+          setInitError(`CAPABILITY_PERSISTENCE_FAILED: ${err instanceof Error ? err.message : 'Could not persist capabilities.'}`);
+          transport.disconnect();
+          attemptStatus.current = 'FAILED';
+          return;
         }
-        liveSupportedPids = activePollingPids;
 
-        const signals = activePollingPids
-          .filter(pid => coreSignalDefinitions[pid])
-          .map((pid, index) => {
-            const isProbed = probeCandidatePids.includes(pid);
+        try {
+          const session = await sessionRepo.getSessionById(localContext.defaultWorkspaceId, sessionIdForRun);
+          const monitoringProfile = session?.monitoringProfile || 'GENERAL';
+
+          const availableSignalIds = new Set<string>();
+          snapshot.supportedPids.forEach(pid => {
+            const entry = Object.values(OBD_SIGNAL_REGISTRY).find(s => s.command === pid);
+            if (entry) availableSignalIds.add(entry.canonicalId);
+          });
+          
+          // Assume ADAPTER_VOLTAGE is always available since we communicate with ELM327
+          availableSignalIds.add('ADAPTER_VOLTAGE');
+
+          const resolvedCanonicalIds = resolveDrivingModeSignals(
+            monitoringProfile as MonitoringProfile,
+            availableSignalIds,
+            4
+          );
+
+          liveSupportedPids = resolvedCanonicalIds.map(cId => OBD_SIGNAL_REGISTRY[cId]?.command).filter(c => !!c) as string[];
+          const sigDefs = await productDb.select().from(signalDefinitions).where(inArray(signalDefinitions.signalKey, resolvedCanonicalIds));
+          const sigDefMap = new Map(sigDefs.map(row => [row.signalKey, row]));
+
+          const signals = resolvedCanonicalIds.map((canonicalId, index) => {
+            const registryEntry = OBD_SIGNAL_REGISTRY[canonicalId];
+            const dbDef = sigDefMap.get(canonicalId);
+            
+            if (!dbDef) {
+               throw new Error(`MISSING_SIGNAL_DEF: ${canonicalId} not found in database.`);
+            }
+
+            const pidStr = registryEntry.command || '';
             return {
-              signalDefinitionId: pid,
-              parameterDefinitionId: pid,
-              service: 1,
-              pid: parseInt(pid.replace('01', ''), 16) || 0,
+              signalDefinitionId: dbDef.id,
+              parameterDefinitionId: dbDef.parameterDefinitionId,
+              service: pidStr.startsWith('01') ? 1 : 0,
+              pid: pidStr.startsWith('01') ? parseInt(pidStr.replace('01', ''), 16) : 0,
               targetEcu: 0,
-              effectiveUnit: coreSignalDefinitions[pid].unit,
-              numericType: coreSignalDefinitions[pid].numericType,
-              scale: 1,
-              offset: 0,
-              precision: coreSignalDefinitions[pid].precision,
-              decoderVersion: '1.0',
-              decoderKey: coreSignalDefinitions[pid].decoderKey,
-              origin: isProbed ? 'PROBE' : (snapshot.directlyObservedPids?.includes(pid) ? 'DIRECTLY_OBSERVED' : 'BITMAP'),
-              priority: coreSignalDefinitions[pid].priority,
+              effectiveUnit: registryEntry.unit,
+              numericType: dbDef.numericType,
+              scale: dbDef.scale,
+              offset: dbDef.offset,
+              precision: dbDef.precision,
+              decoderVersion: dbDef.decoderVersion,
+              decoderKey: dbDef.decoderKey,
+              origin: pidStr === 'ATRV' ? 'ADAPTER' : (snapshot.directlyObservedPids?.includes(pidStr) ? 'DIRECTLY_OBSERVED' : 'BITMAP'),
+              priority: dbDef.defaultPriority,
               targetPeriodMs: 250,
               indexInBlock: index,
-              supportState: isProbed ? 'NOT_AVAILABLE' : 'SUPPORTED',
+              supportState: 'SUPPORTED',
               localTargetIndex: index,
               localSignalIndex: index
             };
           });
 
-        if (signals.length === 0) {
-          throw new Error('NO_SUPPORTED_CORE_SIGNALS: ECU responded, but no supported RPM/Speed/Coolant/Voltage signals were available.');
+          if (signals.length === 0) {
+            if (monitoringProfile === 'GENERAL') {
+              throw new Error('NO_SUPPORTED_CORE_SIGNALS: ECU responded, but no supported RPM/Speed/Coolant/Voltage signals were available.');
+            } else {
+              throw new Error(`NO_COMPATIBLE_SIGNALS: No compatible monitoring signals were detected for the ${monitoringProfile} profile on this vehicle.`);
+            }
+          }
+
+          await sessionRepo.attachCapabilitySnapshot(
+            localContext.defaultWorkspaceId,
+            sessionIdForRun,
+            capSnapshot.id,
+            '1.0',
+            snapshot.protocol || 'UNKNOWN',
+            'REAL_BLE'
+          );
+
+          await sessionRepo.attachSignalSnapshots(localContext.defaultWorkspaceId, sessionIdForRun, signals);
+          await sessionRepo.activateSession(localContext.defaultWorkspaceId, sessionIdForRun);
+        } catch (err) {
+          try {
+            await sessionRepo.failSession(localContext.defaultWorkspaceId, sessionIdForRun, 'SESSION_ACTIVATION_FAILED');
+          } catch (failErr) {}
+          setInitError(`SESSION_ACTIVATION_FAILED: ${err instanceof Error ? err.message : 'Could not persist session activation.'}`);
+          transport.disconnect();
+          attemptStatus.current = 'FAILED';
+          return;
         }
 
-        await sessionRepo.attachCapabilitySnapshot(
-          localContext.defaultWorkspaceId,
-          sessionIdForRun,
-          capSnapshot.id,
-          '1.0',
-          snapshot.protocol || 'UNKNOWN',
-          'REAL_BLE'
-        );
-
-        await sessionRepo.attachSignalSnapshots(localContext.defaultWorkspaceId, sessionIdForRun, signals);
-        await sessionRepo.activateSession(localContext.defaultWorkspaceId, sessionIdForRun);
-      } catch (err) {
-        try {
-          await sessionRepo.failSession(localContext.defaultWorkspaceId, sessionIdForRun, 'ACTIVATION_PERSISTENCE_FAILED');
-        } catch (failErr) {}
-        setInitError(`SESSION_ACTIVATION_FAILED: ${err instanceof Error ? err.message : 'Could not persist session activation.'}`);
-        transport.disconnect();
-        initializationStarted.current = false;
-        return;
-      }
+      // Transfer ownership of the proven controller to LiveSession via registry
+      hasHandedOffRef.current = true;
+      obdTransportRegistry.register(connectionHandleId, controller);
+      transportRef.current = null;
+      attemptStatus.current = 'COMPLETED';
 
       setTimeout(() => {
-        navigation.navigate('LiveSession', {
+        navigation.replace('LiveSession', {
           vehicleId,
           sessionId: sessionIdForRun,
           adapterMode: 'REAL_BLE',
           connectionHandleId,
-          supportedPids: liveSupportedPids,
+          resolvedPollingSet: liveSupportedPids,
           initialAdapterVoltage: snapshot.adapterIdentity?.supplyVoltage
         });
       }, 500);
 
     } catch (error) {
       setInitError('OBD_INIT_FAILED: Unexpected error during initialization.');
-      transport.disconnect();
-      initializationStarted.current = false;
+      if (!hasHandedOffRef.current) {
+        transport.disconnect();
+      }
+      transportRef.current = null;
+      attemptStatus.current = 'FAILED';
     }
-  }, [activeSessionId, adapterInstanceId, connectionHandleId, navigation, sessionId, vehicleId, realSteps.length, contextLoading, localContext, productDb, adapterMode, replayUrl]);
+  }, [activeSessionId, adapterInstanceId, connectionHandleId, navigation, sessionId, vehicleId, contextLoading, localContext, productDb, adapterMode, replayUrl]);
+
+  useEffect(() => {
+    if (adapterMode !== 'VIRTUAL_PREVIEW') return;
+    
+    if (currentStepIndex < virtualSteps.length) {
+      const timer = setTimeout(() => {
+        setVirtualSteps(prev => {
+          const newSteps = [...prev];
+          newSteps[currentStepIndex].status = 'done';
+          return newSteps;
+        });
+        setCurrentStepIndex(currentStepIndex + 1);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [adapterMode, currentStepIndex, virtualSteps.length]);
 
   useEffect(() => {
     if (!adapterMode) {
@@ -383,36 +496,119 @@ export default function InitializationScreen() {
       return;
     }
 
+    let finishTimer: NodeJS.Timeout | null = null;
+
     if (adapterMode === 'VIRTUAL_PREVIEW') {
-      if (currentStepIndex < virtualSteps.length) {
-        const timer = setTimeout(() => {
-          setVirtualSteps(prev => {
-            const newSteps = [...prev];
-            newSteps[currentStepIndex].status = 'done';
-            return newSteps;
-          });
-          setCurrentStepIndex(currentStepIndex + 1);
-        }, 800);
-        return () => clearTimeout(timer);
-      } else {
-        const finishTimer = setTimeout(() => {
-          navigation.navigate('LiveSession', { vehicleId, sessionId, adapterMode: 'VIRTUAL_PREVIEW' });
+      if (currentStepIndex >= virtualSteps.length) {
+        const currentAttemptKey = `${vehicleId}|${adapterMode}|${sessionId || activeSessionId}|${routeProfile || 'GENERAL'}`;
+        
+        if (attemptStatus.current === 'RUNNING' || attemptStatus.current === 'COMPLETED') {
+          if (attemptKey.current === currentAttemptKey) {
+            return;
+          }
+        }
+
+        attemptStatus.current = 'RUNNING';
+        attemptKey.current = currentAttemptKey;
+
+        finishTimer = setTimeout(async () => {
+          if (attemptStatus.current !== 'RUNNING' || attemptKey.current !== currentAttemptKey) {
+            return;
+          }
+
+          try {
+            const sessionRepo = new LiveSessionRepository(productDb!);
+            const capRepo = new CapabilitySnapshotRepository(productDb!);
+            
+            const profileToUse = routeProfile || 'GENERAL';
+            
+            const sessionIdForRun = await sessionRepo.createSession(
+              localContext!.defaultWorkspaceId, 
+              vehicleId, 
+              localContext!.defaultOperatorId, 
+              'virtual-adapter',
+              profileToUse
+            );
+            
+            await sessionRepo.beginPreparation(localContext!.defaultWorkspaceId, sessionIdForRun);
+
+            const virtualSupportedCanonicalIds = new Set([
+              'ENGINE_RPM', 'VEHICLE_SPEED', 'ENGINE_COOLANT', 'CONTROL_MODULE_VOLTAGE', 'ADAPTER_VOLTAGE', 'ENGINE_LOAD', 'MAP'
+            ]);
+            const resolvedCanonicalIds = resolveDrivingModeSignals(profileToUse as MonitoringProfile, virtualSupportedCanonicalIds, 4);
+
+            const ecus: ECUInput[] = [{ address: 0, protocol: 'VIRTUAL_FIXTURE' }];
+            const parameters: ParameterInput[] = resolvedCanonicalIds.map(cId => ({
+              ecuAddress: 0, parameterDefinitionId: OBD_SIGNAL_REGISTRY[cId]?.command || '',
+              supportState: 'SUPPORTED', evidenceOrigin: 'REPLAY_FIXTURE', discoveryOutcome: 'SUCCESS'
+            }));
+
+            const capSnapshot = await capRepo.createSnapshot(
+              localContext!.defaultWorkspaceId, vehicleId, 'virtual-adapter', '1.0', 'VIRTUAL_FIXTURE', 'VIRTUAL_PREVIEW', 'COMPLETED', ecus, parameters
+            );
+
+            const sigDefs = await productDb!.select().from(signalDefinitions).where(inArray(signalDefinitions.signalKey, resolvedCanonicalIds));
+            const sigDefMap = new Map(sigDefs.map(row => [row.signalKey, row]));
+
+            const signals = resolvedCanonicalIds.map((canonicalId, index) => {
+              const registryEntry = OBD_SIGNAL_REGISTRY[canonicalId];
+              const dbDef = sigDefMap.get(canonicalId);
+              if (!dbDef) throw new Error(`MISSING_SIGNAL_DEF: ${canonicalId}`);
+              const pidStr = registryEntry.command || '';
+              return {
+                signalDefinitionId: dbDef.id, parameterDefinitionId: dbDef.parameterDefinitionId,
+                service: pidStr.startsWith('01') ? 1 : 0, pid: pidStr.startsWith('01') ? parseInt(pidStr.replace('01', ''), 16) : 0,
+                targetEcu: 0, effectiveUnit: registryEntry.unit, numericType: dbDef.numericType,
+                scale: dbDef.scale, offset: dbDef.offset, precision: dbDef.precision, decoderVersion: dbDef.decoderVersion,
+                decoderKey: dbDef.decoderKey, origin: pidStr === 'ATRV' ? 'ADAPTER' : 'REPLAY_FIXTURE',
+                priority: dbDef.defaultPriority, targetPeriodMs: 250, indexInBlock: index, supportState: 'SUPPORTED',
+                localTargetIndex: index, localSignalIndex: index
+              };
+            });
+
+            await sessionRepo.attachCapabilitySnapshot(localContext!.defaultWorkspaceId, sessionIdForRun, capSnapshot.id, '1.0', 'VIRTUAL_FIXTURE', 'VIRTUAL_PREVIEW');
+            await sessionRepo.attachSignalSnapshots(localContext!.defaultWorkspaceId, sessionIdForRun, signals);
+            await sessionRepo.activateSession(localContext!.defaultWorkspaceId, sessionIdForRun);
+
+            attemptStatus.current = 'COMPLETED';
+            navigation.replace('LiveSession', { vehicleId, sessionId: sessionIdForRun, adapterMode: 'VIRTUAL_PREVIEW' });
+          } catch (e) {
+             attemptStatus.current = 'FAILED';
+             setInitError('VIRTUAL_INIT_FAILED: ' + (e as Error).message);
+          }
         }, 500);
-        return () => clearTimeout(finishTimer);
       }
     } else if (adapterMode === 'REAL_BLE' || adapterMode === 'REPLAY_WS') {
-      if (!contextLoading && !initializationStarted.current && !initError) {
-        executeInitialization();
+      if (!contextLoading && !initError) {
+        executeInitialization().catch(err => {
+          console.error('Unhandled Rejection in executeInitialization:', err);
+        });
       }
     } else {
        setInitError(`INVALID_SESSION_ORIGIN: Unknown adapter mode ${adapterMode}`);
     }
-  }, [currentStepIndex, virtualSteps.length, adapterMode, executeInitialization, initError, navigation, sessionId, vehicleId, contextLoading]);
+
+    // Cleanup function: If the screen unmounts BEFORE handoff, drop the discovery BLE transport
+    return () => {
+      if (finishTimer) {
+        clearTimeout(finishTimer);
+      }
+      if (attemptStatus.current === 'RUNNING') {
+        attemptStatus.current = 'CANCELLED';
+      }
+      if (transportRef.current && !hasHandedOffRef.current) {
+        transportRef.current.disconnect();
+        transportRef.current = null;
+      }
+    };
+  }, [adapterMode, executeInitialization, initError, navigation, sessionId, vehicleId, contextLoading]);
 
   const handleRetry = () => {
+    if (attemptStatus.current === 'RUNNING') return;
     setRealSteps(prev => prev.map(s => ({ ...s, status: 'pending' })));
     setCurrentStepIndex(0);
-    initializationStarted.current = false;
+    attemptStatus.current = 'IDLE';
+    attemptKey.current = '';
     setInitError(null);
   };
 

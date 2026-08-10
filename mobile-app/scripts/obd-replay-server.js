@@ -55,7 +55,8 @@ function rpmFrame() {
 }
 
 function speedFrame() {
-  const testCases = [0, 110, 150, 260, 310];
+  // Use realistic values, avoiding clamping > 255
+  const testCases = [0, 60, 110, 150, 190];
   const speed = testCases[Math.floor(tick / 50) % testCases.length];
   return `410D${toHexByte(speed)}\r\r>`;
 }
