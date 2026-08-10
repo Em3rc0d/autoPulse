@@ -58,14 +58,14 @@ export class BleRawTransport implements RawTransport {
 
       if (rawResponse.completionReason === 'DISCONNECTED') {
         this.isConnected = false;
-        throw new Error('DISCONNECTED');
+        return rawResponse;
       }
 
       return rawResponse;
     } catch (e: any) {
       console.log(`[BleRawTransport] Error executing ${command}:`, e.message);
       BleDebugLogger.log(`ERR (${command}): ${e.message}`);
-      if (e?.errorCode === 201) {
+      if (e?.message === 'DISCONNECTED' || e?.errorCode === 201) {
         this.isConnected = false;
         throw new Error('DISCONNECTED');
       } else {

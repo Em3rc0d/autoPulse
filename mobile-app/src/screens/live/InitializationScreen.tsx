@@ -61,12 +61,14 @@ export default function InitializationScreen() {
   const attemptKey = React.useRef<string>('');
   const transportRef = React.useRef<BleRawTransport | null>(null);
   const hasHandedOffRef = React.useRef<boolean>(false);
+  const activeSessionIdRef = React.useRef<string | null>(activeSessionId);
+  activeSessionIdRef.current = activeSessionId;
 
   const productDb = useProductDb();
   const { context: localContext, loading: contextLoading } = useLocalContext();
 
   const executeInitialization = useCallback(async () => {
-    const currentAttemptKey = `${vehicleId}|${adapterMode}|${sessionId || activeSessionId}|${routeProfile || 'GENERAL'}`;
+    const currentAttemptKey = `${vehicleId}|${adapterMode}|${sessionId || activeSessionIdRef.current}|${routeProfile || 'GENERAL'}`;
     
     if (attemptStatus.current === 'RUNNING' || attemptStatus.current === 'COMPLETED') {
       if (attemptKey.current === currentAttemptKey) {
@@ -97,7 +99,7 @@ export default function InitializationScreen() {
 
     const sessionRepo = new LiveSessionRepository(productDb);
     const capRepo = new CapabilitySnapshotRepository(productDb);
-    let sessionIdForRun = activeSessionId || sessionId;
+    let sessionIdForRun = activeSessionIdRef.current || sessionId;
 
     try {
       if (sessionIdForRun) {
@@ -110,6 +112,7 @@ export default function InitializationScreen() {
             adapterInstanceId,
             routeProfile || 'GENERAL'
           );
+          activeSessionIdRef.current = sessionIdForRun;
           setActiveSessionId(sessionIdForRun);
         }
       } else {
@@ -120,6 +123,7 @@ export default function InitializationScreen() {
           adapterInstanceId,
           routeProfile || 'GENERAL'
         );
+        activeSessionIdRef.current = sessionIdForRun;
         setActiveSessionId(sessionIdForRun);
       }
       await sessionRepo.beginPreparation(localContext.defaultWorkspaceId, sessionIdForRun);
@@ -331,12 +335,37 @@ export default function InitializationScreen() {
 
         if (!snapshot.supportedPids.includes('0142')) {
           const probeResult = snapshot.rawDiscovery?.find(d => d.command === '0142');
+          let outcome: ParameterInput['discoveryOutcome'] = 'NOT_ATTEMPTED';
+          let state: ParameterInput['supportState'] = 'UNKNOWN';
+
+          if (probeResult) {
+            if (probeResult.status === 'SUCCESS_DECODED' || probeResult.status === 'SUCCESS_RAW') {
+              state = 'SUPPORTED';
+              outcome = 'SUCCESS';
+            } else if (probeResult.response?.includes('7F')) {
+              state = 'NOT_SUPPORTED';
+              outcome = 'NEGATIVE_RESPONSE';
+            } else if (probeResult.status === 'NO_DATA') {
+              state = 'NOT_SUPPORTED';
+              outcome = 'NO_DATA';
+            } else if (probeResult.status === 'TIMEOUT') {
+              state = 'UNKNOWN';
+              outcome = 'TIMEOUT';
+            } else if (probeResult.status === 'DISCONNECTED') {
+              state = 'UNKNOWN';
+              outcome = 'TRANSPORT_ERROR';
+            } else {
+              state = 'UNKNOWN';
+              outcome = 'INVALID_RESPONSE';
+            }
+          }
+
           parameters.push({
             ecuAddress: 0,
             parameterDefinitionId: '0142',
-            supportState: probeResult ? 'NOT_SUPPORTED' : 'UNKNOWN',
+            supportState: state,
             evidenceOrigin: 'PROBE',
-            discoveryOutcome: probeResult ? 'NEGATIVE_RESPONSE' : 'NOT_ATTEMPTED'
+            discoveryOutcome: outcome
           });
         }
 
@@ -472,7 +501,7 @@ export default function InitializationScreen() {
       transportRef.current = null;
       attemptStatus.current = 'FAILED';
     }
-  }, [activeSessionId, adapterInstanceId, connectionHandleId, navigation, sessionId, vehicleId, contextLoading, localContext, productDb, adapterMode, replayUrl]);
+  }, [adapterInstanceId, connectionHandleId, navigation, sessionId, vehicleId, contextLoading, localContext, productDb, adapterMode, replayUrl]);
 
   useEffect(() => {
     if (adapterMode !== 'VIRTUAL_PREVIEW') return;
