@@ -26,6 +26,9 @@ export default function ConnectObdScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const vehicleId = route.params?.vehicleId;
+  const monitoringProfile = route.params?.monitoringProfile || 'GENERAL';
+
+  console.log(`[CONNECT OBD ENTRY] monitoringProfile=${monitoringProfile} from route=${route.params?.monitoringProfile}`);
 
   const { vehicle, loading: vehicleLoading } = useVehicle(vehicleId);
 
@@ -122,7 +125,8 @@ export default function ConnectObdScreen() {
         localContext.defaultWorkspaceId,
         vehicleId,
         localContext.defaultOperatorId,
-        adapter.id
+        adapter.id,
+        monitoringProfile
       );
 
       const connectionHandleId = `conn_${Math.random().toString(36).substr(2, 9)}`;
@@ -155,7 +159,8 @@ export default function ConnectObdScreen() {
     navigation.navigate('Initialization', {
       vehicleId,
       sessionId: virtualSessionId,
-      adapterMode: 'VIRTUAL_PREVIEW'
+      adapterMode: 'VIRTUAL_PREVIEW',
+      monitoringProfile
     });
   };
 
@@ -189,7 +194,8 @@ export default function ConnectObdScreen() {
         localContext.defaultWorkspaceId,
         vehicleId,
         localContext.defaultOperatorId,
-        adapter.id
+        adapter.id,
+        monitoringProfile
       );
 
       setUiState('IDLE');

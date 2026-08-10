@@ -61,6 +61,28 @@ export async function bootstrapProductDb(db: ExpoSQLiteDatabase<typeof schema>) 
         updatedAt: now,
       } as any).returning();
 
+      // Ensure Virtual Adapter Infrastructure
+      await tx.insert(schema.obdAdapterModels).values({
+        id: 'model-virtual',
+        manufacturer: 'AutoPulse',
+        modelName: 'Virtual Adapter',
+        transportFamily: 'VIRTUAL',
+        createdAt: now
+      } as any).onConflictDoNothing();
+
+      await tx.insert(schema.obdAdapterInstances).values({
+        id: 'virtual-adapter',
+        workspaceId,
+        adapterModelId: 'model-virtual',
+        alias: 'Virtual Device',
+        platformDeviceId: 'virtual:device',
+        firstSeen: now,
+        lastSeen: now,
+        trustState: 'TRUSTED',
+        createdAt: now,
+        updatedAt: now
+      } as any).onConflictDoNothing();
+
       return newContext;
     }
 
@@ -113,6 +135,29 @@ export async function bootstrapProductDb(db: ExpoSQLiteDatabase<typeof schema>) 
     if (!workspace || !operator) {
       throw new Error('LOCAL_CONTEXT_CORRUPT: The default workspace or operator is missing or violates tenant boundaries.');
     }
+
+    const now = Date.now();
+    // Ensure Virtual Adapter Infrastructure
+    await tx.insert(schema.obdAdapterModels).values({
+      id: 'model-virtual',
+      manufacturer: 'AutoPulse',
+      modelName: 'Virtual Adapter',
+      transportFamily: 'VIRTUAL',
+      createdAt: now
+    } as any).onConflictDoNothing();
+
+    await tx.insert(schema.obdAdapterInstances).values({
+      id: 'virtual-adapter',
+      workspaceId: context.defaultWorkspaceId,
+      adapterModelId: 'model-virtual',
+      alias: 'Virtual Device',
+      platformDeviceId: 'virtual:device',
+      firstSeen: now,
+      lastSeen: now,
+      trustState: 'TRUSTED',
+      createdAt: now,
+      updatedAt: now
+    } as any).onConflictDoNothing();
 
     return { ...context, installationId: finalInstallationId };
   });

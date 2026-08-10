@@ -7,6 +7,7 @@ import { BleDebugLogger } from '../BleDebugLogger';
 export class ElmAccumulator {
   private connection: ActiveConnection;
   private subscription: Subscription | null = null;
+  private pollInterval: NodeJS.Timeout | null = null;
   private fragments: BleFragment[] = [];
   private accumulatedText: string = '';
   private startedAt: number = 0;
@@ -24,23 +25,69 @@ export class ElmAccumulator {
   }
 
   private setupMonitor() {
-    this.subscription = this.connection.device.monitorCharacteristicForService(
-      this.connection.receiveCharacteristic.serviceUuid,
-      this.connection.receiveCharacteristic.uuid,
-      (error, characteristic) => {
-        if (error) {
-          if (error.errorCode === 201 && this.isListening) {
-            this.finish('DISCONNECTED');
+    const rc = this.connection.receiveCharacteristic;
+    
+    if (rc.isNotifiable || rc.isIndicatable) {
+      this.subscription = this.connection.device.monitorCharacteristicForService(
+        rc.serviceUuid,
+        rc.uuid,
+        (error, characteristic) => {
+          if (error) {
+            if (error.errorCode === 201 && this.isListening) {
+              this.finish('DISCONNECTED');
+            }
+            return;
           }
-          return;
+
+          if (characteristic?.value && this.isListening) {
+            const base64 = characteristic.value;
+            const decodedText = Buffer.from(base64, 'base64').toString('ascii');
+
+            console.log(`[ELM327 RAW RX] ${JSON.stringify(decodedText)}`);
+            BleDebugLogger.log(`RX: ${JSON.stringify(decodedText)}`);
+
+            this.fragments.push({
+              receivedAt: Date.now(),
+              base64,
+              decodedText
+            });
+
+            this.accumulatedText += decodedText;
+
+            if (this.accumulatedText.length > this.maxBytes) {
+              this.finish('MAX_BYTES_REACHED');
+              return;
+            }
+
+            if (this.accumulatedText.includes('>')) {
+              this.finish('PROMPT_RECEIVED');
+            }
+          }
         }
+      );
+    } else if (rc.isReadable) {
+      this.startPolling();
+    }
+  }
 
-        if (characteristic?.value && this.isListening) {
-          const base64 = characteristic.value;
+  private startPolling() {
+    if (this.pollInterval) clearInterval(this.pollInterval);
+    this.pollInterval = setInterval(async () => {
+      if (!this.isListening) return;
+      try {
+        const rc = this.connection.receiveCharacteristic;
+        const char = await this.connection.device.readCharacteristicForService(
+          rc.serviceUuid,
+          rc.uuid
+        );
+        if (char?.value && this.isListening) {
+          const base64 = char.value;
           const decodedText = Buffer.from(base64, 'base64').toString('ascii');
-
+          
+          if (decodedText.length === 0) return;
+          
           console.log(`[ELM327 RAW RX] ${JSON.stringify(decodedText)}`);
-          BleDebugLogger.log(`RX: ${JSON.stringify(decodedText)}`);
+          BleDebugLogger.log(`RX (poll): ${JSON.stringify(decodedText)}`);
 
           this.fragments.push({
             receivedAt: Date.now(),
@@ -59,8 +106,12 @@ export class ElmAccumulator {
             this.finish('PROMPT_RECEIVED');
           }
         }
+      } catch (e: any) {
+        if (e?.errorCode === 201 && this.isListening) {
+          this.finish('DISCONNECTED');
+        }
       }
-    );
+    }, 300);
   }
 
   public async awaitResponse(timeoutMs: number): Promise<RawElmResponse> {
@@ -121,6 +172,10 @@ export class ElmAccumulator {
     if (this.subscription) {
       this.subscription.remove();
       this.subscription = null;
+    }
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
     }
   }
 }

@@ -56,9 +56,9 @@ export const DEMO_PROFILES: Record<string, SignalAdvisoryProfile> = {
       { context: 'GENERAL', label: 'Extremo', min: 300, minInclusive: false, unit: 'km/h', displayOrder: 4 }
     ]
   },
-  CONTROL_VOLTAGE: {
+  CONTROL_MODULE_VOLTAGE: {
     vehicleId: 'demo',
-    signalId: 'CONTROL_VOLTAGE',
+    signalId: 'CONTROL_MODULE_VOLTAGE',
     sourceType: 'GENERIC_REFERENCE',
     calibrationStatus: 'GENERIC_ONLY',
     hysteresisMs: 3000,
@@ -75,5 +75,95 @@ export const DEMO_PROFILES: Record<string, SignalAdvisoryProfile> = {
       { context: 'ENGINE_RUNNING', label: 'Fuera del rango demo', max: 13.5, maxInclusive: false, unit: 'V', displayOrder: 8 },
       { context: 'ENGINE_RUNNING', label: 'Sobrecarga demo', min: 15.0, minInclusive: false, unit: 'V', displayOrder: 9 },
     ]
-  }
+  },
+  ADAPTER_VOLTAGE: {
+    vehicleId: 'demo',
+    signalId: 'ADAPTER_VOLTAGE',
+    sourceType: 'GENERIC_REFERENCE',
+    calibrationStatus: 'GENERIC_ONLY',
+    hysteresisMs: 3000,
+    sustainDurationMs: 2000,
+    bands: [],
+    referenceRanges: []
+  },
+  ENGINE_LOAD: {
+    vehicleId: 'demo',
+    signalId: 'ENGINE_LOAD',
+    sourceType: 'GENERIC_REFERENCE',
+    calibrationStatus: 'GENERIC_ONLY',
+    hysteresisMs: 3000,
+    sustainDurationMs: 2000,
+    bands: [],
+    referenceRanges: []
+  },
+  MAP: {
+    vehicleId: 'demo',
+    signalId: 'MAP',
+    sourceType: 'GENERIC_REFERENCE',
+    calibrationStatus: 'GENERIC_ONLY',
+    hysteresisMs: 3000,
+    sustainDurationMs: 2000,
+    bands: [],
+    referenceRanges: []
+  },
+  TIMING_ADVANCE: {
+    vehicleId: 'demo',
+    signalId: 'TIMING_ADVANCE',
+    sourceType: 'GENERIC_REFERENCE',
+    calibrationStatus: 'GENERIC_ONLY',
+    hysteresisMs: 3000,
+    sustainDurationMs: 2000,
+    bands: [],
+    referenceRanges: []
+  },
+  INTAKE_TEMP: {
+    vehicleId: 'demo',
+    signalId: 'INTAKE_TEMP',
+    sourceType: 'GENERIC_REFERENCE',
+    calibrationStatus: 'GENERIC_ONLY',
+    hysteresisMs: 3000,
+    sustainDurationMs: 2000,
+    bands: [],
+    referenceRanges: []
+  },
+  MAF: {
+    vehicleId: 'demo',
+    signalId: 'MAF',
+    sourceType: 'GENERIC_REFERENCE',
+    calibrationStatus: 'GENERIC_ONLY',
+    hysteresisMs: 3000,
+    sustainDurationMs: 2000,
+    bands: [],
+    referenceRanges: []
+  },
+  THROTTLE_POSITION: {
+    vehicleId: 'demo',
+    signalId: 'THROTTLE_POSITION',
+    sourceType: 'GENERIC_REFERENCE',
+    calibrationStatus: 'GENERIC_ONLY',
+    hysteresisMs: 3000,
+    sustainDurationMs: 2000,
+    bands: [],
+    referenceRanges: []
+  },
+  FUEL_LEVEL: {
+    vehicleId: 'demo',
+    signalId: 'FUEL_LEVEL',
+    sourceType: 'GENERIC_REFERENCE',
+    calibrationStatus: 'GENERIC_ONLY',
+    hysteresisMs: 3000,
+    sustainDurationMs: 2000,
+    bands: [],
+    referenceRanges: []
+  },
+  ENGINE_OIL_TEMP: {
+    vehicleId: 'demo',
+    signalId: 'ENGINE_OIL_TEMP',
+    sourceType: 'GENERIC_REFERENCE',
+    calibrationStatus: 'GENERIC_ONLY',
+    hysteresisMs: 3000,
+    sustainDurationMs: 2000,
+    bands: [],
+    referenceRanges: []
+  },
 };

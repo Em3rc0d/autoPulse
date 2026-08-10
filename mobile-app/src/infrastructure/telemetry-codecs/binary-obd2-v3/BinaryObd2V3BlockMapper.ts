@@ -1,4 +1,5 @@
 import { ObdAcquisitionEvent, ObdAcquisitionStatus } from '../../../domain/telemetry/models/ObdAcquisitionEvent';
+import { encodeUtf8 } from '../utils/utf8';
 import { UnencodedTelemetryBlock } from '../../../domain/telemetry/models/UnencodedTelemetryBlock';
 import {
   BinaryObd2V3Event,
@@ -147,7 +148,8 @@ export class BinaryObd2V3BlockMapper {
       });
 
       const rawFragments: BinaryObd2V3RawFragment[] = ev.rawFragments.map(rf => {
-        const bytes = new TextEncoder().encode(rf.decodedText);
+        // Pre-encode UTF-8 string properly
+        const bytes = encodeUtf8(rf.decodedText);
         if (bytes.length > 4096) throw new Error('BLOCK_LIMIT_EXCEEDED: maxRawBytesPerFragment');
         return {
           receivedDeltaMs: Math.max(0, rf.receivedAt - ev.requestedAt),

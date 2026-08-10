@@ -136,6 +136,7 @@ export function useSignalTracker(signalId: string, profile: SignalAdvisoryProfil
     stats,
     update,
     getContextSnapshot,
-    lastUpdateAt: lastUpdateRef.current
+    lastUpdateAt: lastUpdateRef.current,
+    profile
   };
 }

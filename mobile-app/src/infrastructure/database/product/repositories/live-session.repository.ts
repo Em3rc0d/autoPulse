@@ -101,11 +101,28 @@ export class LiveSessionRepository {
     return await this.db.query.liveSessions.findMany({
       where: and(eq(liveSessions.vehicleId, vehicleId), eq(liveSessions.workspaceId, workspaceId)),
       orderBy: [desc(liveSessions.startedAt)],
-      limit: 50 // Limit for recent history
+      limit: 100
     });
   }
 
-  async createSession(workspaceId: string, vehicleId: string, operatorId: string, adapterInstanceId: string) {
+  async getSessionsForWorkspace(workspaceId: string) {
+    return await this.db.query.liveSessions.findMany({
+      where: eq(liveSessions.workspaceId, workspaceId),
+      orderBy: [desc(liveSessions.startedAt)],
+      limit: 100
+    });
+  }
+
+  async getLatestSessionForVehicle(workspaceId: string, vehicleId: string) {
+    const results = await this.db.query.liveSessions.findMany({
+      where: and(eq(liveSessions.vehicleId, vehicleId), eq(liveSessions.workspaceId, workspaceId)),
+      orderBy: [desc(liveSessions.startedAt)],
+      limit: 1
+    });
+    return results.length > 0 ? results[0] : null;
+  }
+
+  async createSession(workspaceId: string, vehicleId: string, operatorId: string, adapterInstanceId: string, monitoringProfile?: string) {
     return await this.db.transaction(async (tx) => {
       const sessionId = ProductIdGenerator.generate();
       const now = Date.now();
@@ -116,6 +133,7 @@ export class LiveSessionRepository {
         vehicleId,
         operatorId,
         adapterInstanceId,
+        monitoringProfile,
         status: 'CREATED',
         format: 'BINARY',
         formatVersion: '3.0',
@@ -123,7 +141,7 @@ export class LiveSessionRepository {
         chunkDurationMs: 5000,
         dictionaryVersion: '1.0',
         createdAt: now
-      });
+      } as any);
 
       await this.appendEvent(tx, sessionId, 0, 'SESSION_CREATED', 'SYSTEM', 'INFO', '1.0');
 

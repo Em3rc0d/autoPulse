@@ -70,7 +70,7 @@ describe('ContextualAdvisoryEvaluator', () => {
   });
 
   describe('Control Voltage', () => {
-    const profile = DEMO_PROFILES.CONTROL_VOLTAGE;
+    const profile = DEMO_PROFILES.CONTROL_MODULE_VOLTAGE;
 
     describe('Engine Running (RPM > 0)', () => {
       const context = { rpm: { value: 800, quality: 'VALID' as any, observedAt: Date.now() } };

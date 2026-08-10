@@ -12,7 +12,8 @@ import RegisterScreen from '../screens/RegisterScreen';
 import GarageScreen from '../screens/garage/GarageScreen';
 import AddVehicleScreen from '../screens/garage/AddVehicleScreen';
 import VehicleDetailScreen from '../screens/garage/VehicleDetailScreen';
-import VehicleCapabilitiesScreen from '../screens/garage/VehicleCapabilitiesScreen';
+import DetectedSignalsScreen from '../screens/garage/DetectedSignalsScreen';
+import DriveModesScreen from '../screens/live/DriveModesScreen';
 import ConnectObdScreen from '../screens/live/ConnectObdScreen';
 import InitializationScreen from '../screens/live/InitializationScreen';
 import LiveSessionScreen from '../screens/live/LiveSessionScreen';
@@ -39,7 +40,7 @@ function GarageStack() {
       <Stack.Screen name="GarageHome" component={GarageScreen} />
       <Stack.Screen name="AddVehicle" component={AddVehicleScreen} />
       <Stack.Screen name="VehicleDetail" component={VehicleDetailScreen} />
-      <Stack.Screen name="VehicleCapabilities" component={VehicleCapabilitiesScreen} />
+      <Stack.Screen name="VehicleCapabilities" component={DetectedSignalsScreen} />
     </Stack.Navigator>
   );
 }
@@ -47,6 +48,7 @@ function GarageStack() {
 function LiveStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="DriveModes" component={DriveModesScreen} />
       <Stack.Screen name="ConnectObd" component={ConnectObdScreen} />
       <Stack.Screen name="Initialization" component={InitializationScreen} />
       <Stack.Screen name="LiveSession" component={LiveSessionScreen} />
@@ -80,6 +82,12 @@ function MainTabs() {
         name="History"
         component={HistoryScreen}
         options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="history" color={color} /> }}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            e.preventDefault();
+            navigation.navigate('History', { vehicleId: undefined });
+          },
+        })}
       />
       <Tab.Screen
         name="Settings"

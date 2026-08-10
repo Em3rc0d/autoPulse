@@ -33,6 +33,8 @@ export class SignalQualityEvaluator {
 export class SignalSessionStatsTracker {
   private stats: SignalSessionStats = {
     validReadingCount: 0,
+    validSum: 0,
+    validAverage: null,
     validMinObserved: null,
     validMaxObserved: null,
     engineStoppedObserved: false,
@@ -46,6 +48,8 @@ export class SignalSessionStatsTracker {
   public reset() {
     this.stats = {
       validReadingCount: 0,
+      validSum: 0,
+      validAverage: null,
       validMinObserved: null,
       validMaxObserved: null,
       engineStoppedObserved: false,
@@ -63,6 +67,8 @@ export class SignalSessionStatsTracker {
       this.stats.engineStoppedObserved = true;
       // 0 RPM is valid but doesn't change operating min
       this.stats.validReadingCount += 1;
+      this.stats.validSum += value;
+      this.stats.validAverage = this.stats.validSum / this.stats.validReadingCount;
       if (this.stats.validMaxObserved === null || value > this.stats.validMaxObserved) {
         this.stats.validMaxObserved = value;
       }
@@ -72,6 +78,8 @@ export class SignalSessionStatsTracker {
     if (quality !== 'VALID') return;
 
     this.stats.validReadingCount += 1;
+    this.stats.validSum += value;
+    this.stats.validAverage = this.stats.validSum / this.stats.validReadingCount;
 
     if (this.stats.validMinObserved === null || value < this.stats.validMinObserved) {
       this.stats.validMinObserved = value;

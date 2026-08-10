@@ -11,7 +11,12 @@ import { LiveSessionId, VehicleId, WorkspaceId } from '../../domain/shared/ident
 import { UtcIsoTimestamp, parseUtcIsoTimestamp } from '../../domain/shared/timestamps';
 
 function isCodecCorruption(err: any): boolean {
-  return err instanceof Error && (err.message.includes('CORRUPTED') || err.message.includes('UNSUPPORTED'));
+  if (!(err instanceof Error)) return false;
+  const msg = err.message || '';
+  return msg.includes('CORRUPTED') || 
+         msg.includes('UNSUPPORTED') || 
+         msg.includes('TRUNCATED') || 
+         err instanceof RangeError;
 }
 
 export class SessionSummaryBuildAbortedError extends Error {

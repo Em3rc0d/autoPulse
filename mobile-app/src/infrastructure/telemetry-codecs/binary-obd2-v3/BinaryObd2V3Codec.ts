@@ -3,6 +3,7 @@ import { EncodedTelemetryBlock } from '../../../domain/telemetry/models/EncodedT
 import { BinaryObd2V3BlockMapper } from './BinaryObd2V3BlockMapper';
 import { BinaryObd2V3Input, BinaryObd2V3Event, BinaryObd2V3Target, BinaryObd2V3Signal } from './types';
 import { ObdAcquisitionEvent } from '../../../domain/telemetry/models/ObdAcquisitionEvent';
+import { encodeUtf8, decodeUtf8 } from '../utils/utf8';
 
 export class BinaryObd2V3Codec {
   readonly codecId = 'BINARY_OBD2_V3';
@@ -33,11 +34,11 @@ export class BinaryObd2V3Codec {
   }
 
   private encodeString(str: string): Uint8Array {
-    return new TextEncoder().encode(str);
+    return encodeUtf8(str);
   }
 
   private decodeString(bytes: Uint8Array): string {
-    return new TextDecoder().decode(bytes);
+    return decodeUtf8(bytes);
   }
 
   encode(block: UnencodedTelemetryBlock): EncodedTelemetryBlock {

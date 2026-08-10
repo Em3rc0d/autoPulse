@@ -30,11 +30,12 @@ describe('SignalSessionStatsTracker', () => {
     expect(tracker.getStats().validMinObserved).toBe(0);
   });
 
-  it('ignores SUSPECT and STALE values for stats', () => {
+  it('ignores SUSPECT and STALE values for stats min/max/average', () => {
     const tracker = new SignalSessionStatsTracker();
     tracker.record(-40, 'SUSPECT', 'ENGINE_COOLANT');
     tracker.record(90, 'STALE', 'ENGINE_COOLANT');
     expect(tracker.getStats().validMinObserved).toBeNull();
+    expect(tracker.getStats().validAverage).toBeNull();
     expect(tracker.getStats().suspectValuesObserved).toBe(true);
   });
 
@@ -43,6 +44,29 @@ describe('SignalSessionStatsTracker', () => {
     tracker.record(782, 'VALID', 'ENGINE_RPM');
     expect(tracker.getStats().validMinObserved).toBe(782);
     expect(tracker.getStats().validMaxObserved).toBe(782);
+  });
+
+  it('calculates average correctly from valid samples only', () => {
+    const tracker = new SignalSessionStatsTracker();
+    tracker.record(800, 'VALID', 'ENGINE_RPM');
+    tracker.record(1200, 'VALID', 'ENGINE_RPM');
+    tracker.record(900, 'UNAVAILABLE', 'ENGINE_RPM'); // Should be ignored
+    tracker.record(1000, 'VALID', 'ENGINE_RPM');
+    
+    const stats = tracker.getStats();
+    expect(stats.validReadingCount).toBe(3);
+    expect(stats.validSum).toBe(3000);
+    expect(stats.validAverage).toBe(1000); // 3000 / 3
+  });
+
+  it('retains session peak (MAX) even after subsequent lower readings', () => {
+    const tracker = new SignalSessionStatsTracker();
+    tracker.record(800, 'VALID', 'ENGINE_RPM');
+    tracker.record(4800, 'VALID', 'ENGINE_RPM'); // The peak
+    tracker.record(900, 'VALID', 'ENGINE_RPM');
+    
+    const stats = tracker.getStats();
+    expect(stats.validMaxObserved).toBe(4800);
   });
 });
 
@@ -84,7 +108,7 @@ describe('AdvisoryStateTracker', () => {
   });
 
   it('UNAVAILABLE produces GRAY card', () => {
-    const tracker = new AdvisoryStateTracker(DEMO_PROFILES.CONTROL_VOLTAGE, clock);
+    const tracker = new AdvisoryStateTracker(DEMO_PROFILES.CONTROL_MODULE_VOLTAGE, clock);
     const state = tracker.evaluate(0, 'UNAVAILABLE');
     expect(state.color).toBe('GRAY');
     expect(state.quality).toBe('UNAVAILABLE');

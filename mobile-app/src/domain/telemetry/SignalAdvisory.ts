@@ -76,6 +76,8 @@ export interface SignalAdvisoryState {
 
 export interface SignalSessionStats {
   validReadingCount: number;
+  validSum: number;
+  validAverage: number | null;
   validMinObserved: number | null;
   validMaxObserved: number | null;
   engineStoppedObserved?: boolean; // Specific to RPM

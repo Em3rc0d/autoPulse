@@ -23,15 +23,11 @@ export class CharacteristicCandidateSelector {
       }
     }
 
-    // Limit base pools to avoid combinatorial explosions
-    const topWrites = writeCandidates.slice(0, 3);
-    const topReceives = receiveCandidates.slice(0, 3);
-
     const combinations: CandidateCombination[] = [];
 
     // 2. Build combinations
-    for (const wc of topWrites) {
-      for (const rc of topReceives) {
+    for (const wc of writeCandidates) {
+      for (const rc of receiveCandidates) {
         let score = 0;
 
         // Same service is highly preferred
@@ -57,7 +53,7 @@ export class CharacteristicCandidateSelector {
     // Sort by score descending
     combinations.sort((a, b) => b.score - a.score);
 
-    // Limit to max 6 combinations
-    return combinations.slice(0, 6);
+    // Limit to max 12 combinations
+    return combinations.slice(0, 12);
   }
 }

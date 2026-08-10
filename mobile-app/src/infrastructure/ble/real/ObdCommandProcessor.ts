@@ -81,7 +81,7 @@ export class ObdCommandProcessor implements ObdCommandExecutor {
       // Decode ATRV (e.g. 13.8V)
       const match = rawResponse.accumulatedText.match(/([\d\.]+)\s*V/i);
       if (match) {
-        decoded.push({ type: 'VOLTAGE', value: parseFloat(match[1]), unit: 'V' });
+        decoded.push({ type: 'ADAPTER_VOLTAGE', value: parseFloat(match[1]), unit: 'V' });
         status = 'SUCCESS_DECODED';
       } else {
         status = 'SUCCESS_RAW';
@@ -145,5 +145,11 @@ export class ObdCommandProcessor implements ObdCommandExecutor {
     }
     this.isProcessing = false;
     this.processQueue();
+  }
+
+  public disconnect() {
+    if (this.transport && typeof this.transport.disconnect === 'function') {
+      this.transport.disconnect();
+    }
   }
 }

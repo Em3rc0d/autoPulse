@@ -12,6 +12,7 @@ export const liveSessions = sqliteTable('live_sessions', {
   operatorId: text('operator_id').notNull(),
   adapterInstanceId: text('adapter_instance_id').notNull(),
   capabilitySnapshotId: text('capability_snapshot_id'),
+  monitoringProfile: text('monitoring_profile').default('GENERAL'),
 
   adapterProfileVersion: text('adapter_profile_version'),
   adapterFirmwareVersion: text('adapter_firmware_version'),

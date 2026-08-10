@@ -75,4 +75,40 @@ describe('RealTelemetryPoller', () => {
     expect(onDiagnostic).not.toHaveBeenCalled();
     expect(mockExecutor.executeCommand).toHaveBeenCalledTimes(5);
   });
+
+  it('strictly obeys the resolved polling set for PERFORMANCE mode (Gate 2.6)', async () => {
+    // PERFORMANCE mode resolves: ENGINE_RPM, ENGINE_LOAD, THROTTLE_POSITION, MAP
+    // Which translate to: 010C, 0104, 0111, 010B
+    const resolvedPollingSet = ['010C', '0104', '0111', '010B'];
+    
+    mockExecutor.executeCommand.mockResolvedValue({
+      status: 'SUCCESS_DECODED',
+      request: {} as any,
+      rawResponse: {} as any
+    } as any);
+
+    const poller = new RealTelemetryPoller(mockExecutor, resolvedPollingSet, onData, onDiagnostic);
+    poller.start(10);
+
+    // start() executes the 1st command immediately. Run 3 more timer ticks for a full cycle of 4 commands.
+    for (let i = 0; i < 3; i++) {
+      await Promise.resolve();
+      jest.runOnlyPendingTimers();
+    }
+
+    poller.stop();
+
+    // Verify exactly 4 commands were executed
+    expect(mockExecutor.executeCommand).toHaveBeenCalledTimes(4);
+
+    const executedCommands = mockExecutor.executeCommand.mock.calls.map(call => call[0].command);
+    
+    // Assert actual commands === expected commands
+    expect(executedCommands).toEqual(['010C', '0104', '0111', '010B']);
+
+    // Assert what was NOT requested
+    expect(executedCommands).not.toContain('010D'); // Speed
+    expect(executedCommands).not.toContain('0105'); // Coolant
+    expect(executedCommands).not.toContain('ATRV'); // Adapter Voltage
+  });
 });

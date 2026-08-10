@@ -1,5 +1,6 @@
 import { RealObdController } from './RealObdController';
 import { CommandRequest, CommandResult } from './pipeline/types';
+import { OBD_SIGNAL_REGISTRY } from '../../../domain/telemetry/ObdSignalRegistry';
 
 type ObdCommandExecutor = {
   isConnected: boolean;
@@ -15,7 +16,7 @@ export interface PollerDiagnosticEvent {
 
 export class RealTelemetryPoller {
   private controller: ObdCommandExecutor;
-  private supportedPids: string[];
+  private resolvedPollingSet: string[];
   private isPolling: boolean = false;
   private onData: (data: CommandResult) => void;
   private onDiagnostic?: (event: PollerDiagnosticEvent) => void;
@@ -27,20 +28,15 @@ export class RealTelemetryPoller {
 
   constructor(
     controller: ObdCommandExecutor, 
-    supportedPids: string[], 
+    resolvedPollingSet: string[], 
     onData: (data: CommandResult) => void,
     onDiagnostic?: (event: PollerDiagnosticEvent) => void
   ) {
     this.controller = controller;
-    // We only poll PIDs we know how to decode (and that are supported)
-    this.supportedPids = supportedPids.filter(pid =>
-      ['010C', '010D', '0105', '0142', 'ATRV'].includes(pid)
-    );
-
-    // Diagnostic Fallback: if no valid PIDs were detected by initialization, try directly polling RPM, Speed, Coolant, Voltage as a probe.
-    if (this.supportedPids.length === 0) {
-      this.supportedPids = ['010C', '010D', '0105', 'ATRV'];
-    }
+    
+    // The resolvedPollingSet already contains the dynamically resolved commands (e.g. 010C, ATRV)
+    // as determined by the active monitoring profile and capability snapshot.
+    this.resolvedPollingSet = [...resolvedPollingSet];
 
     this.onData = onData;
     this.onDiagnostic = onDiagnostic;
@@ -53,20 +49,20 @@ export class RealTelemetryPoller {
     // Use an asynchronous loop to prevent flooding the ELM327.
     // We must wait for the PREVIOUS command to finish before waiting for the interval.
     const pollLoop = async () => {
-      if (!this.isPolling || !this.controller.isConnected || this.supportedPids.length === 0) {
+      if (!this.isPolling || !this.controller.isConnected || this.resolvedPollingSet.length === 0) {
         this.stop();
         return;
       }
 
       // Ensure we don't divide by zero if supportedPids was reduced to 0
-      if (this.supportedPids.length === 0) {
+      if (this.resolvedPollingSet.length === 0) {
         this.stop();
         return;
       }
 
-      const pid = this.supportedPids[this.currentPidIndex];
+      const pid = this.resolvedPollingSet[this.currentPidIndex];
       // Increment index for next time, safely wrapping
-      this.currentPidIndex = (this.currentPidIndex + 1) % this.supportedPids.length;
+      this.currentPidIndex = (this.currentPidIndex + 1) % this.resolvedPollingSet.length;
 
       const isAT = pid.toUpperCase().startsWith('AT');
       const request: CommandRequest = {
@@ -105,9 +101,9 @@ export class RealTelemetryPoller {
       
       if (this.consecutiveFailures[pid] >= 3) {
         console.log(`[RealTelemetryPoller] Retiring PID ${pid} after 3 consecutive NO_DATA`);
-        const indexToRemove = this.supportedPids.indexOf(pid);
+        const indexToRemove = this.resolvedPollingSet.indexOf(pid);
         if (indexToRemove !== -1) {
-          this.supportedPids.splice(indexToRemove, 1);
+          this.resolvedPollingSet.splice(indexToRemove, 1);
           if (this.currentPidIndex >= indexToRemove && this.currentPidIndex > 0) {
             this.currentPidIndex--;
           }
@@ -119,7 +115,7 @@ export class RealTelemetryPoller {
         
         this.onData(result);
         
-        if (this.supportedPids.length === 0) {
+        if (this.resolvedPollingSet.length === 0) {
           this.stop();
         }
         return;
@@ -131,24 +127,12 @@ export class RealTelemetryPoller {
   }
 
   private getTypeForPid(pid: string): string {
-    switch(pid) {
-      case '010C': return 'RPM';
-      case '010D': return 'SPEED';
-      case '0105': return 'COOLANT';
-      case '0142':
-      case 'ATRV': return 'VOLTAGE';
-      default: return 'UNKNOWN';
-    }
+    const entry = Object.values(OBD_SIGNAL_REGISTRY).find(s => s.command === pid || (pid.startsWith('01') && s.command === pid.substring(2)));
+    return entry ? entry.canonicalId : 'UNKNOWN';
   }
 
   private getUnit(pid: string): string {
-    switch (pid) {
-      case '010C': return 'RPM';
-      case '010D': return 'km/h';
-      case '0105': return '°C';
-      case '0142':
-      case 'ATRV': return 'V';
-      default: return '';
-    }
+    const entry = Object.values(OBD_SIGNAL_REGISTRY).find(s => s.command === pid || (pid.startsWith('01') && s.command === pid.substring(2)));
+    return entry ? entry.unit : '';
   }
 }

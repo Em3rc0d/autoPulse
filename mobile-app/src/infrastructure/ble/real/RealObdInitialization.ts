@@ -1,5 +1,6 @@
 import { RealObdController } from './RealObdController';
 import { CommandRequest, CommandResult } from './pipeline/types';
+import { OBD_SIGNAL_REGISTRY } from '../../../domain/telemetry/ObdSignalRegistry';
 
 export interface CapabilitySnapshot {
   protocol: string | null;
@@ -42,16 +43,26 @@ export class RealObdInitialization {
     family: CommandRequest['family'],
     expectedService?: string
   ): Promise<CommandResult> {
+    if (!this.controller.isConnected) {
+      throw new Error('DISCONNECTED: Transport pipeline is not connected.');
+    }
+
     console.log(`[ELM327 DISCOVERY TX] ${command}`);
     const result = await this.controller.executeCommand(this.buildRequest(command, timeoutMs, family, expectedService));
     const response = result.rawResponse?.accumulatedText || '';
     console.log(`[ELM327 DISCOVERY RX] ${command} => ${JSON.stringify(response)} (${result.status})`);
+    
     snapshot.rawDiscovery.push({
       command,
       status: result.status,
       response,
       latencyMs: result.latencyMs
     });
+
+    if (result.status === 'DISCONNECTED' || !this.controller.isConnected) {
+      throw new Error('DISCONNECTED: Transport pipeline was disconnected during command ' + command);
+    }
+
     return result;
   }
 
@@ -99,22 +110,24 @@ export class RealObdInitialization {
         snapshot.protocol = resProtocol.normalizedResponse?.normalizedText || null;
       }
 
-      // 4. Checking supported signals (0100)
+      // 4. Checking supported signals (Mode 01 Capability Discovery)
       this.onProgress(4);
-      let res0100 = await this.executeAndRecord(snapshot, '0100', 15000, 'OBD_MODE_01', '41');
+      let res0100 = await this.executeAndRecord(snapshot, '0100', 20000, 'OBD_MODE_01', '41');
 
-      if (res0100.status !== 'SUCCESS_DECODED' && res0100.status !== 'SUCCESS_RAW') {
-        for (const protocol of ['ATSP6', 'ATSP7', 'ATSP8', 'ATSP9', 'ATSP3', 'ATSP4', 'ATSP5']) {
+      if (res0100.status !== 'SUCCESS_DECODED' && res0100.status !== 'SUCCESS_RAW' && res0100.status !== 'NO_DATA') {
+        for (const protocol of ['ATSP6', 'ATSP7', 'ATSP8', 'ATSP9', 'ATSP3', 'ATSP4', 'ATSP5', 'ATSP1', 'ATSP2']) {
           await this.executeAndRecord(snapshot, protocol, 3000, 'ELM_AT');
-          res0100 = await this.executeAndRecord(snapshot, '0100', 8000, 'OBD_MODE_01', '41');
-          if (res0100.status === 'SUCCESS_DECODED' || res0100.status === 'SUCCESS_RAW') {
+          res0100 = await this.executeAndRecord(snapshot, '0100', 15000, 'OBD_MODE_01', '41');
+          if (res0100.status === 'SUCCESS_DECODED' || res0100.status === 'SUCCESS_RAW' || res0100.status === 'NO_DATA') {
             break;
           }
         }
       }
 
-      if (res0100.status === 'SUCCESS_DECODED' || res0100.status === 'SUCCESS_RAW') {
-        this.extractBitmaps(res0100, snapshot.supportedPids);
+      if (res0100.status === 'SUCCESS_DECODED' || res0100.status === 'SUCCESS_RAW' || res0100.status === 'NO_DATA') {
+        if (res0100.status !== 'NO_DATA') {
+          this.extractBitmaps(res0100, snapshot.supportedPids);
+        }
 
         // If 0120 is supported, query it
         if (snapshot.supportedPids.includes('0120')) {
@@ -136,26 +149,38 @@ export class RealObdInitialization {
           }
         }
       } else {
-        // If 0100 fails to get data (e.g., UNABLE TO CONNECT), init failed
         snapshot.failureReason = `${res0100.status}: ${res0100.errors.join(', ')}`;
       }
 
       await this.probeCoreSignals(snapshot);
 
-      await this.executeAndRecord(snapshot, '0900', 5000, 'OBD_MODE_09', '49');
-      await this.executeAndRecord(snapshot, '0902', 5000, 'OBD_MODE_09', '49');
-      await this.executeAndRecord(snapshot, '0904', 5000, 'OBD_MODE_09', '49');
-      await this.executeAndRecord(snapshot, '090A', 5000, 'OBD_MODE_09', '49');
-      await this.executeAndRecord(snapshot, '03', 5000, 'OBD_MODE_03', '43');
+      const decodableCommands = new Set(
+        Object.values(OBD_SIGNAL_REGISTRY)
+          .map(s => s.command)
+          .filter((cmd): cmd is string => cmd !== null)
+      );
 
-      snapshot.initializationSuccessful = snapshot.supportedPids.length > 0;
+      const discoveredPids = new Set([
+        ...snapshot.supportedPids,
+        ...snapshot.directlyObservedPids,
+      ]);
+
+      const mode01CommunicationEstablished = discoveredPids.size > 0;
+      const liveSignalAvailable = Array.from(discoveredPids).some(pid => decodableCommands.has(pid));
+      const transportHealthy = this.controller.isConnected;
+
+      // Explicit Live Critical-Path check:
+      // Valid Mode 01 exchange + At least one Live-decodable signal + Healthy transport
+      snapshot.initializationSuccessful = mode01CommunicationEstablished && liveSignalAvailable && transportHealthy;
       if (!snapshot.initializationSuccessful) {
         snapshot.failureReason = snapshot.failureReason || 'NO_OBD_SIGNALS_DECODED';
+      } else {
+        this.onProgress(5); // Preparing live session
       }
-      this.onProgress(5); // Preparing live session
 
       return snapshot;
     } catch (e: any) {
+      snapshot.initializationSuccessful = false;
       snapshot.failureReason = e?.message || 'Unknown exception';
       return snapshot;
     }
