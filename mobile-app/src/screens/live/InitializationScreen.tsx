@@ -491,6 +491,22 @@ export default function InitializationScreen() {
   }, [adapterMode, currentStepIndex, virtualSteps.length]);
 
   useEffect(() => {
+    if (adapterMode !== 'VIRTUAL_PREVIEW') return;
+    
+    if (currentStepIndex < virtualSteps.length) {
+      const timer = setTimeout(() => {
+        setVirtualSteps(prev => {
+          const newSteps = [...prev];
+          newSteps[currentStepIndex].status = 'done';
+          return newSteps;
+        });
+        setCurrentStepIndex(currentStepIndex + 1);
+      }, 800);
+      return () => clearTimeout(timer);
+    }
+  }, [adapterMode, currentStepIndex, virtualSteps.length]);
+
+  useEffect(() => {
     if (!adapterMode) {
       setInitError('INVALID_SESSION_ORIGIN: Missing adapter mode.');
       return;
