@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, PermissionsAndroid, Platform, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, PermissionsAndroid, Permission, Platform, SafeAreaView } from 'react-native';
 import ReactNativeForegroundService from '@supersami/rn-foreground-service';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -90,7 +90,7 @@ export default function LiveSessionScreen() {
   useEffect(() => {
     async function requestPermissions() {
       if (Platform.OS === 'android') {
-        const permsToRequest = [];
+        const permsToRequest: Permission[] = [];
         if (Platform.Version >= 33) permsToRequest.push(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
         if (Platform.Version >= 31) permsToRequest.push(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT);
 
