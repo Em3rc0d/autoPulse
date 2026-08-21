@@ -41,7 +41,7 @@ export class AdapterCapabilitySnapshotRepository {
       connectionRetained: snapshot.assessment.connectionRetained,
       assessedAt: snapshot.assessedAt,
       createdAt,
-    }).returning();
+    } as any).returning();
 
     return row;
   }
