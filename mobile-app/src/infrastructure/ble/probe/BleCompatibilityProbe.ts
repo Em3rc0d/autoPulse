@@ -1,5 +1,10 @@
 import { Device, BleManager } from 'react-native-ble-plx';
-import { ProbeResult, ProbeVerdict, ProfileMatchType } from '../../../domain/telemetry/probe/ProbeResult';
+import {
+  AdapterCompatibilityGrade,
+  ProbeResult,
+  ProbeVerdict,
+  ProfileMatchType,
+} from '../../../domain/telemetry/probe/ProbeResult';
 import { GattInspector, GattInventory } from './GattInspector';
 import { CharacteristicCandidateSelector, CandidateCombination } from './CharacteristicCandidateSelector';
 import { AdapterProfileMatcher } from './AdapterProfileMatcher';
@@ -42,6 +47,7 @@ export class BleCompatibilityProbe {
     ): { result: ProbeResult, device?: Device, handshakeComb?: CandidateCombination } => ({
       result: {
         verdict,
+        compatibilityGrade: this.classifyCompatibility(verdict, matchType),
         probeStage: stage,
         failureReason: reason,
         profileMatch: matchType,
@@ -68,7 +74,6 @@ export class BleCompatibilityProbe {
     try {
       this.onProgress('CONNECTING');
 
-      // Connect
       this.device = await this.manager.connectToDevice(this.deviceId, { timeout: 10000 });
       if (this.cancellationSignal.cancelled) return buildResult(ProbeVerdict.CANCELLED, 'CONNECTING', 'User cancelled');
 
@@ -94,35 +99,30 @@ export class BleCompatibilityProbe {
       let successfulHandshake: { cmd: string, comb: CandidateCombination, res: HandshakeResult } | null = null;
       let usedAtz = false;
 
-      // Iterating combinations
       for (const comb of combinations) {
         if (this.cancellationSignal.cancelled) break;
         testedCombinationCount++;
 
-        // Try ATI
         let res = await ProbeHandshake.execute(this.device, comb, 'ATI\r', 2000, this.cancellationSignal);
         if (res.disconnectObserved) {
           return buildResult(ProbeVerdict.PROBE_FAILED, 'HANDSHAKE', 'Device disconnected unexpectedly');
         }
 
-        // If no valid text response, try AT@1
         if (!this.isValidResponse(res.sanitizedResponse)) {
           res = await ProbeHandshake.execute(this.device, comb, 'AT@1\r', 2000, this.cancellationSignal);
           if (res.disconnectObserved) return buildResult(ProbeVerdict.PROBE_FAILED, 'HANDSHAKE', 'Device disconnected unexpectedly');
         }
 
-        // If still no valid response, try ATZ fallback (only once per device session)
         if (!this.isValidResponse(res.sanitizedResponse) && !usedAtz && res.writeAccepted) {
-           usedAtz = true;
-           await ProbeHandshake.execute(this.device, comb, 'ATZ\r', 3000, this.cancellationSignal);
-           // After reset, try ATI again with longer timeout
-           res = await ProbeHandshake.execute(this.device, comb, 'ATI\r', 3000, this.cancellationSignal);
-           if (res.disconnectObserved) return buildResult(ProbeVerdict.PROBE_FAILED, 'HANDSHAKE', 'Device disconnected unexpectedly after reset');
+          usedAtz = true;
+          await ProbeHandshake.execute(this.device, comb, 'ATZ\r', 3000, this.cancellationSignal);
+          res = await ProbeHandshake.execute(this.device, comb, 'ATI\r', 3000, this.cancellationSignal);
+          if (res.disconnectObserved) return buildResult(ProbeVerdict.PROBE_FAILED, 'HANDSHAKE', 'Device disconnected unexpectedly after reset');
         }
 
         if (this.isValidResponse(res.sanitizedResponse)) {
           successfulHandshake = { cmd: 'ATI/AT@1', comb, res };
-          break; // Found a working combo!
+          break;
         }
       }
 
@@ -132,15 +132,13 @@ export class BleCompatibilityProbe {
       }
 
       if (successfulHandshake) {
-        const isSupported = matchType !== 'NO_PROFILE_MATCH';
-        const verdict = isSupported ? ProbeVerdict.SUPPORTED : ProbeVerdict.SUPPORTED_WITH_PROFILE;
-        // Retain connection for supported, let UI decide when to kill or proceed
+        // A profile match is provenance, not authority. A working generic adapter is still supported.
+        const verdict = matchType === 'NO_PROFILE_MATCH'
+          ? ProbeVerdict.SUPPORTED
+          : ProbeVerdict.SUPPORTED_WITH_PROFILE;
         return buildResult(verdict, 'FINISHED', undefined, successfulHandshake, true);
       }
 
-      // If we got here, none of the combinations yielded a recognizable valid response.
-      // But did we at least get SOME bytes back?
-      // Check if we received anything at all on any combination to decide between UNKNOWN and INCOMPATIBLE_PROTOCOL
       await this.device.cancelConnection();
       return buildResult(ProbeVerdict.UNKNOWN, 'FINISHED', 'GATT usable but no valid AT protocol response');
 
@@ -152,10 +150,30 @@ export class BleCompatibilityProbe {
     }
   }
 
+  private classifyCompatibility(verdict: ProbeVerdict, matchType: ProfileMatchType): AdapterCompatibilityGrade {
+    if (verdict === ProbeVerdict.SUPPORTED_WITH_PROFILE) {
+      return matchType === 'EXACT_PROFILE_MATCH'
+        ? AdapterCompatibilityGrade.CERTIFIED
+        : AdapterCompatibilityGrade.COMPATIBLE;
+    }
+
+    if (verdict === ProbeVerdict.SUPPORTED) {
+      return AdapterCompatibilityGrade.COMPATIBLE;
+    }
+
+    if (
+      verdict === ProbeVerdict.INCOMPATIBLE_TRANSPORT ||
+      verdict === ProbeVerdict.INCOMPATIBLE_PROTOCOL ||
+      verdict === ProbeVerdict.PROBE_FAILED
+    ) {
+      return AdapterCompatibilityGrade.UNSUPPORTED;
+    }
+
+    return AdapterCompatibilityGrade.UNKNOWN;
+  }
+
   private isValidResponse(response: string | null | undefined): boolean {
     if (!response) return false;
-    // An AT command response typically has some readable text (e.g. ELM327 v1.5, OBDII, etc.)
-    // For our probe, we just want to ensure it's not empty, not just "OK", and not garbage.
     const alphaNum = response.replace(/[^a-zA-Z0-9]/g, '');
     return alphaNum.length >= 3;
   }
