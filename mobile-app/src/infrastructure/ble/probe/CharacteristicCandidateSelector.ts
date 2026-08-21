@@ -11,7 +11,6 @@ export class CharacteristicCandidateSelector {
     const writeCandidates: DiscoveredCharacteristic[] = [];
     const receiveCandidates: DiscoveredCharacteristic[] = [];
 
-    // 1. Gather all candidates
     for (const service of inventory.services) {
       for (const char of service.characteristics) {
         if (char.isWritableWithResponse || char.isWritableWithoutResponse) {
@@ -23,28 +22,22 @@ export class CharacteristicCandidateSelector {
       }
     }
 
-    // Limit base pools to avoid combinatorial explosions
-    const topWrites = writeCandidates.slice(0, 3);
-    const topReceives = receiveCandidates.slice(0, 3);
-
     const combinations: CandidateCombination[] = [];
 
-    // 2. Build combinations
-    for (const wc of topWrites) {
-      for (const rc of topReceives) {
+    // Score the full viable inventory first. Discovery order must never decide
+    // whether a valid adapter channel is even considered.
+    for (const wc of writeCandidates) {
+      for (const rc of receiveCandidates) {
         let score = 0;
 
-        // Same service is highly preferred
         if (wc.serviceUuid === rc.serviceUuid) score += 100;
 
-        // Write with response is slightly preferred
         if (wc.isWritableWithResponse) score += 10;
         else if (wc.isWritableWithoutResponse) score += 5;
 
-        // Notify is highly preferred, then indicate, read is fallback
         if (rc.isNotifiable) score += 20;
         else if (rc.isIndicatable) score += 15;
-        else if (rc.isReadable) score -= 50; // Read as fallback penalty
+        else if (rc.isReadable) score -= 50;
 
         combinations.push({
           writeCharacteristic: wc,
@@ -54,10 +47,14 @@ export class CharacteristicCandidateSelector {
       }
     }
 
-    // Sort by score descending
-    combinations.sort((a, b) => b.score - a.score);
+    combinations.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const aKey = `${a.writeCharacteristic.serviceUuid}/${a.writeCharacteristic.uuid}/${a.receiveCharacteristic.uuid}`;
+      const bKey = `${b.writeCharacteristic.serviceUuid}/${b.writeCharacteristic.uuid}/${b.receiveCharacteristic.uuid}`;
+      return aKey.localeCompare(bKey);
+    });
 
-    // Limit to max 6 combinations
+    // Bound probe cost only after deterministic ranking.
     return combinations.slice(0, 6);
   }
 }
