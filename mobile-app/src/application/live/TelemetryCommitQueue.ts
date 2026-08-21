@@ -5,6 +5,13 @@ export type CommitQueueEvent =
   | { type: 'COMMITTED'; block: EncodedTelemetryBlock }
   | { type: 'FAILED'; errorReason: string; block: EncodedTelemetryBlock };
 
+export class TelemetryCommitQueueDrainTimeoutError extends Error {
+  constructor(public readonly timeoutMs: number, public readonly pendingCount: number) {
+    super(`TELEMETRY_DRAIN_TIMEOUT:${timeoutMs}ms:${pendingCount}_pending`);
+    this.name = 'TelemetryCommitQueueDrainTimeoutError';
+  }
+}
+
 export class TelemetryCommitQueue {
   private queue: EncodedTelemetryBlock[] = [];
   private isProcessing = false;
@@ -36,18 +43,18 @@ export class TelemetryCommitQueue {
 
     // Check if retryable
     if (!result.success) {
-       if (this.isRetryable((result as any).reason)) {
-         // Retry exactly once with identical block
-         result = await this.repository.commitBlock(this.workspaceId, this.sessionId, block);
-       }
+      if (this.isRetryable((result as any).reason)) {
+        // Retry exactly once with identical block
+        result = await this.repository.commitBlock(this.workspaceId, this.sessionId, block);
+      }
     }
 
     if (!result.success) {
-       this.hasFailed = true;
-       // We retain the block in the queue (do not shift)
-       this.onEvent({ type: 'FAILED', errorReason: (result as any).reason, block });
-       this.isProcessing = false;
-       return;
+      this.hasFailed = true;
+      // We retain the block in the queue (do not shift)
+      this.onEvent({ type: 'FAILED', errorReason: (result as any).reason, block });
+      this.isProcessing = false;
+      return;
     }
 
     // Success
@@ -58,9 +65,25 @@ export class TelemetryCommitQueue {
     this.processNext();
   }
 
-  public async drain(): Promise<void> {
-    while(this.queue.length > 0 && !this.hasFailed) {
-      await new Promise(resolve => setTimeout(resolve, 50));
+  /**
+   * Wait until all queued blocks are committed, but never indefinitely.
+   *
+   * A hung native/SQLite write must not be able to keep a Live session in
+   * FLUSHING forever. The caller owns the policy for converting a timeout
+   * into an INTERRUPTED session.
+   */
+  public async drain(timeoutMs = 5000, pollIntervalMs = 50): Promise<void> {
+    if (timeoutMs <= 0) {
+      throw new Error('INVALID_DRAIN_TIMEOUT');
+    }
+
+    const startedAt = Date.now();
+
+    while (this.queue.length > 0 && !this.hasFailed) {
+      if (Date.now() - startedAt >= timeoutMs) {
+        throw new TelemetryCommitQueueDrainTimeoutError(timeoutMs, this.queue.length);
+      }
+      await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
     }
   }
 
@@ -73,7 +96,7 @@ export class TelemetryCommitQueue {
   }
 
   private isRetryable(reason: string): boolean {
-    // Retry only transiant failures
+    // Retry only transient failures
     return reason === 'DATABASE_WRITE_FAILED' || reason === 'CONCURRENT_SESSION_UPDATE';
   }
 }
