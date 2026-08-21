@@ -34,6 +34,8 @@ export interface ProbeResult {
   commandUsed?: string;
   writeCharacteristicUUID?: string;
   receiveCharacteristicUUID?: string;
+  writeMode?: 'WITH_RESPONSE' | 'WITHOUT_RESPONSE';
+  receiveMode?: 'NOTIFY' | 'INDICATE' | 'READ';
   bytesWritten?: number;
   sanitizedResponse?: string;
   latencyMs?: number;
