@@ -6,6 +6,42 @@ import { useVehicle } from '../../infrastructure/hooks/useVehicle';
 import { useLocalContext } from '../../infrastructure/hooks/useLocalContext';
 import { useCapabilitySnapshot } from '../../infrastructure/hooks/useCapabilitySnapshot';
 
+type CapabilityTone = 'available' | 'observed' | 'pending' | 'unavailable' | 'unknown';
+
+export function getCapabilityPresentation(param: any): {
+  label: string;
+  explanation: string;
+  tone: CapabilityTone;
+} {
+  if (param.supportState === 'DIRECTLY_OBSERVED' || param.probeResult === 'SUCCESS') {
+    return { label: 'Observed', explanation: 'The vehicle answered this signal directly.', tone: 'observed' };
+  }
+  if (param.supportState === 'SUPPORTED' || param.capabilityAdvertisedState === 'ADVERTISED') {
+    return { label: 'Available', explanation: 'The vehicle reports that this signal is available.', tone: 'available' };
+  }
+  if (['NOT_AVAILABLE', 'NOT_SUPPORTED', 'NO_RESPONSE'].includes(param.supportState)) {
+    return { label: 'Unavailable', explanation: 'No usable reading is available from this vehicle.', tone: 'unavailable' };
+  }
+  if (param.supportState === 'PROBE_PENDING' || param.probeResult === 'NOT_PROBED') {
+    return { label: 'Not observed yet', explanation: 'AutoPulse has not received a direct reading yet.', tone: 'pending' };
+  }
+  return { label: 'Unknown', explanation: 'There is not enough evidence to classify this signal.', tone: 'unknown' };
+}
+
+export function getCapabilityGroup(requestId?: string): string {
+  switch (requestId) {
+    case '0105':
+    case '010F':
+      return 'Temperatures';
+    case '010D':
+      return 'Movement';
+    case '0142':
+      return 'Electrical';
+    default:
+      return 'Engine';
+  }
+}
+
 export default function VehicleCapabilitiesScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
@@ -15,25 +51,13 @@ export default function VehicleCapabilitiesScreen() {
 
   const { snapshot, parameters, loading } = useCapabilitySnapshot(context?.defaultWorkspaceId, vehicleId);
 
-  const getStatusColor = (supportState: string) => {
-    switch (supportState) {
-      case 'SUPPORTED': return '#4ade80';
-      case 'NOT_SUPPORTED': return '#ef4444';
-      case 'NO_RESPONSE': return '#fb923c';
-      case 'TEMPORARILY_UNAVAILABLE': return '#fbbf24';
-      case 'NOT_TESTED': return '#9ca3af';
+  const getStatusColor = (tone: CapabilityTone) => {
+    switch (tone) {
+      case 'available': return '#4ade80';
+      case 'observed': return '#22d3ee';
+      case 'unavailable': return '#ef4444';
+      case 'pending': return '#fbbf24';
       default: return '#9ca3af';
-    }
-  };
-
-  const getStatusLabel = (supportState: string) => {
-    switch (supportState) {
-      case 'SUPPORTED': return 'Supported';
-      case 'NOT_SUPPORTED': return 'Not Supported';
-      case 'NO_RESPONSE': return 'No Response';
-      case 'TEMPORARILY_UNAVAILABLE': return 'Temp Unavailable';
-      case 'NOT_TESTED': return 'Not Tested';
-      default: return supportState;
     }
   };
 
@@ -77,27 +101,46 @@ export default function VehicleCapabilitiesScreen() {
         {parameters.length === 0 ? (
           <Text style={styles.emptyDesc}>No parameters recorded in this snapshot.</Text>
         ) : (
-          parameters.map(param => {
-            // When definition is null due to leftJoin, we reconstruct it from parameterDefinitionId if possible
-            const fallbackService = param.service ?? (param.parameterDefinitionId ? parseInt(param.parameterDefinitionId.substring(0, 2), 16) : 0);
-            const fallbackPid = param.parameterIdentifier ?? (param.parameterDefinitionId ? parseInt(param.parameterDefinitionId.substring(2, 4), 16) : 0);
+          ['Engine', 'Temperatures', 'Movement', 'Electrical'].map(group => {
+            const groupedParameters = parameters.filter(param =>
+              getCapabilityGroup(param.observedRequestId ?? param.parameterDefinitionId) === group
+            );
+            if (groupedParameters.length === 0) return null;
 
             return (
-            <View key={param.id} style={styles.paramCard}>
-              <View style={styles.paramHeader}>
-                <Text style={styles.paramName}>{param.technicalName ?? 'Unknown Parameter'}</Text>
-                <View style={[styles.statusBadge, { borderColor: getStatusColor(param.supportState) }]}>
-                  <Text style={[styles.statusBadgeText, { color: getStatusColor(param.supportState) }]}>
-                    {getStatusLabel(param.supportState)}
-                  </Text>
-                </View>
-              </View>
-              <Text style={styles.paramPid}>Mode {fallbackService.toString(16).padStart(2, '0').toUpperCase()} PID {fallbackPid.toString(16).padStart(2, '0').toUpperCase()} (ECU {param.ecuAddress.toString(16).toUpperCase()})</Text>
+              <View key={group} style={styles.groupSection}>
+                <Text style={styles.groupTitle}>{group}</Text>
+                {groupedParameters.map(param => {
+                  const fallbackService = param.service ?? (param.parameterDefinitionId
+                    ? parseInt(param.parameterDefinitionId.substring(0, 2), 16)
+                    : 0);
+                  const fallbackPid = param.parameterIdentifier ?? (param.parameterDefinitionId
+                    ? parseInt(param.parameterDefinitionId.substring(2, 4), 16)
+                    : 0);
+                  const presentation = getCapabilityPresentation(param);
 
-              {param.errorCode && (
-                <Text style={styles.paramError}>Error Code: {param.errorCode}</Text>
-              )}
-            </View>
+                  return (
+                    <View key={param.id} style={styles.paramCard}>
+                      <View style={styles.paramHeader}>
+                        <Text style={styles.paramName}>{param.technicalName ?? 'Standard OBD signal'}</Text>
+                        <View style={[styles.statusBadge, { borderColor: getStatusColor(presentation.tone) }]}>
+                          <Text style={[styles.statusBadgeText, { color: getStatusColor(presentation.tone) }]}>
+                            {presentation.label}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.paramExplanation}>{presentation.explanation}</Text>
+                      <Text style={styles.paramPid}>
+                        Mode {fallbackService.toString(16).padStart(2, '0').toUpperCase()} PID {fallbackPid.toString(16).padStart(2, '0').toUpperCase()} (ECU {param.ecuAddress.toString(16).toUpperCase()})
+                      </Text>
+
+                      {param.errorCode && (
+                        <Text style={styles.paramError}>Error Code: {param.errorCode}</Text>
+                      )}
+                    </View>
+                  );
+                })}
+              </View>
             );
           })
         )}
@@ -158,6 +201,11 @@ const styles = StyleSheet.create({
   },
   snapshotInfoText: { color: '#9ca3af', fontSize: 13, fontFamily: 'SpaceMono_400Regular', marginBottom: 4 },
 
+  groupSection: { marginBottom: 12 },
+  groupTitle: {
+    color: '#fff', fontSize: 16, fontFamily: 'Inter_600SemiBold', marginBottom: 10
+  },
+
   paramCard: {
     backgroundColor: '#1f2937',
     padding: 16,
@@ -168,6 +216,7 @@ const styles = StyleSheet.create({
   },
   paramHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
   paramName: { color: '#e5e7eb', fontSize: 15, fontFamily: 'Inter_500Medium', flex: 1, marginRight: 8 },
+  paramExplanation: { color: '#9ca3af', fontSize: 13, fontFamily: 'Inter_400Regular', marginBottom: 8 },
   paramPid: { color: '#6b7280', fontSize: 12, fontFamily: 'SpaceMono_400Regular' },
   paramError: { color: '#ef4444', fontSize: 12, fontFamily: 'SpaceMono_400Regular', marginTop: 4 },
 
