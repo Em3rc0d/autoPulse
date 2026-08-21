@@ -7,15 +7,19 @@ import { AdapterCapabilitySnapshotRepository } from '../adapter-capability-snaps
 import { AdapterCompatibilityGrade } from '../../../../../domain/telemetry/probe/ProbeResult';
 import { AdapterCapabilitySnapshot } from '../../../../../domain/telemetry/probe/AdapterCapabilitySnapshot';
 
-function snapshot(assessedAt: number, grade: AdapterCompatibilityGrade): AdapterCapabilitySnapshot {
+function snapshot(
+  assessedAt: number,
+  options: { matchedProfileId?: string } = {},
+): AdapterCapabilitySnapshot {
   return {
     schemaVersion: '1.0',
     transport: 'BLE',
     deviceId: 'device-1',
     deviceName: 'Generic OBD',
     rssi: -55,
-    profileMatch: grade === AdapterCompatibilityGrade.CERTIFIED ? 'EXACT_PROFILE_MATCH' : 'NO_PROFILE_MATCH',
-    compatibilityGrade: grade,
+    profileMatch: options.matchedProfileId ? 'EXACT_PROFILE_MATCH' : 'NO_PROFILE_MATCH',
+    matchedProfileId: options.matchedProfileId,
+    compatibilityGrade: AdapterCompatibilityGrade.COMPATIBLE,
     assessedAt,
     channel: {
       writeCharacteristicUUID: 'write-1',
@@ -23,7 +27,7 @@ function snapshot(assessedAt: number, grade: AdapterCompatibilityGrade): Adapter
       testedCombinationCount: 2,
     },
     behavior: {
-      commandUsed: 'ATI/AT@1',
+      commandUsed: 'ATI\r',
       sanitizedResponse: 'ELM327 v1.5',
       bytesWritten: 4,
       latencyMs: 42,
@@ -38,7 +42,7 @@ function snapshot(assessedAt: number, grade: AdapterCompatibilityGrade): Adapter
 }
 
 describe('AdapterCapabilitySnapshotRepository', () => {
-  it('appends evidence and returns the latest assessed snapshot', async () => {
+  it('appends evidence and returns the latest assessed snapshot with matched profile identity', async () => {
     const dbName = `adapter_capability_${Date.now()}.db`;
     const sqlite = createClient({ url: `file:${dbName}` });
     await sqlite.execute('PRAGMA foreign_keys = ON;');
@@ -61,15 +65,18 @@ describe('AdapterCapabilitySnapshotRepository', () => {
     } as any);
 
     const repository = new AdapterCapabilitySnapshotRepository(db as any);
-    await repository.append('ws-1', 'adapter-1', snapshot(1000, AdapterCompatibilityGrade.COMPATIBLE));
-    await repository.append('ws-1', 'adapter-1', snapshot(2000, AdapterCompatibilityGrade.CERTIFIED));
+    await repository.append('ws-1', 'adapter-1', snapshot(1000));
+    await repository.append('ws-1', 'adapter-1', snapshot(2000, { matchedProfileId: 'standard-elm327-ble' }));
 
     const latest = await repository.getLatest('ws-1', 'adapter-1');
 
     expect(latest).not.toBeNull();
     expect(latest?.assessedAt).toBe(2000);
-    expect(latest?.compatibilityGrade).toBe(AdapterCompatibilityGrade.CERTIFIED);
+    expect(latest?.compatibilityGrade).toBe(AdapterCompatibilityGrade.COMPATIBLE);
+    expect(latest?.profileMatch).toBe('EXACT_PROFILE_MATCH');
+    expect(latest?.matchedProfileId).toBe('standard-elm327-ble');
     expect(latest?.deviceId).toBe('device-1');
+    expect(latest?.behavior.commandUsed).toBe('ATI\r');
     expect(latest?.behavior.promptObserved).toBe(true);
 
     sqlite.close();
@@ -101,7 +108,7 @@ describe('AdapterCapabilitySnapshotRepository', () => {
     const repository = new AdapterCapabilitySnapshotRepository(db as any);
 
     await expect(
-      repository.append('ws-2', 'adapter-1', snapshot(1000, AdapterCompatibilityGrade.COMPATIBLE))
+      repository.append('ws-2', 'adapter-1', snapshot(1000))
     ).rejects.toThrow();
 
     sqlite.close();
