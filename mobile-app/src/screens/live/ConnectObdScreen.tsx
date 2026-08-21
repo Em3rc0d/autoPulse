@@ -13,8 +13,7 @@ import { useProductDb } from '../../infrastructure/hooks/useProductDb';
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { AdapterRepository } from '../../infrastructure/database/product/repositories/adapter.repository';
 import { AdapterCapabilitySnapshotRepository } from '../../infrastructure/database/product/repositories/adapter-capability-snapshot.repository';
-
-const INTERNAL_VIRTUAL_OBD_ENABLED = true; // Feature flag for testing
+import { AppConfig } from '../../application/config';
 
 type ProbeUiState =
   | 'IDLE' | 'SEARCHING' | 'DEVICE_SELECTED' | 'CONNECTING'
@@ -161,6 +160,7 @@ export default function ConnectObdScreen() {
   };
 
   const startVirtualConnection = () => {
+    if (!AppConfig.INTERNAL_TOOLS_ENABLED) return;
     const virtualSessionId = `virt_${Math.random().toString(36).substr(2, 9)}`;
 
     navigation.navigate('Initialization', {
@@ -171,6 +171,7 @@ export default function ConnectObdScreen() {
   };
 
   const startLaptopReplay = () => {
+    if (!AppConfig.INTERNAL_TOOLS_ENABLED) return;
     const replaySessionId = `replay_${Math.random().toString(36).substr(2, 9)}`;
     const cleanHost = replayHost.trim().replace(/^wss?:\/\//, '').replace(/\/.*$/, '');
     navigation.navigate('LiveSession', {
@@ -218,7 +219,7 @@ export default function ConnectObdScreen() {
               <Text style={styles.primaryButtonText}>Scan for Adapters</Text>
             </TouchableOpacity>
 
-            {INTERNAL_VIRTUAL_OBD_ENABLED && (
+            {AppConfig.INTERNAL_TOOLS_ENABLED && (
               <>
                 <TouchableOpacity style={styles.secondaryButton} onPress={startVirtualConnection}>
                   <Text style={styles.secondaryButtonText}>Use Virtual Adapter (Dev)</Text>
