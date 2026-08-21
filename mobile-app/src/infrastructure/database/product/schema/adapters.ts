@@ -77,6 +77,8 @@ export const adapterCapabilitySnapshots = sqliteTable('adapter_capability_snapsh
   latencyMs: integer('latency_ms'),
   echoObserved: integer('echo_observed', { mode: 'boolean' }),
   promptObserved: integer('prompt_observed', { mode: 'boolean' }),
+  behaviorAssessmentJson: text('behavior_assessment_json'),
+  certificationReady: integer('certification_ready', { mode: 'boolean' }),
   probeStage: text('probe_stage').notNull(),
   failureReason: text('failure_reason'),
   connectionRetained: integer('connection_retained', { mode: 'boolean' }).notNull(),
