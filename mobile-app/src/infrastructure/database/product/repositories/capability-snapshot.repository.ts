@@ -4,6 +4,7 @@ import { eq, and, desc } from 'drizzle-orm';
 import * as Crypto from 'expo-crypto';
 import { ProductIdGenerator } from '../uuidv7';
 import { VehicleParameterEvidence } from '../../../../domain/acquisition/VehicleParameterEvidence';
+import { deriveVehicleDiscoveryStatus } from '../../../../domain/acquisition/VehicleDiscoveryStatus';
 
 export type ECUInput = {
   address: number;
@@ -33,6 +34,7 @@ export class CapabilitySnapshotRepository {
     return await this.db.transaction(async (tx) => {
       const snapshotId = ProductIdGenerator.generate();
       const now = Date.now();
+      const discoveryStatus = deriveVehicleDiscoveryStatus(ecus, parameters);
 
       const [snapshot] = await tx.insert(schema.vehicleCapabilitySnapshots).values({
         id: snapshotId,
@@ -43,7 +45,7 @@ export class CapabilitySnapshotRepository {
         discoveredAt: now,
         protocolCode,
         decoderCatalogVersion: '1.0',
-        discoveryStatus: 'COMPLETED',
+        discoveryStatus,
         rawDiscoveryHash: '0x0',
         createdAt: now
       } as any).returning();
