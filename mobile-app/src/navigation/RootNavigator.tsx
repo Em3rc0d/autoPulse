@@ -1,12 +1,8 @@
-import React, { useContext } from 'react';
-import { View, ActivityIndicator, Text } from 'react-native';
+import React from 'react';
+import { Text } from 'react-native';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
-
-import { AuthContext } from '../context/AuthContext';
-import LoginScreen from '../screens/LoginScreen';
-import RegisterScreen from '../screens/RegisterScreen';
 
 // Placeholders for new screens
 import GarageScreen from '../screens/garage/GarageScreen';
@@ -91,26 +87,11 @@ function MainTabs() {
 }
 
 export function NavigationRoot() {
-  const { token, isLoading } = useContext(AuthContext);
-
-  if (isLoading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#FF6B00" />
-      </View>
-    );
-  }
-
+  // Release 1 is local-first and has no cloud/account dependency. Product
+  // access must not fail because an unrelated backend is unavailable.
   return (
     <NavigationContainer theme={DarkTheme}>
-      {token ? (
-        <MainTabs />
-      ) : (
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="Login" component={LoginScreen} />
-          <Stack.Screen name="Register" component={RegisterScreen} />
-        </Stack.Navigator>
-      )}
+      <MainTabs />
     </NavigationContainer>
   );
 }
