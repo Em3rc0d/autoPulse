@@ -1,7 +1,10 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
-  setupFiles: ['<rootDir>/jest.setup.js'],
+  setupFiles: [
+    '<rootDir>/node_modules/react-native/jest/setup.js',
+    '<rootDir>/jest.setup.js'
+  ],
   testMatch: [
     '<rootDir>/src/**/*.test.ts',
     '<rootDir>/src/**/*.test.tsx',
@@ -29,6 +32,7 @@ module.exports = {
     '<rootDir>/node_modules/'
   ],
   moduleNameMapper: {
-    '^expo-crypto$': '<rootDir>/src/__mocks__/expo-crypto.js'
+    '^expo-crypto$': '<rootDir>/src/__mocks__/expo-crypto.js',
+    '^expo-keep-awake$': '<rootDir>/src/__mocks__/expo-keep-awake.js'
   }
 };
