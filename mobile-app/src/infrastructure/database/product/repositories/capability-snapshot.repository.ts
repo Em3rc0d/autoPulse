@@ -3,6 +3,7 @@ import * as schema from '../schema';
 import { eq, and, desc } from 'drizzle-orm';
 import * as Crypto from 'expo-crypto';
 import { ProductIdGenerator } from '../uuidv7';
+import { VehicleParameterEvidence } from '../../../../domain/acquisition/VehicleParameterEvidence';
 
 export type ECUInput = {
   address: number;
@@ -13,6 +14,7 @@ export type ParameterInput = {
   ecuAddress: number;
   parameterDefinitionId: string;
   supportState: string;
+  evidence: VehicleParameterEvidence;
 };
 
 export class CapabilitySnapshotRepository {
@@ -65,7 +67,11 @@ export class CapabilitySnapshotRepository {
             ecuAddress: param.ecuAddress,
             parameterDefinitionId: param.parameterDefinitionId,
             supportState: param.supportState,
-            discoveryOutcome: 'SUCCESS',
+            discoveryOutcome: param.evidence.probeResult,
+            standardDefinitionState: param.evidence.standardDefinition,
+            capabilityAdvertisedState: param.evidence.capabilityAdvertised,
+            probeResult: param.evidence.probeResult,
+            liveObservationState: param.evidence.liveObservation,
             discoveredAt: now
           }))
         );
@@ -98,6 +104,10 @@ export class CapabilitySnapshotRepository {
       ecuAddress: schema.vehicleCapabilityParameters.ecuAddress,
       supportState: schema.vehicleCapabilityParameters.supportState,
       discoveryOutcome: schema.vehicleCapabilityParameters.discoveryOutcome,
+      standardDefinitionState: schema.vehicleCapabilityParameters.standardDefinitionState,
+      capabilityAdvertisedState: schema.vehicleCapabilityParameters.capabilityAdvertisedState,
+      probeResult: schema.vehicleCapabilityParameters.probeResult,
+      liveObservationState: schema.vehicleCapabilityParameters.liveObservationState,
       errorCode: schema.vehicleCapabilityParameters.errorCode,
       technicalName: schema.obdParameterDefinitions.technicalName,
       service: schema.obdParameterDefinitions.service,
