@@ -25,34 +25,38 @@ jest.mock('@expo/vector-icons', () => ({
 }));
 
 describe('VehicleCapabilitiesScreen', () => {
-  it('renders technical PID and fallback name when definition is null', () => {
+  it('renders technical PID, ECU provenance and fallback name when a definition is unavailable', () => {
     (useCapabilitySnapshot as jest.Mock).mockReturnValue({
-      snapshot: { id: 'snap-1', testedAt: 123 },
+      snapshot: {
+        id: 'snap-1',
+        discoveredAt: 123,
+        protocolCode: 'ISO_15765_4_CAN_11_500',
+        adapterInstanceId: 'adapter-1'
+      },
       loading: false,
       parameters: [
         {
           id: 'param-1',
           snapshotId: 'snap-1',
           service: 1,
-          parameterIdentifier: 12,
+          parameterIdentifier: 0x0c,
+          ecuAddress: 0x7e8,
           supportState: 'SUPPORTED',
           testedAt: 123,
-          definition: null // NULL definition
+          technicalName: null
         }
       ]
     });
 
     const { getByText, queryByText } = render(<VehicleCapabilitiesScreen />);
 
-    // Verify it remains visible and shows fallback names
     expect(getByText('Unknown Parameter')).toBeTruthy();
-    expect(getByText('Mode 1 PID 12')).toBeTruthy();
+    expect(getByText('Mode 01 PID 0C (ECU 7E8)')).toBeTruthy();
     expect(getByText('Supported')).toBeTruthy();
 
-    // Verify it doesn't crash or present as NOT_SUPPORTED simply because definition is missing
-    expect(queryByText('NOT_SUPPORTED')).toBeFalsy();
+    // Missing catalog metadata must not be confused with vehicle non-support.
+    expect(queryByText('Not Supported')).toBeFalsy();
 
-    // Verify useCapabilitySnapshot was called with the correct workspace and vehicle ID
     expect(useCapabilitySnapshot).toHaveBeenCalledWith('WS-1', 'V-1');
   });
 });
