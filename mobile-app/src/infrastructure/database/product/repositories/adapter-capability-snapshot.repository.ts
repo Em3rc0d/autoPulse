@@ -6,26 +6,32 @@ import { ProductIdGenerator } from '../uuidv7';
 import type { AdapterCompatibilityGrade } from '../../../../domain/telemetry/probe/AdapterCompatibilityAssessment';
 import type { ProbeResult, ProfileMatchType } from '../../../../domain/telemetry/probe/ProbeResult';
 
+export const ADAPTER_EVIDENCE_SCHEMA_VERSION = '1.0';
+
+export interface AdapterCapabilityEvidenceV1 {
+  matchedProfileId: string | null;
+  writeCharacteristic: string | null;
+  receiveCharacteristic: string | null;
+  writeMode: 'WITH_RESPONSE' | 'WITHOUT_RESPONSE' | null;
+  receiveMode: 'NOTIFY' | 'INDICATE' | 'READ' | null;
+  commandUsed: string | null;
+  sanitizedResponse: string | null;
+  latencyMs: number | null;
+  echoDetected: boolean;
+  promptDetected: boolean;
+  timedOut: boolean;
+  disconnectObserved: boolean;
+}
+
 export interface AppendAdapterCapabilitySnapshotInput {
   workspaceId: string;
   adapterInstanceId: string;
   observedAt: number;
   transportType: 'BLE';
   profileMatch: ProfileMatchType;
-  matchedProfileId?: string;
   compatibilityGrade: AdapterCompatibilityGrade;
   compatibilityReasons: string[];
-  writeCharacteristic?: string;
-  receiveCharacteristic?: string;
-  writeMode?: 'WITH_RESPONSE' | 'WITHOUT_RESPONSE';
-  receiveMode?: 'NOTIFY' | 'INDICATE' | 'READ';
-  commandUsed?: string;
-  sanitizedResponse?: string;
-  latencyMs?: number;
-  echoDetected: boolean;
-  promptDetected: boolean;
-  timedOut: boolean;
-  disconnectObserved: boolean;
+  evidence: AdapterCapabilityEvidenceV1;
 }
 
 export class AdapterCapabilitySnapshotRepository {
@@ -42,20 +48,22 @@ export class AdapterCapabilitySnapshotRepository {
       observedAt: result.finishedAt,
       transportType: 'BLE',
       profileMatch: result.profileMatch,
-      matchedProfileId: result.matchedProfileId,
       compatibilityGrade: result.compatibilityGrade,
       compatibilityReasons: result.compatibilityReasons || [],
-      writeCharacteristic: result.writeCharacteristicUUID,
-      receiveCharacteristic: result.receiveCharacteristicUUID,
-      writeMode: result.writeMode,
-      receiveMode: result.receiveMode,
-      commandUsed: result.commandUsed,
-      sanitizedResponse: result.sanitizedResponse,
-      latencyMs: result.latencyMs,
-      echoDetected: Boolean(result.echoDetected),
-      promptDetected: Boolean(result.promptDetected),
-      timedOut: Boolean(result.timedOut),
-      disconnectObserved: Boolean(result.disconnectObserved),
+      evidence: {
+        matchedProfileId: result.matchedProfileId ?? null,
+        writeCharacteristic: result.writeCharacteristicUUID ?? null,
+        receiveCharacteristic: result.receiveCharacteristicUUID ?? null,
+        writeMode: result.writeMode ?? null,
+        receiveMode: result.receiveMode ?? null,
+        commandUsed: result.commandUsed ?? null,
+        sanitizedResponse: result.sanitizedResponse ?? null,
+        latencyMs: result.latencyMs ?? null,
+        echoDetected: Boolean(result.echoDetected),
+        promptDetected: Boolean(result.promptDetected),
+        timedOut: Boolean(result.timedOut),
+        disconnectObserved: Boolean(result.disconnectObserved),
+      },
     });
   }
 
@@ -68,20 +76,10 @@ export class AdapterCapabilitySnapshotRepository {
       observedAt: input.observedAt,
       transportType: input.transportType,
       profileMatch: input.profileMatch,
-      matchedProfileId: input.matchedProfileId ?? null,
       compatibilityGrade: input.compatibilityGrade,
       compatibilityReasonsJson: JSON.stringify(input.compatibilityReasons),
-      writeCharacteristic: input.writeCharacteristic ?? null,
-      receiveCharacteristic: input.receiveCharacteristic ?? null,
-      writeMode: input.writeMode ?? null,
-      receiveMode: input.receiveMode ?? null,
-      commandUsed: input.commandUsed ?? null,
-      sanitizedResponse: input.sanitizedResponse ?? null,
-      latencyMs: input.latencyMs ?? null,
-      echoDetected: input.echoDetected ? 1 : 0,
-      promptDetected: input.promptDetected ? 1 : 0,
-      timedOut: input.timedOut ? 1 : 0,
-      disconnectObserved: input.disconnectObserved ? 1 : 0,
+      evidenceSchemaVersion: ADAPTER_EVIDENCE_SCHEMA_VERSION,
+      evidenceJson: JSON.stringify(input.evidence),
       createdAt: now,
     }).returning();
 
@@ -99,5 +97,12 @@ export class AdapterCapabilitySnapshotRepository {
       .limit(1);
 
     return rows[0];
+  }
+
+  static parseEvidence(snapshot: { evidenceSchemaVersion: string; evidenceJson: string }): AdapterCapabilityEvidenceV1 {
+    if (snapshot.evidenceSchemaVersion !== ADAPTER_EVIDENCE_SCHEMA_VERSION) {
+      throw new Error(`UNSUPPORTED_ADAPTER_EVIDENCE_SCHEMA:${snapshot.evidenceSchemaVersion}`);
+    }
+    return JSON.parse(snapshot.evidenceJson) as AdapterCapabilityEvidenceV1;
   }
 }
