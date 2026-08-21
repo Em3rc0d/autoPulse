@@ -1,5 +1,6 @@
 import { RealObdController } from './RealObdController';
 import { CommandRequest, CommandResult } from './pipeline/types';
+import { STANDARD_OBD_TIER_1 } from '../../../domain/obd/StandardObdCatalogV1';
 
 type ObdCommandExecutor = {
   isConnected: boolean;
@@ -32,14 +33,16 @@ export class RealTelemetryPoller {
     onDiagnostic?: (event: PollerDiagnosticEvent) => void
   ) {
     this.controller = controller;
-    // We only poll PIDs we know how to decode (and that are supported)
-    this.supportedPids = supportedPids.filter(pid =>
-      ['010C', '010D', '0105', '0142', 'ATRV'].includes(pid)
-    );
+    const decodableRequests = new Set([
+      ...STANDARD_OBD_TIER_1.map(definition => definition.requestId),
+      'ATRV'
+    ]);
+    this.supportedPids = Array.from(new Set(supportedPids))
+      .filter(pid => decodableRequests.has(pid));
 
-    // Diagnostic Fallback: if no valid PIDs were detected by initialization, try directly polling RPM, Speed, Coolant, Voltage as a probe.
+    // Bounded standard probes when discovery yielded no decodable Tier-1 PID.
     if (this.supportedPids.length === 0) {
-      this.supportedPids = ['010C', '010D', '0105', 'ATRV'];
+      this.supportedPids = ['010C', '010D', '0105', '0104', '010B'];
     }
 
     this.onData = onData;
@@ -74,6 +77,7 @@ export class RealTelemetryPoller {
         command: pid,
         family: isAT ? 'ELM_AT' : 'OBD_MODE_01',
         expectedService: isAT ? undefined : '41',
+        expectedPid: isAT ? undefined : pid.slice(2),
         timeoutMs: 1500
       };
 
@@ -130,25 +134,4 @@ export class RealTelemetryPoller {
     this.onData(result);
   }
 
-  private getTypeForPid(pid: string): string {
-    switch(pid) {
-      case '010C': return 'RPM';
-      case '010D': return 'SPEED';
-      case '0105': return 'COOLANT';
-      case '0142':
-      case 'ATRV': return 'VOLTAGE';
-      default: return 'UNKNOWN';
-    }
-  }
-
-  private getUnit(pid: string): string {
-    switch (pid) {
-      case '010C': return 'RPM';
-      case '010D': return 'km/h';
-      case '0105': return '°C';
-      case '0142':
-      case 'ATRV': return 'V';
-      default: return '';
-    }
-  }
 }
