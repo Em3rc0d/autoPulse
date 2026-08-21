@@ -5,6 +5,7 @@ import * as Crypto from 'expo-crypto';
 import { ProductIdGenerator } from '../uuidv7';
 import { VehicleParameterEvidence } from '../../../../domain/acquisition/VehicleParameterEvidence';
 import { deriveVehicleDiscoveryStatus } from '../../../../domain/acquisition/VehicleDiscoveryStatus';
+import { resolveParameterDefinition } from '../../../../domain/acquisition/ParameterDefinitionResolver';
 
 export type ECUInput = {
   address: number;
@@ -38,17 +39,9 @@ export class CapabilitySnapshotRepository {
         .select({ id: schema.obdParameterDefinitions.id })
         .from(schema.obdParameterDefinitions);
       const verifiedDefinitionIds = new Set(definitionRows.map(row => row.id));
-      const resolvedParameters = parameters.map(param => {
-        const definitionExists = verifiedDefinitionIds.has(param.observedRequestId);
-        return {
-          ...param,
-          parameterDefinitionId: definitionExists ? param.observedRequestId : null,
-          evidence: {
-            ...param.evidence,
-            standardDefinition: definitionExists ? 'DEFINED' as const : 'UNDEFINED' as const
-          }
-        };
-      });
+      const resolvedParameters = parameters.map(param =>
+        resolveParameterDefinition(param, verifiedDefinitionIds)
+      );
       const discoveryStatus = deriveVehicleDiscoveryStatus(ecus, resolvedParameters);
 
       const [snapshot] = await tx.insert(schema.vehicleCapabilitySnapshots).values({
