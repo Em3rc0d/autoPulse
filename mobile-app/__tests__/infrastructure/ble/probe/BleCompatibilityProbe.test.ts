@@ -73,11 +73,17 @@ describe('BleCompatibilityProbe release grading', () => {
     jest.restoreAllMocks();
   });
 
-  it('keeps an exact known profile at COMPATIBLE until the full behavioral contract is proven', async () => {
+  it('keeps an exact known profile at COMPATIBLE and preserves the actual profile identity', async () => {
     const { manager } = createHarness();
     jest.spyOn(AdapterProfileMatcher, 'match').mockReturnValue({
       matchType: 'EXACT_PROFILE_MATCH',
-      profile: {} as any,
+      profile: {
+        id: 'standard-elm327-ble',
+        name: 'Standard ELM327 BLE',
+        expectedServices: [],
+        expectedWriteCharacteristics: [],
+        expectedReceiveCharacteristics: [],
+      },
     });
 
     const probe = new BleCompatibilityProbe(manager, 'adapter-1', jest.fn());
@@ -86,6 +92,8 @@ describe('BleCompatibilityProbe release grading', () => {
     expect(result.verdict).toBe(ProbeVerdict.SUPPORTED_WITH_PROFILE);
     expect(result.compatibilityGrade).toBe(AdapterCompatibilityGrade.COMPATIBLE);
     expect(result.profileMatch).toBe('EXACT_PROFILE_MATCH');
+    expect(result.matchedProfileId).toBe('standard-elm327-ble');
+    expect(result.commandUsed).toBe('ATI\r');
     expect(result.connectionRetained).toBe(true);
   });
 
@@ -101,6 +109,8 @@ describe('BleCompatibilityProbe release grading', () => {
     expect(result.verdict).toBe(ProbeVerdict.SUPPORTED);
     expect(result.compatibilityGrade).toBe(AdapterCompatibilityGrade.COMPATIBLE);
     expect(result.profileMatch).toBe('NO_PROFILE_MATCH');
+    expect(result.matchedProfileId).toBeUndefined();
+    expect(result.commandUsed).toBe('ATI\r');
     expect(result.connectionRetained).toBe(true);
   });
 
