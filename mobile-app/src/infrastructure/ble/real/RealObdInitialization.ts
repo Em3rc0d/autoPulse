@@ -1,14 +1,18 @@
 import { RealObdController } from './RealObdController';
 import { CommandRequest, CommandResult } from './pipeline/types';
+import { ObdDecoder } from './pipeline/ObdDecoder';
 import {
   getNextCapabilityCommand,
   Mode01CapabilityCommand
 } from '../../../domain/acquisition/Mode01CapabilityDiscovery';
+import { appendPidEvidence } from '../../../domain/acquisition/SourceEcuEvidence';
 
 export interface CapabilitySnapshot {
   protocol: string | null;
   supportedPids: string[];
   directlyObservedPids: string[];
+  advertisedPidsByEcu: Record<string, string[]>;
+  directlyObservedPidsByEcu: Record<string, string[]>;
   initializationSuccessful: boolean;
   failureReason?: string;
   adapterIdentity: Record<string, string>;
@@ -71,6 +75,8 @@ export class RealObdInitialization {
       protocol: null,
       supportedPids: [],
       directlyObservedPids: [],
+      advertisedPidsByEcu: {},
+      directlyObservedPidsByEcu: {},
       initializationSuccessful: false,
       adapterIdentity: {},
       rawDiscovery: []
@@ -167,7 +173,7 @@ export class RealObdInitialization {
     let result = firstResult;
 
     while (this.isSuccessful(result)) {
-      this.extractBitmaps(result, snapshot.supportedPids);
+      this.extractBitmaps(result, snapshot.supportedPids, snapshot.advertisedPidsByEcu);
       const nextCommand = getNextCapabilityCommand(command, snapshot.supportedPids);
       if (!nextCommand) return;
 
@@ -182,16 +188,38 @@ export class RealObdInitialization {
     }
   }
 
-  private extractBitmaps(res: CommandResult, outPids: string[]) {
-    if (!res.decodedValues) return;
-    for (const decoded of res.decodedValues) {
-      if (decoded.type === 'BITMAP' && Array.isArray(decoded.value)) {
-        for (const pid of decoded.value) {
-          if (!outPids.includes(pid)) {
-            outPids.push(pid);
-          }
-        }
+  private extractBitmaps(
+    result: CommandResult,
+    outPids: string[],
+    advertisedPidsByEcu: Record<string, string[]>
+  ) {
+    let sourceAttributed = false;
+
+    for (const frame of result.obdFrames) {
+      const decodedValues = ObdDecoder.decode([frame]);
+      for (const decoded of decodedValues) {
+        if (decoded.type !== 'BITMAP' || !Array.isArray(decoded.value)) continue;
+
+        sourceAttributed = true;
+        this.appendUniquePids(outPids, decoded.value);
+        appendPidEvidence(advertisedPidsByEcu, frame.sourceAddress, decoded.value);
       }
+    }
+
+    // Headerless adapters can still provide valid bitmap evidence. Preserve it
+    // explicitly under UNKNOWN rather than manufacturing ECU address zero.
+    if (!sourceAttributed) {
+      for (const decoded of result.decodedValues ?? []) {
+        if (decoded.type !== 'BITMAP' || !Array.isArray(decoded.value)) continue;
+        this.appendUniquePids(outPids, decoded.value);
+        appendPidEvidence(advertisedPidsByEcu, null, decoded.value);
+      }
+    }
+  }
+
+  private appendUniquePids(target: string[], pids: readonly string[]) {
+    for (const pid of pids) {
+      if (!target.includes(pid)) target.push(pid);
     }
   }
 
@@ -206,6 +234,19 @@ export class RealObdInitialization {
         }
         if (!snapshot.directlyObservedPids.includes(pid)) {
           snapshot.directlyObservedPids.push(pid);
+        }
+
+        const respondingFrames = result.obdFrames.filter(frame =>
+          frame.validity === 'VALID' &&
+          frame.pid?.toUpperCase() === pid.slice(2).toUpperCase()
+        );
+
+        if (respondingFrames.length === 0) {
+          appendPidEvidence(snapshot.directlyObservedPidsByEcu, null, [pid]);
+        } else {
+          for (const frame of respondingFrames) {
+            appendPidEvidence(snapshot.directlyObservedPidsByEcu, frame.sourceAddress, [pid]);
+          }
         }
       }
     }
