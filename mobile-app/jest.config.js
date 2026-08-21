@@ -33,6 +33,7 @@ module.exports = {
   ],
   moduleNameMapper: {
     '^expo-crypto$': '<rootDir>/src/__mocks__/expo-crypto.js',
-    '^expo-keep-awake$': '<rootDir>/src/__mocks__/expo-keep-awake.js'
+    '^expo-keep-awake$': '<rootDir>/src/__mocks__/expo-keep-awake.js',
+    '^react-native-chart-kit$': '<rootDir>/src/__mocks__/react-native-chart-kit.js'
   }
 };
