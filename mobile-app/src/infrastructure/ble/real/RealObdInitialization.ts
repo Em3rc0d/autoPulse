@@ -1,5 +1,9 @@
 import { RealObdController } from './RealObdController';
 import { CommandRequest, CommandResult } from './pipeline/types';
+import {
+  getNextCapabilityCommand,
+  Mode01CapabilityCommand
+} from '../../../domain/acquisition/Mode01CapabilityDiscovery';
 
 export interface CapabilitySnapshot {
   protocol: string | null;
@@ -99,45 +103,35 @@ export class RealObdInitialization {
         snapshot.protocol = resProtocol.normalizedResponse?.normalizedText || null;
       }
 
-      // 4. Checking supported signals (0100)
+      // 4. Discover the vehicle's advertised Mode 01 surface progressively.
       this.onProgress(4);
-      let res0100 = await this.executeAndRecord(snapshot, '0100', 15000, 'OBD_MODE_01', '41');
+      let firstCapabilityResult = await this.executeAndRecord(
+        snapshot,
+        '0100',
+        15000,
+        'OBD_MODE_01',
+        '41'
+      );
 
-      if (res0100.status !== 'SUCCESS_DECODED' && res0100.status !== 'SUCCESS_RAW') {
+      if (!this.isSuccessful(firstCapabilityResult)) {
         for (const protocol of ['ATSP6', 'ATSP7', 'ATSP8', 'ATSP9', 'ATSP3', 'ATSP4', 'ATSP5']) {
           await this.executeAndRecord(snapshot, protocol, 3000, 'ELM_AT');
-          res0100 = await this.executeAndRecord(snapshot, '0100', 8000, 'OBD_MODE_01', '41');
-          if (res0100.status === 'SUCCESS_DECODED' || res0100.status === 'SUCCESS_RAW') {
-            break;
-          }
+          firstCapabilityResult = await this.executeAndRecord(
+            snapshot,
+            '0100',
+            8000,
+            'OBD_MODE_01',
+            '41'
+          );
+          if (this.isSuccessful(firstCapabilityResult)) break;
         }
       }
 
-      if (res0100.status === 'SUCCESS_DECODED' || res0100.status === 'SUCCESS_RAW') {
-        this.extractBitmaps(res0100, snapshot.supportedPids);
-
-        // If 0120 is supported, query it
-        if (snapshot.supportedPids.includes('0120')) {
-          const res0120 = await this.executeAndRecord(snapshot, '0120', 5000, 'OBD_MODE_01', '41');
-          this.extractBitmaps(res0120, snapshot.supportedPids);
-
-          // If 0140 is supported, query it
-          if (snapshot.supportedPids.includes('0140')) {
-            const res0140 = await this.executeAndRecord(snapshot, '0140', 5000, 'OBD_MODE_01', '41');
-            this.extractBitmaps(res0140, snapshot.supportedPids);
-          }
-          if (snapshot.supportedPids.includes('0160')) {
-            const res0160 = await this.executeAndRecord(snapshot, '0160', 5000, 'OBD_MODE_01', '41');
-            this.extractBitmaps(res0160, snapshot.supportedPids);
-          }
-          if (snapshot.supportedPids.includes('0180')) {
-            const res0180 = await this.executeAndRecord(snapshot, '0180', 5000, 'OBD_MODE_01', '41');
-            this.extractBitmaps(res0180, snapshot.supportedPids);
-          }
-        }
+      if (this.isSuccessful(firstCapabilityResult)) {
+        await this.discoverMode01Capabilities(snapshot, firstCapabilityResult);
       } else {
-        // If 0100 fails to get data (e.g., UNABLE TO CONNECT), init failed
-        snapshot.failureReason = `${res0100.status}: ${res0100.errors.join(', ')}`;
+        snapshot.failureReason =
+          `${firstCapabilityResult.status}: ${firstCapabilityResult.errors.join(', ')}`;
       }
 
       await this.probeCoreSignals(snapshot);
@@ -158,6 +152,33 @@ export class RealObdInitialization {
     } catch (e: any) {
       snapshot.failureReason = e?.message || 'Unknown exception';
       return snapshot;
+    }
+  }
+
+  private isSuccessful(result: CommandResult): boolean {
+    return result.status === 'SUCCESS_DECODED' || result.status === 'SUCCESS_RAW';
+  }
+
+  private async discoverMode01Capabilities(
+    snapshot: CapabilitySnapshot,
+    firstResult: CommandResult
+  ): Promise<void> {
+    let command: Mode01CapabilityCommand = '0100';
+    let result = firstResult;
+
+    while (this.isSuccessful(result)) {
+      this.extractBitmaps(result, snapshot.supportedPids);
+      const nextCommand = getNextCapabilityCommand(command, snapshot.supportedPids);
+      if (!nextCommand) return;
+
+      command = nextCommand;
+      result = await this.executeAndRecord(
+        snapshot,
+        command,
+        5000,
+        'OBD_MODE_01',
+        '41'
+      );
     }
   }
 
