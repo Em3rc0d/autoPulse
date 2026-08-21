@@ -12,18 +12,12 @@ export default function LoginScreen({ navigation }: any) {
   const handleLogin = async () => {
     if (!email || !password) return Alert.alert('Error', 'Completa los campos');
 
-    // Test bypass for local development without backend
-    if (email === 'test@test.com' && password === '123456') {
-      await login('mock_test_token_123');
-      return;
-    }
-
     setLoading(true);
     try {
       const res = await authAPI.login({ email, password });
       await login(res.token);
     } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.detail || 'No se pudo conectar al servidor. Usa test@test.com y 123456 para probar sin internet.');
+      Alert.alert('Error', e.response?.data?.detail || 'No se pudo conectar al servicio de autenticación.');
     } finally {
       setLoading(false);
     }

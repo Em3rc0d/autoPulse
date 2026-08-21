@@ -23,11 +23,8 @@
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
         "android.permission.BLUETOOTH_CONNECT",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE"
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "package": "com.em3rc0dth.autopulse"
     },
@@ -35,19 +32,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-font",
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "The app needs to access your photos to share vehicle symptoms with the AI."
-        }
-      ],
-      [
-        "expo-av",
-        {
-          "microphonePermission": "The app needs to access the microphone to let you record engine sounds for AI analysis."
-        }
-      ]
+      "expo-font"
     ]
   }
 }

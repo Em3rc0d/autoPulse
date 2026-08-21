@@ -302,7 +302,7 @@ export default function LiveSessionScreen() {
           <Text style={styles.timerText}>{formatTime(secondsElapsed)}</Text>
         </View>
 
-        {adapterMode === 'REAL_BLE' && (
+        {adapterMode === 'REAL_BLE' && AppConfig.INTERNAL_TOOLS_ENABLED && (
           <TouchableOpacity style={styles.diagButton} onPress={() => setShowDiagnostics(true)}>
             <Text style={styles.diagButtonText}>Logs</Text>
           </TouchableOpacity>
@@ -418,7 +418,7 @@ export default function LiveSessionScreen() {
         </TouchableOpacity>
       </View>
 
-      <Modal visible={showDiagnostics} animationType="slide" presentationStyle="pageSheet">
+      <Modal visible={AppConfig.INTERNAL_TOOLS_ENABLED && showDiagnostics} animationType="slide" presentationStyle="pageSheet">
         <DiagnosticsLogScreen onClose={() => setShowDiagnostics(false)} />
       </Modal>
     </View>

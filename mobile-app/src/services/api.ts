@@ -1,10 +1,9 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// El usuario solicitó 0.0.0.0. Nota: Si pruebas en un dispositivo físico real conectado por WiFi,
-// deberás cambiar esto por la IP local de tu PC (ej. 192.168.1.X).
-// Para emuladores Android, usa 10.0.2.2.
-export const BASE_URL = 'http://10.224.244.55:8000/api/v1';
+// Cloud services are outside the local-first Release-1 path. Development may
+// opt in explicitly; production never ships a private-IP/cleartext endpoint.
+export const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL?.trim() || '';
 
 export const api = axios.create({
   baseURL: BASE_URL,
