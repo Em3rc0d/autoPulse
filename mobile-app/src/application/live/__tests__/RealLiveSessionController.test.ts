@@ -100,6 +100,56 @@ describe('RealLiveSessionController Integration', () => {
     expect(ctrl['currentState']).toBe('INTERRUPTED');
   });
 
+  it('Native BLE disconnect observation terminalizes the active session', async () => {
+    const ctrl = createController();
+    ctrl['currentState'] = 'ACTIVE';
+    let disconnectListener: (() => void) | null = null;
+    const remove = jest.fn();
+
+    (ctrl as any).observePhysicalDisconnect({
+      device: {
+        onDisconnected: jest.fn((listener: () => void) => {
+          disconnectListener = listener;
+          return { remove };
+        })
+      }
+    });
+
+    expect(disconnectListener).not.toBeNull();
+    (disconnectListener as unknown as () => void)();
+    await ctrl['terminalPromise'];
+
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(mockSessionRepo.completeSession).not.toHaveBeenCalled();
+    expect(mockSessionRepo.interruptSession).toHaveBeenCalledTimes(1);
+    expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith(
+      'ws1',
+      'sess1',
+      'DEVICE_DISCONNECTED'
+    );
+  });
+
+  it('Native BLE disconnect after terminalization cannot change the outcome', async () => {
+    const ctrl = createController();
+    ctrl['currentState'] = 'ACTIVE';
+    let disconnectListener: (() => void) | null = null;
+
+    (ctrl as any).observePhysicalDisconnect({
+      device: {
+        onDisconnected: jest.fn((listener: () => void) => {
+          disconnectListener = listener;
+          return { remove: jest.fn() };
+        })
+      }
+    });
+
+    await ctrl.stopSession();
+    (disconnectListener as unknown as () => void)();
+
+    expect(mockSessionRepo.completeSession).toHaveBeenCalledTimes(1);
+    expect(mockSessionRepo.interruptSession).not.toHaveBeenCalled();
+  });
+
   it('App background uses the Release-1 APP_BACKGROUND interruption policy', async () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';
