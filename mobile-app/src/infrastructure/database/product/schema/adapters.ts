@@ -62,6 +62,7 @@ export const adapterCapabilitySnapshots = sqliteTable('adapter_capability_snapsh
   adapterInstanceId: text('adapter_instance_id').notNull(),
   schemaVersion: text('schema_version').notNull(),
   transport: text('transport').notNull(),
+  deviceId: text('device_id').notNull(),
   deviceName: text('device_name'),
   rssi: integer('rssi'),
   profileMatch: text('profile_match').notNull(),
