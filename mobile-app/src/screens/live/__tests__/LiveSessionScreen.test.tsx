@@ -2,7 +2,6 @@ import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
 import LiveSessionScreen from '../LiveSessionScreen';
 
-// Mock dependencies
 jest.mock('@react-navigation/native', () => ({
   useRoute: () => ({
     params: {
@@ -19,6 +18,7 @@ jest.mock('@react-navigation/native', () => ({
 jest.mock('@supersami/rn-foreground-service', () => ({
   start: jest.fn(),
   stop: jest.fn(),
+  stopAll: jest.fn(),
   add_task: jest.fn(),
   remove_task: jest.fn(),
 }));
@@ -44,10 +44,9 @@ jest.mock('@expo/vector-icons', () => ({
   Ionicons: 'Ionicons',
 }));
 
-// We can mock AppConfig if we want to toggle demo mode
 jest.mock('../../../application/config', () => ({
   AppConfig: {
-    ENABLE_ADVISORY_DEMO_PROFILES: true,
+    GENERIC_ADVISORY_PROFILES_ENABLED: true,
   },
 }));
 
@@ -81,11 +80,9 @@ describe('LiveSessionScreen', () => {
     });
   });
 
-  it.skip('propagates isDemo=true from demo profile config', () => {
+  it.skip('shows advisory demo badges when explicitly enabled', () => {
     const { getAllByText } = render(<LiveSessionScreen />);
-    // With ENABLE_ADVISORY_DEMO_PROFILES = true, and not REAL_BLE, DEMO should appear
     const demoBadges = getAllByText('DEMO');
-    // It should appear on multiple cards that have profiles (rpm, speed, coolant, voltage)
     expect(demoBadges.length).toBeGreaterThan(0);
   });
 
@@ -93,10 +90,7 @@ describe('LiveSessionScreen', () => {
     const { getByTestId, queryByText } = render(<LiveSessionScreen />);
     const card = getByTestId('live-metric-card-engine-rpm');
 
-    // Tap on the card
     fireEvent.press(card);
-
-    // If it didn't crash, the modal should be visible. We can check for "Límite exacto"
     expect(queryByText('Límite exacto')).toBeTruthy();
   });
 });
