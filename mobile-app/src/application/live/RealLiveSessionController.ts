@@ -5,7 +5,11 @@ import { RealTelemetryPoller } from '../../infrastructure/ble/real/RealTelemetry
 import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { ITelemetryBlockRepository } from '../../domain/telemetry/repositories/TelemetryBlockRepository';
-import { TelemetryCommitQueue, CommitQueueEvent } from './TelemetryCommitQueue';
+import {
+  TelemetryCommitQueue,
+  CommitQueueEvent,
+  TelemetryCommitQueueDrainTimeoutError
+} from './TelemetryCommitQueue';
 import { CommandResult } from '../../infrastructure/ble/real/pipeline/types';
 import { ObdAcquisitionMapper } from '../../domain/telemetry/factories/ObdAcquisitionMapper';
 import { TelemetryBlockAssembler } from '../../domain/telemetry/logic/TelemetryBlockAssembler';
@@ -135,8 +139,7 @@ export class RealLiveSessionController {
     const stopTime = Date.now();
     this.recordingStatus = 'FLUSHING';
 
-    // In a real app we might await in-flight commands up to 1500ms
-    // For MVP, we simulate a bounded grace period
+    // Allow an in-flight command a short bounded grace period before the final flush.
     await new Promise(r => setTimeout(r, 100));
 
     if (this.assembler && !this.commitQueue?.getHasFailed()) {
@@ -146,8 +149,22 @@ export class RealLiveSessionController {
       }
     }
 
+    let drainTimedOut = false;
     if (this.commitQueue) {
-      await this.commitQueue.drain();
+      try {
+        await this.commitQueue.drain(5000);
+      } catch (error) {
+        if (error instanceof TelemetryCommitQueueDrainTimeoutError) {
+          drainTimedOut = true;
+          this.recordingStatus = 'FAILED';
+          console.error(
+            `[RealLiveSessionController] Telemetry drain timed out with ${error.pendingCount} block(s) pending`,
+            error
+          );
+        } else {
+          throw error;
+        }
+      }
     }
 
     if (this.obdController) {
@@ -157,23 +174,23 @@ export class RealLiveSessionController {
     activeBleController.releaseConnection();
     this.recordingStatus = 'CLOSED';
 
-    if (mode === 'NORMAL' && !this.commitQueue?.getHasFailed()) {
-       await this.sessionRepo.completeSession(this.workspaceId, this.sessionId);
-       this.currentState = 'COMPLETED';
+    if (mode === 'NORMAL' && !this.commitQueue?.getHasFailed() && !drainTimedOut) {
+      await this.sessionRepo.completeSession(this.workspaceId, this.sessionId);
+      this.currentState = 'COMPLETED';
     } else {
-       const failReason = reason || 'TELEMETRY_PERSISTENCE_FAILED';
-       try {
-         await this.sessionRepo.interruptSession(this.workspaceId, this.sessionId, failReason);
-       } catch (err) {
-         console.error('Failed to record session interruption', err);
-       }
-       this.currentState = 'INTERRUPTED';
+      const failReason = drainTimedOut ? 'TELEMETRY_DRAIN_TIMEOUT' : (reason || 'TELEMETRY_PERSISTENCE_FAILED');
+      try {
+        await this.sessionRepo.interruptSession(this.workspaceId, this.sessionId, failReason);
+      } catch (err) {
+        console.error('Failed to record session interruption', err);
+      }
+      this.currentState = 'INTERRUPTED';
     }
   }
 
   public forceCleanup() {
     if (this.currentState === 'ACTIVE' || this.currentState === 'STOPPING') {
-       this.handleUnexpectedDisconnect('UNEXPECTED_UNMOUNT');
+      this.handleUnexpectedDisconnect('UNEXPECTED_UNMOUNT');
     }
   }
 }
