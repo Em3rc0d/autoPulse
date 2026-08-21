@@ -6,6 +6,7 @@ import m0001 from './0001_wooden_darwin.sql';
 import m0002 from './0002_add_v3_telemetry_block_metadata.sql';
 import m0003 from './0003_adapter_capability_snapshots.sql';
 import m0004 from './0004_adapter_capability_matched_profile.sql';
+import m0005 from './0005_adapter_behavior_assessment.sql';
 
 export default {
   journal,
@@ -15,5 +16,6 @@ export default {
     m0002,
     m0003,
     m0004,
+    m0005,
   }
 };

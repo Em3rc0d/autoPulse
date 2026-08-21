@@ -1,4 +1,5 @@
 import { Device, BleManager } from 'react-native-ble-plx';
+import { AdapterBehaviorAssessment } from '../../../domain/telemetry/probe/AdapterBehaviorAssessment';
 import {
   AdapterCompatibilityGrade,
   ProbeResult,
@@ -9,6 +10,7 @@ import { GattInspector, GattInventory } from './GattInspector';
 import { CharacteristicCandidateSelector, CandidateCombination } from './CharacteristicCandidateSelector';
 import { AdapterProfileMatcher } from './AdapterProfileMatcher';
 import { ProbeHandshake, HandshakeResult } from './ProbeHandshake';
+import { AdapterBehaviorAssessor } from './AdapterBehaviorAssessor';
 
 export type ProbeProgressCallback = (stage: string) => void;
 
@@ -36,6 +38,7 @@ export class BleCompatibilityProbe {
     let matchType: ProfileMatchType = 'NO_PROFILE_MATCH';
     let matchedProfileId: string | undefined;
     let testedCombinationCount = 0;
+    let behaviorAssessment: AdapterBehaviorAssessment | undefined;
 
     const buildResult = (
       verdict: ProbeVerdict,
@@ -48,7 +51,8 @@ export class BleCompatibilityProbe {
     ): { result: ProbeResult, device?: Device, handshakeComb?: CandidateCombination } => ({
       result: {
         verdict,
-        compatibilityGrade: this.classifyCompatibility(verdict),
+        compatibilityGrade: this.classifyCompatibility(verdict, behaviorAssessment),
+        behaviorAssessment,
         probeStage: stage,
         failureReason: reason,
         profileMatch: matchType,
@@ -138,6 +142,27 @@ export class BleCompatibilityProbe {
       }
 
       if (successfulHandshake) {
+        behaviorAssessment = await AdapterBehaviorAssessor.assess(
+          this.device,
+          successfulHandshake.comb,
+          this.cancellationSignal,
+        );
+
+        if (this.cancellationSignal.cancelled) {
+          await this.device.cancelConnection();
+          return buildResult(ProbeVerdict.CANCELLED, 'TESTING_CHANNEL', 'User cancelled', successfulHandshake);
+        }
+
+        if (behaviorAssessment.disconnectObserved) {
+          return buildResult(
+            ProbeVerdict.PROBE_FAILED,
+            'BEHAVIOR_ASSESSMENT',
+            'Device disconnected during adapter behavior assessment',
+            successfulHandshake,
+            false,
+          );
+        }
+
         const verdict = matchType === 'NO_PROFILE_MATCH'
           ? ProbeVerdict.SUPPORTED
           : ProbeVerdict.SUPPORTED_WITH_PROFILE;
@@ -155,20 +180,26 @@ export class BleCompatibilityProbe {
     }
   }
 
-  private classifyCompatibility(verdict: ProbeVerdict): AdapterCompatibilityGrade {
-    if (
-      verdict === ProbeVerdict.SUPPORTED_WITH_PROFILE ||
-      verdict === ProbeVerdict.SUPPORTED
-    ) {
-      return AdapterCompatibilityGrade.COMPATIBLE;
-    }
-
+  private classifyCompatibility(
+    verdict: ProbeVerdict,
+    assessment?: AdapterBehaviorAssessment,
+  ): AdapterCompatibilityGrade {
     if (
       verdict === ProbeVerdict.INCOMPATIBLE_TRANSPORT ||
       verdict === ProbeVerdict.INCOMPATIBLE_PROTOCOL ||
       verdict === ProbeVerdict.PROBE_FAILED
     ) {
       return AdapterCompatibilityGrade.UNSUPPORTED;
+    }
+
+    if (
+      verdict === ProbeVerdict.SUPPORTED_WITH_PROFILE ||
+      verdict === ProbeVerdict.SUPPORTED
+    ) {
+      if (assessment && assessment.preferredFailures.length > 0) {
+        return AdapterCompatibilityGrade.DEGRADED;
+      }
+      return AdapterCompatibilityGrade.COMPATIBLE;
     }
 
     return AdapterCompatibilityGrade.UNKNOWN;

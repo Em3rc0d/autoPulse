@@ -1,3 +1,5 @@
+import { AdapterBehaviorAssessment } from './AdapterBehaviorAssessment';
+
 export enum ProbeVerdict {
   SUPPORTED = 'SUPPORTED',
   SUPPORTED_WITH_PROFILE = 'SUPPORTED_WITH_PROFILE',
@@ -25,6 +27,7 @@ export interface ProbeResult {
    */
   verdict: ProbeVerdict;
   compatibilityGrade: AdapterCompatibilityGrade;
+  behaviorAssessment?: AdapterBehaviorAssessment;
   probeStage: string;
   failureReason?: string;
   profileMatch: ProfileMatchType;

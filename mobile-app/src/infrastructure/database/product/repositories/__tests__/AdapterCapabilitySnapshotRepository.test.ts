@@ -9,8 +9,26 @@ import { AdapterCapabilitySnapshot } from '../../../../../domain/telemetry/probe
 
 function snapshot(
   assessedAt: number,
-  options: { matchedProfileId?: string } = {},
+  options: { matchedProfileId?: string; degraded?: boolean } = {},
 ): AdapterCapabilitySnapshot {
+  const behaviorAssessment = {
+    schemaVersion: '1.0' as const,
+    checks: [
+      {
+        command: 'ATE0',
+        requirement: 'PREFERRED' as const,
+        outcome: options.degraded ? 'FAIL' as const : 'PASS' as const,
+        sanitizedResponse: options.degraded ? '?' : 'OK',
+        latencyMs: 20,
+        promptObserved: true,
+      },
+    ],
+    preferredFailures: options.degraded ? ['ATE0'] : [],
+    optionalFailures: [],
+    disconnectObserved: false,
+    certificationReady: !options.degraded,
+  };
+
   return {
     schemaVersion: '1.0',
     transport: 'BLE',
@@ -19,7 +37,9 @@ function snapshot(
     rssi: -55,
     profileMatch: options.matchedProfileId ? 'EXACT_PROFILE_MATCH' : 'NO_PROFILE_MATCH',
     matchedProfileId: options.matchedProfileId,
-    compatibilityGrade: AdapterCompatibilityGrade.COMPATIBLE,
+    compatibilityGrade: options.degraded
+      ? AdapterCompatibilityGrade.DEGRADED
+      : AdapterCompatibilityGrade.COMPATIBLE,
     assessedAt,
     channel: {
       writeCharacteristicUUID: 'write-1',
@@ -33,6 +53,7 @@ function snapshot(
       latencyMs: 42,
       echoObserved: true,
       promptObserved: true,
+      assessment: behaviorAssessment,
     },
     assessment: {
       probeStage: 'FINISHED',
@@ -42,7 +63,7 @@ function snapshot(
 }
 
 describe('AdapterCapabilitySnapshotRepository', () => {
-  it('appends evidence and returns the latest assessed snapshot with matched profile identity', async () => {
+  it('appends evidence and returns the latest assessed snapshot with behavioral provenance', async () => {
     const dbName = `adapter_capability_${Date.now()}.db`;
     const sqlite = createClient({ url: `file:${dbName}` });
     await sqlite.execute('PRAGMA foreign_keys = ON;');
@@ -66,18 +87,22 @@ describe('AdapterCapabilitySnapshotRepository', () => {
 
     const repository = new AdapterCapabilitySnapshotRepository(db as any);
     await repository.append('ws-1', 'adapter-1', snapshot(1000));
-    await repository.append('ws-1', 'adapter-1', snapshot(2000, { matchedProfileId: 'standard-elm327-ble' }));
+    await repository.append('ws-1', 'adapter-1', snapshot(2000, {
+      matchedProfileId: 'standard-elm327-ble',
+      degraded: true,
+    }));
 
     const latest = await repository.getLatest('ws-1', 'adapter-1');
 
     expect(latest).not.toBeNull();
     expect(latest?.assessedAt).toBe(2000);
-    expect(latest?.compatibilityGrade).toBe(AdapterCompatibilityGrade.COMPATIBLE);
+    expect(latest?.compatibilityGrade).toBe(AdapterCompatibilityGrade.DEGRADED);
     expect(latest?.profileMatch).toBe('EXACT_PROFILE_MATCH');
     expect(latest?.matchedProfileId).toBe('standard-elm327-ble');
     expect(latest?.deviceId).toBe('device-1');
     expect(latest?.behavior.commandUsed).toBe('ATI\r');
-    expect(latest?.behavior.promptObserved).toBe(true);
+    expect(latest?.behavior.assessment?.preferredFailures).toEqual(['ATE0']);
+    expect(latest?.behavior.assessment?.certificationReady).toBe(false);
 
     sqlite.close();
   });

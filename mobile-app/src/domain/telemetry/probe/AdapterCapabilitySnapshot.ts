@@ -1,3 +1,4 @@
+import { AdapterBehaviorAssessment } from './AdapterBehaviorAssessment';
 import {
   AdapterCompatibilityGrade,
   ProbeResult,
@@ -30,6 +31,7 @@ export interface AdapterCapabilitySnapshot {
     latencyMs?: number;
     echoObserved?: boolean;
     promptObserved?: boolean;
+    assessment?: AdapterBehaviorAssessment;
   };
 
   assessment: {
@@ -66,6 +68,7 @@ export function buildAdapterCapabilitySnapshot(result: ProbeResult): AdapterCapa
       latencyMs: result.latencyMs,
       echoObserved: result.echoDetected,
       promptObserved: result.promptDetected,
+      assessment: result.behaviorAssessment,
     }),
     assessment: Object.freeze({
       probeStage: result.probeStage,
