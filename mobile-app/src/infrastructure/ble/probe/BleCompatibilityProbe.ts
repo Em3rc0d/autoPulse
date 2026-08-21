@@ -33,6 +33,7 @@ export class BleCompatibilityProbe {
     this.startedAt = Date.now();
     let inventory: GattInventory | null = null;
     let matchType: ProfileMatchType = 'NO_PROFILE_MATCH';
+    let matchedProfileId: string | undefined;
     let testedCombinationCount = 0;
 
     const buildResult = (
@@ -50,6 +51,7 @@ export class BleCompatibilityProbe {
         probeStage: stage,
         failureReason: reason,
         profileMatch: matchType,
+        matchedProfileId,
         compatibilityGrade: assessment?.grade,
         compatibilityReasons: assessment?.reasons,
         connectionRetained,
@@ -67,6 +69,8 @@ export class BleCompatibilityProbe {
         latencyMs: handshake?.res.latencyMs,
         echoDetected: handshake?.res.echoDetected,
         promptDetected: handshake?.res.promptDetected,
+        timedOut: handshake?.res.timedOut,
+        disconnectObserved: handshake?.res.disconnectObserved,
       },
       device: connectionRetained && this.device ? this.device : undefined,
       handshakeComb: connectionRetained && handshake ? handshake.comb : undefined,
@@ -91,6 +95,7 @@ export class BleCompatibilityProbe {
 
       const matchRes = AdapterProfileMatcher.match(inventory);
       matchType = matchRes.matchType;
+      matchedProfileId = matchRes.profile?.id;
 
       const combinations = CharacteristicCandidateSelector.selectCombinations(inventory);
 
