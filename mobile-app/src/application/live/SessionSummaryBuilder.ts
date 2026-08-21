@@ -7,12 +7,33 @@ import {
   SessionAcquisitionMode,
   SignalSummary
 } from '../../domain/telemetry/models/sessionSummaryResult';
-import { ObdAcquisitionEvent } from '../../domain/telemetry/models/ObdAcquisitionEvent';
 import { LiveSessionId, VehicleId, WorkspaceId } from '../../domain/shared/identifiers';
 import { UtcIsoTimestamp, parseUtcIsoTimestamp } from '../../domain/shared/timestamps';
 
-function isCodecCorruption(err: any): boolean {
-  return err instanceof Error && (err.message.includes('CORRUPTED') || err.message.includes('UNSUPPORTED'));
+function isCodecCorruption(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  const message = err.message.toUpperCase();
+  return (
+    message.includes('CORRUPTED') ||
+    message.includes('UNSUPPORTED') ||
+    message.includes('CRC') ||
+    message.includes('MAGIC MISMATCH') ||
+    message.includes('PAYLOAD LENGTH')
+  );
+}
+
+function emptySignalSummary(signalId: string): SignalSummary {
+  return {
+    signalId,
+    validReadingsCount: 0,
+    noDataCount: 0,
+    invalidCount: 0,
+    min: null,
+    max: null,
+    avg: null,
+    firstValidAt: null,
+    lastValidAt: null
+  };
 }
 
 export class SessionSummaryBuildAbortedError extends Error {
@@ -42,11 +63,13 @@ export class SessionSummaryBuilder {
 
     const blocks = await this.telemetryBlockRepository.getAllBlocksForSession(sessionId);
 
-    // Yield control initially
+    // Yield control initially.
     await new Promise(resolve => setTimeout(resolve, 0));
 
-    let expectedBlocksCount = session.totalBlocks || 0; // The controller counted them
-    let foundBlocksCount = blocks.length;
+    const expectedBlocksCount = session.totalBlocks || 0;
+    const foundBlocksCount = blocks.length;
+    const progressDenominator = Math.max(expectedBlocksCount, foundBlocksCount, 1);
+
     let completeBlocksCount = 0;
     let partialBlocksCount = 0;
     let corruptedBlocksCount = 0;
@@ -62,6 +85,8 @@ export class SessionSummaryBuilder {
     let totalReadingsCount = 0;
 
     const signalMap = new Map<string, SignalSummary>();
+    const signalIdByCommand = new Map<string, string>();
+    const pendingNoDataByCommand = new Map<string, number>();
 
     let prevWindowIndex = -1;
     let prevLastSequence: number | undefined = undefined;
@@ -80,11 +105,6 @@ export class SessionSummaryBuilder {
       }
 
       const block = result.block;
-      completeBlocksCount++;
-
-      if (block.isPartial) {
-        partialBlocksCount++;
-      }
 
       if (firstWindowIndex === undefined || block.windowIndex < firstWindowIndex) {
         firstWindowIndex = block.windowIndex;
@@ -103,52 +123,72 @@ export class SessionSummaryBuilder {
       if (prevWindowIndex !== -1 && block.windowIndex > prevWindowIndex + 1) {
         gapsDetectedCount++;
       }
-      if (prevLastSequence !== undefined && (block.firstEventSequence > prevLastSequence + 1 || block.firstEventSequence <= prevLastSequence)) {
+      if (
+        prevLastSequence !== undefined &&
+        (block.firstEventSequence > prevLastSequence + 1 || block.firstEventSequence <= prevLastSequence)
+      ) {
         gapsDetectedCount++;
       }
       prevWindowIndex = block.windowIndex;
       prevLastSequence = block.lastEventSequence;
 
-      // Decode the block using the codec
       try {
         const decoded = this.codec.decode(block.payload, block);
+        completeBlocksCount++;
+        if (block.isPartial) {
+          partialBlocksCount++;
+        }
 
         for (const event of decoded.events) {
           totalEventsCount++;
+          const command = typeof event.command === 'string' ? event.command : undefined;
+
+          if (event.status === 'NO_DATA' && command) {
+            const knownSignalId = signalIdByCommand.get(command);
+            if (knownSignalId) {
+              const summary = signalMap.get(knownSignalId) || emptySignalSummary(knownSignalId);
+              signalMap.set(knownSignalId, {
+                ...summary,
+                noDataCount: summary.noDataCount + 1
+              });
+            } else {
+              pendingNoDataByCommand.set(command, (pendingNoDataByCommand.get(command) || 0) + 1);
+            }
+          }
+
+          if (command && event.decodedReadings.length === 1) {
+            const signalId = event.decodedReadings[0].signalId;
+            signalIdByCommand.set(command, signalId);
+            const pendingNoData = pendingNoDataByCommand.get(command) || 0;
+            if (pendingNoData > 0) {
+              const summary = signalMap.get(signalId) || emptySignalSummary(signalId);
+              signalMap.set(signalId, {
+                ...summary,
+                noDataCount: summary.noDataCount + pendingNoData
+              });
+              pendingNoDataByCommand.delete(command);
+            }
+          }
 
           for (const reading of event.decodedReadings) {
             totalReadingsCount++;
 
             const sigId = reading.signalId;
-            let sigSummary = signalMap.get(sigId);
-            if (!sigSummary) {
-              sigSummary = {
-                signalId: sigId,
-                validReadingsCount: 0,
-                noDataCount: 0,
-                invalidCount: 0,
-                min: null,
-                max: null,
-                avg: null,
-                firstValidAt: null,
-                lastValidAt: null
-              };
-            }
+            let sigSummary = signalMap.get(sigId) || emptySignalSummary(sigId);
 
-            // Since 'GOOD', 'DEGRADED', 'INVALID' are the only valid values, we just count NO_DATA at event level.
-            // If the reading exists, it is valid or invalid/degraded.
             if (reading.quality === 'INVALID') {
               sigSummary = { ...sigSummary, invalidCount: sigSummary.invalidCount + 1 };
             } else {
-              // Valid reading
               const v = reading.value;
               sigSummary = {
                 ...sigSummary,
                 validReadingsCount: sigSummary.validReadingsCount + 1,
                 min: sigSummary.min === null ? v : Math.min(sigSummary.min, v),
                 max: sigSummary.max === null ? v : Math.max(sigSummary.max, v),
-                avg: sigSummary.avg === null ? v : sigSummary.avg + v, // We will divide by count at the end
-                firstValidAt: sigSummary.firstValidAt === null ? parseUtcIsoTimestamp(new Date(reading.observedAt).toISOString()) : sigSummary.firstValidAt,
+                avg: sigSummary.avg === null ? v : sigSummary.avg + v,
+                firstValidAt: sigSummary.firstValidAt === null
+                  ? parseUtcIsoTimestamp(new Date(reading.observedAt).toISOString())
+                  : sigSummary.firstValidAt,
                 lastValidAt: parseUtcIsoTimestamp(new Date(reading.observedAt).toISOString())
               };
             }
@@ -159,33 +199,30 @@ export class SessionSummaryBuilder {
         const error = err as Error;
         if (isCodecCorruption(error)) {
           console.warn(`[SessionSummaryBuilder] Failed to decode block ${block.windowIndex} for session ${sessionId}:`, error);
-          if (error.message.startsWith('UNSUPPORTED')) {
+          if (error.message.toUpperCase().includes('UNSUPPORTED')) {
             unsupportedBlocksCount++;
           } else {
             corruptedBlocksCount++;
           }
         } else {
-          // Unexpected error, do not swallow it as corruption
           throw err;
         }
       }
 
-      // Yield every 10 blocks to prevent UI starvation
+      // Yield every 10 blocks to prevent UI starvation.
       if (i % 10 === 0) {
-        if (onProgress) {
-          onProgress(Math.min(1, i / expectedBlocksCount));
-        }
+        onProgress?.(Math.min(1, (i + 1) / progressDenominator));
         await new Promise(resolve => setTimeout(resolve, 0));
       }
     }
 
-    // Finalize averages
+    onProgress?.(1);
+
     const signalSummaries: Record<string, SignalSummary> = {};
     for (const [sigId, summary] of signalMap.entries()) {
-      let finalAvg = null;
-      if (summary.validReadingsCount > 0 && summary.avg !== null) {
-        finalAvg = summary.avg / summary.validReadingsCount;
-      }
+      const finalAvg = summary.validReadingsCount > 0 && summary.avg !== null
+        ? summary.avg / summary.validReadingsCount
+        : null;
       signalSummaries[sigId] = {
         ...summary,
         avg: finalAvg
@@ -193,34 +230,44 @@ export class SessionSummaryBuilder {
     }
 
     let integrityState = SessionIntegrityState.COMPLETE;
+    const blockCountMismatch = expectedBlocksCount > 0 && foundBlocksCount !== expectedBlocksCount;
 
-    if (corruptedBlocksCount > 0 || gapsDetectedCount > 0) {
+    if (corruptedBlocksCount > 0 || unsupportedBlocksCount > 0 || gapsDetectedCount > 0 || blockCountMismatch) {
       integrityState = SessionIntegrityState.DEGRADED;
     } else if (session.status === 'INTERRUPTED' || partialBlocksCount > 0) {
       integrityState = SessionIntegrityState.PARTIAL;
     }
 
-    if (corruptedBlocksCount === foundBlocksCount && foundBlocksCount > 0) {
+    if (foundBlocksCount > 0 && corruptedBlocksCount === foundBlocksCount) {
       integrityState = SessionIntegrityState.CORRUPTED;
     } else if (foundBlocksCount === 0) {
       integrityState = SessionIntegrityState.UNAVAILABLE;
     }
 
-    let mode = SessionAcquisitionMode.REAL_BLE;
     const adapterId = session.adapterInstanceId;
+    const startedAt = session.startedAt !== undefined && session.startedAt !== null
+      ? parseUtcIsoTimestamp(new Date(session.startedAt).toISOString())
+      : parseUtcIsoTimestamp(new Date(0).toISOString());
+    const endedAt = session.endedAt !== undefined && session.endedAt !== null
+      ? parseUtcIsoTimestamp(new Date(session.endedAt).toISOString())
+      : undefined;
 
     return {
       sessionId: session.id as unknown as LiveSessionId,
       vehicleId: session.vehicleId as unknown as VehicleId,
       workspaceId: workspaceId as unknown as WorkspaceId,
 
-      acquisitionMode: adapterId === 'VIRTUAL' ? SessionAcquisitionMode.LAPTOP_REPLAY : SessionAcquisitionMode.REAL_BLE,
-      adapterId: adapterId,
+      acquisitionMode: adapterId === 'VIRTUAL'
+        ? SessionAcquisitionMode.LAPTOP_REPLAY
+        : SessionAcquisitionMode.REAL_BLE,
+      adapterId,
       protocolId: session.protocolCode || undefined,
 
-      startedAt: session.startedAt as unknown as UtcIsoTimestamp,
-      endedAt: session.endedAt as unknown as UtcIsoTimestamp || undefined,
-      durationSeconds: session.startedAt && session.endedAt ? Math.floor((session.endedAt - session.startedAt) / 1000) : undefined,
+      startedAt,
+      endedAt,
+      durationSeconds: session.startedAt && session.endedAt
+        ? Math.floor((session.endedAt - session.startedAt) / 1000)
+        : undefined,
       terminationReason: session.stopReason || session.failureCode || undefined,
       isInterrupted: session.status === 'INTERRUPTED' || session.status === 'FAILED',
 
