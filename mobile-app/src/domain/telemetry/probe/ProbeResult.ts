@@ -8,10 +8,23 @@ export enum ProbeVerdict {
   CANCELLED = 'CANCELLED'
 }
 
+export enum AdapterCompatibilityGrade {
+  CERTIFIED = 'CERTIFIED',
+  COMPATIBLE = 'COMPATIBLE',
+  DEGRADED = 'DEGRADED',
+  UNSUPPORTED = 'UNSUPPORTED',
+  UNKNOWN = 'UNKNOWN'
+}
+
 export type ProfileMatchType = 'EXACT_PROFILE_MATCH' | 'PARTIAL_PROFILE_MATCH' | 'NO_PROFILE_MATCH';
 
 export interface ProbeResult {
+  /**
+   * Legacy transport/probe verdict kept for existing UI compatibility.
+   * Release compatibility claims MUST use compatibilityGrade instead.
+   */
   verdict: ProbeVerdict;
+  compatibilityGrade: AdapterCompatibilityGrade;
   probeStage: string;
   failureReason?: string;
   profileMatch: ProfileMatchType;
