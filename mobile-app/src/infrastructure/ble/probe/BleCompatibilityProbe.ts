@@ -64,6 +64,16 @@ export class BleCompatibilityProbe {
         commandUsed: handshake?.cmd,
         writeCharacteristicUUID: handshake?.comb.writeCharacteristic.uuid,
         receiveCharacteristicUUID: handshake?.comb.receiveCharacteristic.uuid,
+        writeMode: handshake
+          ? (handshake.comb.writeCharacteristic.isWritableWithResponse ? 'WITH_RESPONSE' : 'WITHOUT_RESPONSE')
+          : undefined,
+        receiveMode: handshake
+          ? (handshake.comb.receiveCharacteristic.isNotifiable
+            ? 'NOTIFY'
+            : handshake.comb.receiveCharacteristic.isIndicatable
+              ? 'INDICATE'
+              : 'READ')
+          : undefined,
         bytesWritten: handshake?.res.writeAccepted ? handshake.cmd.length : 0,
         sanitizedResponse: handshake?.res.sanitizedResponse || undefined,
         latencyMs: handshake?.res.latencyMs,
