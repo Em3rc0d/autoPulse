@@ -6,7 +6,7 @@ export function canonicalEcuKey(sourceAddress: string | null | undefined): strin
 }
 
 export function ecuKeyToStorageAddress(ecuKey: string): number {
-  if (ecuKey === UNKNOWN_ECU_KEY) return 0;
+  if (ecuKey === UNKNOWN_ECU_KEY) return -1;
 
   const parsed = Number.parseInt(ecuKey, 16);
   if (!Number.isSafeInteger(parsed) || parsed < 0) {
