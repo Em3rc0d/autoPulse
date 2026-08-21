@@ -1,4 +1,5 @@
 import type { ProfileMatchType } from './ProbeResult';
+import type { AdapterInitializationCheck } from './AdapterInitializationBehavior';
 
 export type AdapterCompatibilityGrade =
   | 'CERTIFIED'
@@ -17,6 +18,7 @@ export interface AdapterBehaviorEvidence {
   latencyMs: number;
   receiveMode: 'NOTIFY' | 'INDICATE' | 'READ';
   writeMode: 'WITH_RESPONSE' | 'WITHOUT_RESPONSE';
+  initializationChecks?: AdapterInitializationCheck[];
 }
 
 export interface AdapterCompatibilityAssessment {
@@ -45,9 +47,41 @@ export class AdapterCompatibilityClassifier {
       return { grade: 'UNSUPPORTED', reasons: ['NO_VALID_AT_RESPONSE'] };
     }
 
+    const checks = evidence.initializationChecks || [];
+    const disconnectedCheck = checks.find(check => check.outcome === 'DISCONNECTED');
+    if (disconnectedCheck) {
+      return {
+        grade: 'UNSUPPORTED',
+        reasons: [`DISCONNECTED_DURING_INITIALIZATION_BEHAVIOR:${disconnectedCheck.behavior}`],
+      };
+    }
+
+    const requiredFailure = checks.find(
+      check => check.requirement === 'REQUIRED' && check.outcome !== 'ACKNOWLEDGED'
+    );
+    if (requiredFailure) {
+      return {
+        grade: 'UNSUPPORTED',
+        reasons: [`REQUIRED_BEHAVIOR_UNAVAILABLE:${requiredFailure.behavior}:${requiredFailure.outcome}`],
+      };
+    }
+
     if (evidence.timedOut) reasons.push('RESPONSE_TIMEOUT');
     if (!evidence.promptDetected) reasons.push('PROMPT_NOT_OBSERVED');
     if (evidence.receiveMode === 'READ') reasons.push('READ_POLLING_FALLBACK');
+
+    for (const check of checks) {
+      if (check.requirement !== 'PREFERRED') continue;
+
+      if (check.outcome !== 'ACKNOWLEDGED') {
+        reasons.push(`PREFERRED_BEHAVIOR_UNAVAILABLE:${check.behavior}:${check.outcome}`);
+        continue;
+      }
+
+      if (check.timedOut || !check.promptDetected) {
+        reasons.push(`PREFERRED_BEHAVIOR_UNRELIABLE:${check.behavior}`);
+      }
+    }
 
     if (reasons.length > 0) {
       return { grade: 'DEGRADED', reasons };
