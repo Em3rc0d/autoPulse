@@ -8,6 +8,7 @@ import m0003 from './0003_adapter_capability_snapshots.sql';
 import m0004 from './0004_adapter_capability_matched_profile.sql';
 import m0005 from './0005_adapter_behavior_assessment.sql';
 import m0006 from './0006_vehicle_parameter_evidence.sql';
+import m0007 from './0007_raw_vehicle_capability_evidence.sql';
 
 export default {
   journal,
@@ -19,5 +20,6 @@ export default {
     m0004,
     m0005,
     m0006,
+    m0007,
   }
 };
