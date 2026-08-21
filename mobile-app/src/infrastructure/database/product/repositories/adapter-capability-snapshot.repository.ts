@@ -1,6 +1,7 @@
 import { ExpoSQLiteDatabase } from 'drizzle-orm/expo-sqlite';
 import { and, desc, eq } from 'drizzle-orm';
 import * as schema from '../schema';
+import { obdAdapterCapabilitySnapshots } from '../schema/adapters';
 import { ProductIdGenerator } from '../uuidv7';
 import type { AdapterCompatibilityGrade } from '../../../../domain/telemetry/probe/AdapterCompatibilityAssessment';
 import type { ProbeResult, ProfileMatchType } from '../../../../domain/telemetry/probe/ProbeResult';
@@ -60,23 +61,23 @@ export class AdapterCapabilitySnapshotRepository {
 
   async append(input: AppendAdapterCapabilitySnapshotInput) {
     const now = Date.now();
-    const [snapshot] = await this.db.insert(schema.obdAdapterCapabilitySnapshots).values({
+    const [snapshot] = await this.db.insert(obdAdapterCapabilitySnapshots).values({
       id: ProductIdGenerator.generate(),
       workspaceId: input.workspaceId,
       adapterInstanceId: input.adapterInstanceId,
       observedAt: input.observedAt,
       transportType: input.transportType,
       profileMatch: input.profileMatch,
-      matchedProfileId: input.matchedProfileId,
+      matchedProfileId: input.matchedProfileId ?? null,
       compatibilityGrade: input.compatibilityGrade,
       compatibilityReasonsJson: JSON.stringify(input.compatibilityReasons),
-      writeCharacteristic: input.writeCharacteristic,
-      receiveCharacteristic: input.receiveCharacteristic,
-      writeMode: input.writeMode,
-      receiveMode: input.receiveMode,
-      commandUsed: input.commandUsed,
-      sanitizedResponse: input.sanitizedResponse,
-      latencyMs: input.latencyMs,
+      writeCharacteristic: input.writeCharacteristic ?? null,
+      receiveCharacteristic: input.receiveCharacteristic ?? null,
+      writeMode: input.writeMode ?? null,
+      receiveMode: input.receiveMode ?? null,
+      commandUsed: input.commandUsed ?? null,
+      sanitizedResponse: input.sanitizedResponse ?? null,
+      latencyMs: input.latencyMs ?? null,
       echoDetected: input.echoDetected ? 1 : 0,
       promptDetected: input.promptDetected ? 1 : 0,
       timedOut: input.timedOut ? 1 : 0,
@@ -88,12 +89,15 @@ export class AdapterCapabilitySnapshotRepository {
   }
 
   async latestForAdapter(workspaceId: string, adapterInstanceId: string) {
-    return this.db.query.obdAdapterCapabilitySnapshots.findFirst({
-      where: and(
-        eq(schema.obdAdapterCapabilitySnapshots.workspaceId, workspaceId),
-        eq(schema.obdAdapterCapabilitySnapshots.adapterInstanceId, adapterInstanceId),
-      ),
-      orderBy: [desc(schema.obdAdapterCapabilitySnapshots.observedAt)],
-    });
+    const rows = await this.db.select()
+      .from(obdAdapterCapabilitySnapshots)
+      .where(and(
+        eq(obdAdapterCapabilitySnapshots.workspaceId, workspaceId),
+        eq(obdAdapterCapabilitySnapshots.adapterInstanceId, adapterInstanceId),
+      ))
+      .orderBy(desc(obdAdapterCapabilitySnapshots.observedAt))
+      .limit(1);
+
+    return rows[0];
   }
 }
