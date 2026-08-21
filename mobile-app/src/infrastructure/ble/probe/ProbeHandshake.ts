@@ -6,6 +6,8 @@ export interface HandshakeResult {
   writeAccepted: boolean;
   responseReceived: boolean;
   rawByteCount: number;
+  fragmentCount: number;
+  lineCount: number;
   sanitizedResponse: string | null;
   echoDetected: boolean;
   promptDetected: boolean;
@@ -25,6 +27,7 @@ export class ProbeHandshake {
 
     let subscription: Subscription | null = null;
     let accumulated = '';
+    let fragmentCount = 0;
     let isFinished = false;
     let disconnectObserved = false;
     const startTime = Date.now();
@@ -42,11 +45,18 @@ export class ProbeHandshake {
 
         const latency = Date.now() - startTime;
         const { sanitized, echo, prompt } = this.sanitizeResponse(accumulated, command);
+        const lineCount = accumulated
+          .split(/[\r\n]+/)
+          .map(line => line.replace(/>/g, '').trim())
+          .filter(Boolean)
+          .length;
 
         resolve({
           writeAccepted,
           responseReceived: accumulated.length > 0,
           rawByteCount: accumulated.length,
+          fragmentCount,
+          lineCount,
           sanitizedResponse: sanitized || null,
           echoDetected: echo,
           promptDetected: prompt,
@@ -80,6 +90,7 @@ export class ProbeHandshake {
               }
               if (characteristic?.value) {
                 const chunk = Buffer.from(characteristic.value, 'base64').toString('ascii');
+                fragmentCount++;
                 accumulated += chunk;
 
                 // Terminate condition: we see the prompt '>'
@@ -136,6 +147,7 @@ export class ProbeHandshake {
                );
                if (char.value) {
                  const chunk = Buffer.from(char.value, 'base64').toString('ascii');
+                 fragmentCount++;
                  accumulated += chunk;
                  if (accumulated.includes('>')) {
                    clearInterval(pollInterval);
