@@ -17,6 +17,7 @@ export interface ProbeResult {
   probeStage: string;
   failureReason?: string;
   profileMatch: ProfileMatchType;
+  matchedProfileId?: string;
   compatibilityGrade?: AdapterCompatibilityGrade;
   compatibilityReasons?: string[];
   connectionRetained: boolean;
@@ -38,4 +39,6 @@ export interface ProbeResult {
   latencyMs?: number;
   echoDetected?: boolean;
   promptDetected?: boolean;
+  timedOut?: boolean;
+  disconnectObserved?: boolean;
 }
