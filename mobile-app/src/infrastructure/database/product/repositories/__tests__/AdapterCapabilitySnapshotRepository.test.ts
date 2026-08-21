@@ -27,7 +27,6 @@ describe('AdapterCapabilitySnapshotRepository', () => {
     await db.insert(schema.obdAdapterInstances).values({
       id: 'adapter-r4',
       workspaceId: 'ws-r4',
-      alias: 'Generic BLE',
       platformDeviceId: 'ble-r4',
       trustState: 'PROBED',
       firstSeen: now,
