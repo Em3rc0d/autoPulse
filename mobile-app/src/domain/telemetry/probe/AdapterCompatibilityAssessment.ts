@@ -1,4 +1,4 @@
-import { ProfileMatchType } from './ProbeResult';
+import type { ProfileMatchType } from './ProbeResult';
 
 export type AdapterCompatibilityGrade =
   | 'CERTIFIED'
