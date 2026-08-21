@@ -36,13 +36,5 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # @testing-library/react-native requires react-test-renderer matching React.
-      # The legacy lockfile does not currently declare that peer. Keep product
-      # dependency installation reproducible via npm ci, then hydrate this
-      # pinned test-only peer without mutating package.json/package-lock.json.
-      # R9 tracks proper dependency/lockfile reconciliation before RC.
-      - name: Hydrate React Native test renderer
-        run: npm install --no-save --package-lock=false --ignore-scripts react-test-renderer@18.2.0
-
       - name: Verify TypeScript and tests
         run: npm run verify
