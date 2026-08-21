@@ -3,7 +3,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import * as schema from '../schema';
 import { ProductIdGenerator } from '../uuidv7';
 import type { AdapterCompatibilityGrade } from '../../../../domain/telemetry/probe/AdapterCompatibilityAssessment';
-import type { ProfileMatchType } from '../../../../domain/telemetry/probe/ProbeResult';
+import type { ProbeResult, ProfileMatchType } from '../../../../domain/telemetry/probe/ProbeResult';
 
 export interface AppendAdapterCapabilitySnapshotInput {
   workspaceId: string;
@@ -29,6 +29,34 @@ export interface AppendAdapterCapabilitySnapshotInput {
 
 export class AdapterCapabilitySnapshotRepository {
   constructor(private db: ExpoSQLiteDatabase<typeof schema>) {}
+
+  async appendProbeResult(workspaceId: string, adapterInstanceId: string, result: ProbeResult) {
+    if (!result.compatibilityGrade) {
+      throw new Error('ADAPTER_COMPATIBILITY_ASSESSMENT_MISSING');
+    }
+
+    return this.append({
+      workspaceId,
+      adapterInstanceId,
+      observedAt: result.finishedAt,
+      transportType: 'BLE',
+      profileMatch: result.profileMatch,
+      matchedProfileId: result.matchedProfileId,
+      compatibilityGrade: result.compatibilityGrade,
+      compatibilityReasons: result.compatibilityReasons || [],
+      writeCharacteristic: result.writeCharacteristicUUID,
+      receiveCharacteristic: result.receiveCharacteristicUUID,
+      writeMode: result.writeMode,
+      receiveMode: result.receiveMode,
+      commandUsed: result.commandUsed,
+      sanitizedResponse: result.sanitizedResponse,
+      latencyMs: result.latencyMs,
+      echoDetected: Boolean(result.echoDetected),
+      promptDetected: Boolean(result.promptDetected),
+      timedOut: Boolean(result.timedOut),
+      disconnectObserved: Boolean(result.disconnectObserved),
+    });
+  }
 
   async append(input: AppendAdapterCapabilitySnapshotInput) {
     const now = Date.now();
