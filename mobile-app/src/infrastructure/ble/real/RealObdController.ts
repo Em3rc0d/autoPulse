@@ -8,6 +8,7 @@ import { ObdDecoder } from './pipeline/ObdDecoder';
 import { CommandRequest, CommandResult, CommandResultStatus, RawElmResponse } from './pipeline/types';
 import { DiagnosticsBuffer } from './DiagnosticsBuffer';
 import { BleDebugLogger } from './BleDebugLogger';
+import { decodeAdapterVoltage } from '../../../domain/obd/AdapterVoltage';
 
 export class RealObdController {
   private connection: ActiveConnection;
@@ -119,11 +120,14 @@ export class RealObdController {
          status = 'INVALID_RESPONSE';
        } else if (decoded.length > 0) {
          status = 'SUCCESS_DECODED';
-       } else if (request.command.toUpperCase() === 'ATRV' && rawResponse.accumulatedText) {
-         // Decode ATRV (e.g. 13.8V)
-         const match = rawResponse.accumulatedText.match(/([\d\.]+)\s*V/i);
-         if (match) {
-           decoded.push({ type: 'VOLTAGE', value: parseFloat(match[1]), unit: 'V' });
+      } else if (request.command.toUpperCase() === 'ATRV' && rawResponse.accumulatedText) {
+         const adapterVoltage = decodeAdapterVoltage(rawResponse.accumulatedText);
+         if (adapterVoltage) {
+           decoded.push({
+             type: adapterVoltage.type,
+             value: adapterVoltage.value,
+             unit: adapterVoltage.unit
+           });
            status = 'SUCCESS_DECODED';
          } else {
            status = 'SUCCESS_RAW';
