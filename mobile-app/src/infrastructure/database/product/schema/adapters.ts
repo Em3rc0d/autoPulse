@@ -50,3 +50,32 @@ export const obdAdapterInstances = sqliteTable('obd_adapter_instances', {
   workspaceLastSeenIdx: index('idx_adapter_instances_last_seen').on(table.workspaceId, table.lastSeen),
   tenantUnique: unique('uq_adapter_instances_tenant').on(table.workspaceId, table.id)
 }));
+
+/**
+ * Append-only observations from real adapter probes.
+ * Compatibility profiles are reusable definitions; these snapshots are the
+ * evidence of what one concrete adapter instance actually did at one time.
+ *
+ * Behavioral details intentionally live in a versioned JSON payload. This
+ * preserves explicit null/absent observations, keeps the relational surface
+ * stable as discovery evolves, and avoids coercing unknown evidence into fake
+ * scalar sentinel values.
+ */
+export const obdAdapterCapabilitySnapshots = sqliteTable('obd_adapter_capability_snapshots', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'restrict' }),
+  adapterInstanceId: text('adapter_instance_id').notNull().references(() => obdAdapterInstances.id, { onDelete: 'restrict' }),
+  observedAt: integer('observed_at').notNull(),
+  transportType: text('transport_type').notNull(),
+  profileMatch: text('profile_match').notNull(),
+  compatibilityGrade: text('compatibility_grade').notNull(),
+  compatibilityReasonsJson: text('compatibility_reasons_json').notNull(),
+  evidenceSchemaVersion: text('evidence_schema_version').notNull(),
+  evidenceJson: text('evidence_json').notNull(),
+  createdAt: integer('created_at').notNull()
+}, (table) => ({
+  workspaceAdapterObservedIdx: index('idx_adapter_capability_snapshots_workspace_adapter_observed')
+    .on(table.workspaceId, table.adapterInstanceId, table.observedAt),
+  adapterObservedIdx: index('idx_adapter_capability_snapshots_adapter_observed')
+    .on(table.adapterInstanceId, table.observedAt)
+}));

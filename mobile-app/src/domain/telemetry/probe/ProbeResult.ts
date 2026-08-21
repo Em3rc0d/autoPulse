@@ -1,3 +1,5 @@
+import type { AdapterCompatibilityGrade } from './AdapterCompatibilityAssessment';
+
 export enum ProbeVerdict {
   SUPPORTED = 'SUPPORTED',
   SUPPORTED_WITH_PROFILE = 'SUPPORTED_WITH_PROFILE',
@@ -15,6 +17,9 @@ export interface ProbeResult {
   probeStage: string;
   failureReason?: string;
   profileMatch: ProfileMatchType;
+  matchedProfileId?: string;
+  compatibilityGrade?: AdapterCompatibilityGrade;
+  compatibilityReasons?: string[];
   connectionRetained: boolean;
   testedCombinationCount: number;
   startedAt: number;
@@ -29,9 +34,13 @@ export interface ProbeResult {
   commandUsed?: string;
   writeCharacteristicUUID?: string;
   receiveCharacteristicUUID?: string;
+  writeMode?: 'WITH_RESPONSE' | 'WITHOUT_RESPONSE';
+  receiveMode?: 'NOTIFY' | 'INDICATE' | 'READ';
   bytesWritten?: number;
   sanitizedResponse?: string;
   latencyMs?: number;
   echoDetected?: boolean;
   promptDetected?: boolean;
+  timedOut?: boolean;
+  disconnectObserved?: boolean;
 }
