@@ -5,12 +5,14 @@ import { useAdapterDiscovery } from '../../infrastructure/ble/useAdapterDiscover
 import { useVehicle } from '../../infrastructure/hooks/useVehicle';
 import { BleCompatibilityProbe } from '../../infrastructure/ble/probe/BleCompatibilityProbe';
 import { ProbeResult, ProbeVerdict } from '../../domain/telemetry/probe/ProbeResult';
+import { buildAdapterCapabilitySnapshot } from '../../domain/telemetry/probe/AdapterCapabilitySnapshot';
 import { useBleManager } from '../../infrastructure/ble/BleManagerProvider';
 import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
 import { useLocalContext } from '../../infrastructure/hooks/useLocalContext';
 import { useProductDb } from '../../infrastructure/hooks/useProductDb';
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { AdapterRepository } from '../../infrastructure/database/product/repositories/adapter.repository';
+import { AdapterCapabilitySnapshotRepository } from '../../infrastructure/database/product/repositories/adapter-capability-snapshot.repository';
 
 const INTERNAL_VIRTUAL_OBD_ENABLED = true; // Feature flag for testing
 
@@ -110,6 +112,7 @@ export default function ConnectObdScreen() {
 
     try {
       const adapterRepo = new AdapterRepository(productDb);
+      const capabilityRepo = new AdapterCapabilitySnapshotRepository(productDb);
       const sessionRepo = new LiveSessionRepository(productDb);
 
       const adapter = await adapterRepo.upsertAdapter(localContext.defaultWorkspaceId, {
@@ -117,6 +120,15 @@ export default function ConnectObdScreen() {
         platformDeviceId: probeResult.device.id,
         trustState: 'PROBED'
       });
+
+      // Release invariant: a real Live session may not start from an accepted
+      // adapter unless the evidence that justified acceptance is persisted first.
+      const capabilitySnapshot = buildAdapterCapabilitySnapshot(probeResult.result);
+      await capabilityRepo.append(
+        localContext.defaultWorkspaceId,
+        adapter.id,
+        capabilitySnapshot,
+      );
 
       const sessionId = await sessionRepo.createSession(
         localContext.defaultWorkspaceId,
@@ -127,13 +139,12 @@ export default function ConnectObdScreen() {
 
       const connectionHandleId = `conn_${Math.random().toString(36).substr(2, 9)}`;
 
-      // Retain the connection
       activeBleController.retainConnection({
         connectionHandleId,
         device: probeResult.device,
         writeCharacteristic: probeResult.handshakeComb.writeCharacteristic,
         receiveCharacteristic: probeResult.handshakeComb.receiveCharacteristic,
-        profileId: probeResult.result.profileMatch !== 'NO_PROFILE_MATCH' ? probeResult.result.profileMatch : undefined,
+        profileId: probeResult.result.matchedProfileId,
       });
 
       navigation.navigate('Initialization', {
@@ -275,11 +286,12 @@ export default function ConnectObdScreen() {
               <Text style={styles.successIcon}>✓</Text>
             </View>
             <Text style={styles.deviceName}>{selectedDeviceName}</Text>
-            <Text style={styles.statusTextSuccess}>Device Supported!</Text>
+            <Text style={styles.statusTextSuccess}>Adapter Compatible</Text>
 
             <View style={styles.probeSummary}>
-              <Text style={styles.probeText}>Profile: {probeResult?.result.profileMatch}</Text>
-              <Text style={styles.probeText}>Handshake: {probeResult?.result.commandUsed} ➔ {probeResult?.result.sanitizedResponse || 'OK'}</Text>
+              <Text style={styles.probeText}>Compatibility: {probeResult?.result.compatibilityGrade}</Text>
+              <Text style={styles.probeText}>Profile: {probeResult?.result.matchedProfileId || probeResult?.result.profileMatch}</Text>
+              <Text style={styles.probeText}>Handshake: {probeResult?.result.commandUsed?.trim()} ➔ {probeResult?.result.sanitizedResponse || 'OK'}</Text>
               <Text style={styles.probeText}>Latency: {probeResult?.result.latencyMs}ms</Text>
             </View>
 

@@ -34,6 +34,7 @@ export class BleCompatibilityProbe {
     this.startedAt = Date.now();
     let inventory: GattInventory | null = null;
     let matchType: ProfileMatchType = 'NO_PROFILE_MATCH';
+    let matchedProfileId: string | undefined;
     let testedCombinationCount = 0;
 
     const buildResult = (
@@ -51,6 +52,7 @@ export class BleCompatibilityProbe {
         probeStage: stage,
         failureReason: reason,
         profileMatch: matchType,
+        matchedProfileId,
         connectionRetained,
         testedCombinationCount,
         startedAt: this.startedAt,
@@ -86,6 +88,7 @@ export class BleCompatibilityProbe {
 
       const matchRes = AdapterProfileMatcher.match(inventory);
       matchType = matchRes.matchType;
+      matchedProfileId = matchRes.profile?.id;
 
       const combinations = CharacteristicCandidateSelector.selectCombinations(inventory);
 
@@ -103,25 +106,28 @@ export class BleCompatibilityProbe {
         if (this.cancellationSignal.cancelled) break;
         testedCombinationCount++;
 
-        let res = await ProbeHandshake.execute(this.device, comb, 'ATI\r', 2000, this.cancellationSignal);
+        let commandUsed = 'ATI\r';
+        let res = await ProbeHandshake.execute(this.device, comb, commandUsed, 2000, this.cancellationSignal);
         if (res.disconnectObserved) {
           return buildResult(ProbeVerdict.PROBE_FAILED, 'HANDSHAKE', 'Device disconnected unexpectedly');
         }
 
         if (!this.isValidResponse(res.sanitizedResponse)) {
-          res = await ProbeHandshake.execute(this.device, comb, 'AT@1\r', 2000, this.cancellationSignal);
+          commandUsed = 'AT@1\r';
+          res = await ProbeHandshake.execute(this.device, comb, commandUsed, 2000, this.cancellationSignal);
           if (res.disconnectObserved) return buildResult(ProbeVerdict.PROBE_FAILED, 'HANDSHAKE', 'Device disconnected unexpectedly');
         }
 
         if (!this.isValidResponse(res.sanitizedResponse) && !usedAtz && res.writeAccepted) {
           usedAtz = true;
           await ProbeHandshake.execute(this.device, comb, 'ATZ\r', 3000, this.cancellationSignal);
-          res = await ProbeHandshake.execute(this.device, comb, 'ATI\r', 3000, this.cancellationSignal);
+          commandUsed = 'ATI\r';
+          res = await ProbeHandshake.execute(this.device, comb, commandUsed, 3000, this.cancellationSignal);
           if (res.disconnectObserved) return buildResult(ProbeVerdict.PROBE_FAILED, 'HANDSHAKE', 'Device disconnected unexpectedly after reset');
         }
 
         if (this.isValidResponse(res.sanitizedResponse)) {
-          successfulHandshake = { cmd: 'ATI/AT@1', comb, res };
+          successfulHandshake = { cmd: commandUsed, comb, res };
           break;
         }
       }
@@ -154,8 +160,6 @@ export class BleCompatibilityProbe {
       verdict === ProbeVerdict.SUPPORTED_WITH_PROFILE ||
       verdict === ProbeVerdict.SUPPORTED
     ) {
-      // The current probe proves a usable AT-like channel. It does not yet prove
-      // the full behavioral contract required for CERTIFIED.
       return AdapterCompatibilityGrade.COMPATIBLE;
     }
 

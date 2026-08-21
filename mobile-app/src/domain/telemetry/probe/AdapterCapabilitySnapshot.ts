@@ -13,6 +13,7 @@ export interface AdapterCapabilitySnapshot {
   deviceName: string | null;
   rssi: number | null;
   profileMatch: ProfileMatchType;
+  matchedProfileId?: string;
   compatibilityGrade: AdapterCompatibilityGrade;
   assessedAt: number;
 
@@ -50,6 +51,7 @@ export function buildAdapterCapabilitySnapshot(result: ProbeResult): AdapterCapa
     deviceName: result.deviceName,
     rssi: result.rssi,
     profileMatch: result.profileMatch,
+    matchedProfileId: result.matchedProfileId,
     compatibilityGrade: result.compatibilityGrade,
     assessedAt: result.finishedAt,
     channel: Object.freeze({

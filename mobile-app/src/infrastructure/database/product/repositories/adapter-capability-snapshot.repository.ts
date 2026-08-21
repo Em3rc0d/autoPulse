@@ -26,6 +26,7 @@ export class AdapterCapabilitySnapshotRepository {
       deviceName: snapshot.deviceName,
       rssi: snapshot.rssi,
       profileMatch: snapshot.profileMatch,
+      matchedProfileId: snapshot.matchedProfileId,
       compatibilityGrade: snapshot.compatibilityGrade,
       writeCharacteristicUuid: snapshot.channel.writeCharacteristicUUID,
       receiveCharacteristicUuid: snapshot.channel.receiveCharacteristicUUID,
@@ -64,6 +65,7 @@ export class AdapterCapabilitySnapshotRepository {
       deviceName: row.deviceName,
       rssi: row.rssi,
       profileMatch: row.profileMatch as ProfileMatchType,
+      matchedProfileId: row.matchedProfileId ?? undefined,
       compatibilityGrade: row.compatibilityGrade as AdapterCompatibilityGrade,
       assessedAt: row.assessedAt,
       channel: Object.freeze({

@@ -28,6 +28,8 @@ export interface ProbeResult {
   probeStage: string;
   failureReason?: string;
   profileMatch: ProfileMatchType;
+  /** Actual matched profile identity, e.g. standard-elm327-ble. Never the match type. */
+  matchedProfileId?: string;
   connectionRetained: boolean;
   testedCombinationCount: number;
   startedAt: number;
