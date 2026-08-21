@@ -78,13 +78,17 @@ export class RealLiveSessionController {
     });
 
     this.appStateSubscription = AppState.addEventListener('change', nextState => {
-      if (nextState !== 'active' && this.currentState === 'ACTIVE') {
-        void this.handleUnexpectedDisconnect('APP_BACKGROUND');
-      }
+      this.handleAppStateChange(nextState);
     });
 
     this.recordingStatus = 'RECORDING';
     this.poller.start(250);
+  }
+
+  private handleAppStateChange(nextState: string) {
+    if (nextState !== 'active' && this.currentState === 'ACTIVE') {
+      void this.handleUnexpectedDisconnect('APP_BACKGROUND');
+    }
   }
 
   private handleCommandResult(result: CommandResult, onUiUpdate: (res: CommandResult) => void) {
