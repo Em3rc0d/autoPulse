@@ -1,19 +1,28 @@
-import { NativeEventSubscription, Platform } from 'react-native';
-import ReactNativeForegroundService from '@supersami/rn-foreground-service';
+import { AppState, NativeEventSubscription } from 'react-native';
 import { RealObdController } from '../../infrastructure/ble/real/RealObdController';
 import { RealTelemetryPoller } from '../../infrastructure/ble/real/RealTelemetryPoller';
 import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { ITelemetryBlockRepository } from '../../domain/telemetry/repositories/TelemetryBlockRepository';
-import { TelemetryCommitQueue, CommitQueueEvent } from './TelemetryCommitQueue';
+import {
+  TelemetryCommitQueue,
+  CommitQueueEvent,
+  TelemetryCommitQueueDrainTimeoutError
+} from './TelemetryCommitQueue';
 import { CommandResult } from '../../infrastructure/ble/real/pipeline/types';
 import { ObdAcquisitionMapper } from '../../domain/telemetry/factories/ObdAcquisitionMapper';
 import { TelemetryBlockAssembler } from '../../domain/telemetry/logic/TelemetryBlockAssembler';
-import { BinaryObd2V3BlockMapper } from '../../infrastructure/telemetry-codecs/binary-obd2-v3/BinaryObd2V3BlockMapper';
 import { BinaryObd2V3Codec } from '../../infrastructure/telemetry-codecs/binary-obd2-v3/BinaryObd2V3Codec';
 
 export type RecordingStatus = 'NOT_STARTED' | 'RECORDING' | 'FLUSHING' | 'DEGRADED' | 'FAILED' | 'CLOSED';
 
+/**
+ * Release-1 lifecycle policy:
+ * - Live acquisition is foreground-only.
+ * - Leaving the app while ACTIVE produces an explicit INTERRUPTED session.
+ * - A future background-recording mode must be introduced as a separate,
+ *   explicitly tested product capability rather than happening implicitly.
+ */
 export class RealLiveSessionController {
   private obdController: RealObdController | null = null;
   public poller: RealTelemetryPoller | null = null;
@@ -68,18 +77,25 @@ export class RealLiveSessionController {
       this.handleCommandResult(result, onUiUpdate);
     });
 
-    this.recordingStatus = 'RECORDING';
+    this.appStateSubscription = AppState.addEventListener('change', nextState => {
+      this.handleAppStateChange(nextState);
+    });
 
+    this.recordingStatus = 'RECORDING';
     this.poller.start(250);
+  }
+
+  private handleAppStateChange(nextState: string) {
+    if (nextState !== 'active' && this.currentState === 'ACTIVE') {
+      void this.handleUnexpectedDisconnect('APP_BACKGROUND');
+    }
   }
 
   private handleCommandResult(result: CommandResult, onUiUpdate: (res: CommandResult) => void) {
     if (this.currentState !== 'ACTIVE') return;
 
-    // Give UI the update
     onUiUpdate(result);
 
-    // Map to acquisition event
     const event = ObdAcquisitionMapper.fromCommandResult(
       result,
       this.sessionId,
@@ -104,7 +120,6 @@ export class RealLiveSessionController {
     if (event.type === 'FAILED') {
       this.recordingStatus = 'FAILED';
       onRecordingError(event.errorReason);
-      // Initiate safety stop if recording failed
       this.handleUnexpectedDisconnect('TELEMETRY_PERSISTENCE_FAILED');
     }
   }
@@ -124,19 +139,20 @@ export class RealLiveSessionController {
   private async performStop(mode: 'NORMAL' | 'INTERRUPTED', reason?: string): Promise<void> {
     const wasActive = this.currentState === 'ACTIVE';
     this.currentState = mode === 'NORMAL' ? 'STOPPING' : 'INTERRUPTED';
+
+    this.appStateSubscription?.remove();
+    this.appStateSubscription = null;
+
     if (wasActive && mode === 'NORMAL') {
       await this.sessionRepo.requestStop(this.workspaceId, this.sessionId, 'USER_INITIATED');
     }
 
-    if (this.poller) {
-      this.poller.stop();
-    }
+    this.poller?.stop();
 
     const stopTime = Date.now();
     this.recordingStatus = 'FLUSHING';
 
-    // In a real app we might await in-flight commands up to 1500ms
-    // For MVP, we simulate a bounded grace period
+    // Allow an in-flight command a short bounded grace period before the final flush.
     await new Promise(r => setTimeout(r, 100));
 
     if (this.assembler && !this.commitQueue?.getHasFailed()) {
@@ -146,34 +162,45 @@ export class RealLiveSessionController {
       }
     }
 
+    let drainTimedOut = false;
     if (this.commitQueue) {
-      await this.commitQueue.drain();
+      try {
+        await this.commitQueue.drain(5000);
+      } catch (error) {
+        if (error instanceof TelemetryCommitQueueDrainTimeoutError) {
+          drainTimedOut = true;
+          this.recordingStatus = 'FAILED';
+          console.error(
+            `[RealLiveSessionController] Telemetry drain timed out with ${error.pendingCount} block(s) pending`,
+            error
+          );
+        } else {
+          throw error;
+        }
+      }
     }
 
-    if (this.obdController) {
-      this.obdController.disconnect();
-    }
-
+    this.obdController?.disconnect();
     activeBleController.releaseConnection();
     this.recordingStatus = 'CLOSED';
 
-    if (mode === 'NORMAL' && !this.commitQueue?.getHasFailed()) {
-       await this.sessionRepo.completeSession(this.workspaceId, this.sessionId);
-       this.currentState = 'COMPLETED';
+    if (mode === 'NORMAL' && !this.commitQueue?.getHasFailed() && !drainTimedOut) {
+      await this.sessionRepo.completeSession(this.workspaceId, this.sessionId);
+      this.currentState = 'COMPLETED';
     } else {
-       const failReason = reason || 'TELEMETRY_PERSISTENCE_FAILED';
-       try {
-         await this.sessionRepo.interruptSession(this.workspaceId, this.sessionId, failReason);
-       } catch (err) {
-         console.error('Failed to record session interruption', err);
-       }
-       this.currentState = 'INTERRUPTED';
+      const failReason = drainTimedOut ? 'TELEMETRY_DRAIN_TIMEOUT' : (reason || 'TELEMETRY_PERSISTENCE_FAILED');
+      try {
+        await this.sessionRepo.interruptSession(this.workspaceId, this.sessionId, failReason);
+      } catch (err) {
+        console.error('Failed to record session interruption', err);
+      }
+      this.currentState = 'INTERRUPTED';
     }
   }
 
   public forceCleanup() {
     if (this.currentState === 'ACTIVE' || this.currentState === 'STOPPING') {
-       this.handleUnexpectedDisconnect('UNEXPECTED_UNMOUNT');
+      void this.handleUnexpectedDisconnect('UNEXPECTED_UNMOUNT');
     }
   }
 }
