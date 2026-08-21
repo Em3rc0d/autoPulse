@@ -46,6 +46,10 @@ export const vehicleCapabilityParameters = sqliteTable('vehicle_capability_param
   parameterDefinitionId: text('parameter_definition_id').notNull().references(() => obdParameterDefinitions.id, { onDelete: 'restrict' }),
   supportState: text('support_state').notNull(),
   discoveryOutcome: text('discovery_outcome').notNull(),
+  standardDefinitionState: text('standard_definition_state').notNull().default('DEFINED'),
+  capabilityAdvertisedState: text('capability_advertised_state').notNull().default('UNKNOWN'),
+  probeResult: text('probe_result').notNull().default('NOT_PROBED'),
+  liveObservationState: text('live_observation_state').notNull().default('NOT_OBSERVED'),
   errorCode: text('error_code'),
   discoveredAt: integer('discovered_at').notNull()
 }, (table) => ({
