@@ -40,7 +40,8 @@ export default function LiveSessionScreen() {
   const rpmTracker = useSignalTracker('ENGINE_RPM', useGeneric ? DEMO_PROFILES.ENGINE_RPM : { ...DEMO_PROFILES.ENGINE_RPM, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
   const speedTracker = useSignalTracker('VEHICLE_SPEED', useGeneric ? DEMO_PROFILES.VEHICLE_SPEED : { ...DEMO_PROFILES.VEHICLE_SPEED, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
   const coolantTracker = useSignalTracker('ENGINE_COOLANT', useGeneric ? DEMO_PROFILES.ENGINE_COOLANT : { ...DEMO_PROFILES.ENGINE_COOLANT, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
-  const voltageTracker = useSignalTracker('CONTROL_VOLTAGE', useGeneric ? DEMO_PROFILES.CONTROL_VOLTAGE : { ...DEMO_PROFILES.CONTROL_VOLTAGE, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
+  const ecuVoltageTracker = useSignalTracker('ECU_VOLTAGE', useGeneric ? DEMO_PROFILES.CONTROL_VOLTAGE : { ...DEMO_PROFILES.CONTROL_VOLTAGE, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
+  const adapterVoltageTracker = useSignalTracker('ADAPTER_VOLTAGE', useGeneric ? DEMO_PROFILES.CONTROL_VOLTAGE : { ...DEMO_PROFILES.CONTROL_VOLTAGE, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
 
   const [sessionController, setSessionController] = useState<RealLiveSessionController | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -52,9 +53,9 @@ export default function LiveSessionScreen() {
   const isStopping = React.useRef(false);
 
   useEffect(() => {
-    if (initialAdapterVoltage && voltageTracker.value === null) {
+    if (initialAdapterVoltage && adapterVoltageTracker.value === null) {
       const match = String(initialAdapterVoltage).match(/(\d+(?:\.\d+)?)/);
-      voltageTracker.update(match ? Number(match[1]) : null, match ? 'VALID' : 'UNAVAILABLE');
+      adapterVoltageTracker.update(match ? Number(match[1]) : null, match ? 'VALID' : 'UNAVAILABLE');
     }
   }, [initialAdapterVoltage]);
 
@@ -144,12 +145,13 @@ export default function LiveSessionScreen() {
     const coolantPrev = typeof coolantTracker.value === 'number' ? coolantTracker.value : 90;
     coolantTracker.update(Math.min(105, coolantPrev + (Math.random() * 0.05)), 'VALID');
 
-    const voltagePrev = typeof voltageTracker.value === 'number' ? voltageTracker.value : 14.1;
+    const voltagePrev = typeof adapterVoltageTracker.value === 'number' ? adapterVoltageTracker.value : 14.1;
     const drift = (Math.random() - 0.5) * 0.05;
 
     // Virtual is always running
     const virtualRpmCtx = { value: 800, quality: 'VALID' as any, observedAt: Date.now() };
-    voltageTracker.update(Math.max(13.8, Math.min(14.4, voltagePrev + drift)), 'VALID', { rpm: virtualRpmCtx });
+    adapterVoltageTracker.update(Math.max(13.8, Math.min(14.4, voltagePrev + drift)), 'VALID', { rpm: virtualRpmCtx });
+    ecuVoltageTracker.update(Math.max(13.7, Math.min(14.7, voltagePrev + drift)), 'VALID', { rpm: virtualRpmCtx });
     }, 500);
     return () => clearInterval(simulator);
   }, [adapterMode, dataPoints]);
@@ -195,7 +197,8 @@ export default function LiveSessionScreen() {
         }
         if (reading.type === 'SPEED') speedTracker.update(reading.value as number, 'VALID');
         if (reading.type === 'COOLANT') coolantTracker.update(reading.value as number, 'VALID');
-        if (reading.type === 'VOLTAGE') voltageTracker.update(reading.value as number, 'VALID', { rpm: rpmCtx });
+        if (reading.type === 'ECU_VOLTAGE') ecuVoltageTracker.update(reading.value as number, 'VALID', { rpm: rpmCtx });
+        if (reading.type === 'ADAPTER_VOLTAGE') adapterVoltageTracker.update(reading.value as number, 'VALID', { rpm: rpmCtx });
       }
     }, (error) => {
       setSessionError(error);
@@ -232,7 +235,8 @@ export default function LiveSessionScreen() {
         }
         if (reading.type === 'SPEED') speedTracker.update(reading.value as number, 'VALID');
         if (reading.type === 'COOLANT') coolantTracker.update(reading.value as number, 'VALID');
-        if (reading.type === 'VOLTAGE') voltageTracker.update(reading.value as number, 'VALID', { rpm: rpmCtx });
+        if (reading.type === 'ECU_VOLTAGE') ecuVoltageTracker.update(reading.value as number, 'VALID', { rpm: rpmCtx });
+        if (reading.type === 'ADAPTER_VOLTAGE') adapterVoltageTracker.update(reading.value as number, 'VALID', { rpm: rpmCtx });
       }
     });
 
@@ -355,14 +359,24 @@ export default function LiveSessionScreen() {
             testID="live-metric-card-engine-coolant"
           />
           <LiveMetricCard
-            label="Control Voltage"
-            value={voltageTracker.value}
+            label="ECU Voltage"
+            value={ecuVoltageTracker.value}
             unit="V"
-            state={voltageTracker.advisoryState}
-            stats={voltageTracker.stats}
+            state={ecuVoltageTracker.advisoryState}
+            stats={ecuVoltageTracker.stats}
             profile={DEMO_PROFILES.CONTROL_VOLTAGE}
             origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'}
-            testID="live-metric-card-control-voltage"
+            testID="live-metric-card-ecu-voltage"
+          />
+          <LiveMetricCard
+            label="Adapter Voltage"
+            value={adapterVoltageTracker.value}
+            unit="V"
+            state={adapterVoltageTracker.advisoryState}
+            stats={adapterVoltageTracker.stats}
+            profile={DEMO_PROFILES.CONTROL_VOLTAGE}
+            origin={adapterMode === 'REAL_BLE' ? 'Adapter measurement' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'}
+            testID="live-metric-card-adapter-voltage"
           />
         </View>
 
