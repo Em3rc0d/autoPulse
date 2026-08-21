@@ -51,13 +51,14 @@ jest.mock('../../../application/config', () => ({
 }));
 
 describe('LiveSessionScreen', () => {
-  it('renders without ReferenceError and shows four metric cards', () => {
+  it('renders without ReferenceError and keeps ECU and adapter voltage separate', () => {
     const { getByText } = render(<LiveSessionScreen />);
 
     expect(getByText('Engine RPM')).toBeTruthy();
     expect(getByText('Vehicle Speed')).toBeTruthy();
     expect(getByText('Engine Coolant')).toBeTruthy();
-    expect(getByText('Control Voltage')).toBeTruthy();
+    expect(getByText('ECU Voltage')).toBeTruthy();
+    expect(getByText('Adapter Voltage')).toBeTruthy();
   });
 
   it('renders cards using two-column layout contract (width 48%)', () => {
@@ -67,7 +68,8 @@ describe('LiveSessionScreen', () => {
       'live-metric-card-engine-rpm',
       'live-metric-card-vehicle-speed',
       'live-metric-card-engine-coolant',
-      'live-metric-card-control-voltage'
+      'live-metric-card-ecu-voltage',
+      'live-metric-card-adapter-voltage'
     ];
 
     cardIds.forEach(id => {
