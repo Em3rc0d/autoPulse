@@ -1,3 +1,5 @@
+import type { AdapterCompatibilityGrade } from './AdapterCompatibilityAssessment';
+
 export enum ProbeVerdict {
   SUPPORTED = 'SUPPORTED',
   SUPPORTED_WITH_PROFILE = 'SUPPORTED_WITH_PROFILE',
@@ -15,6 +17,8 @@ export interface ProbeResult {
   probeStage: string;
   failureReason?: string;
   profileMatch: ProfileMatchType;
+  compatibilityGrade?: AdapterCompatibilityGrade;
+  compatibilityReasons?: string[];
   connectionRetained: boolean;
   testedCombinationCount: number;
   startedAt: number;
