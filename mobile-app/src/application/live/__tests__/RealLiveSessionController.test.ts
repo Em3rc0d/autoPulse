@@ -6,6 +6,7 @@ jest.mock('react-native', () => ({
 }));
 
 import { RealLiveSessionController } from '../RealLiveSessionController';
+import { TelemetryCommitQueueDrainTimeoutError } from '../TelemetryCommitQueue';
 
 describe('RealLiveSessionController Integration', () => {
   let mockPoller: any;
@@ -34,9 +35,9 @@ describe('RealLiveSessionController Integration', () => {
       'conn1',
       ['010C', '010D']
     );
-    // Stub out actual telemetry operations for pure lifecycle testing
+    // Stub out actual telemetry operations for pure lifecycle testing.
     (ctrl as any).assembler = {
-      flush: jest.fn().mockReturnValue(null) // No final block
+      flush: jest.fn().mockReturnValue(null)
     };
     (ctrl as any).commitQueue = {
       drain: jest.fn().mockResolvedValue(undefined),
@@ -49,21 +50,20 @@ describe('RealLiveSessionController Integration', () => {
   it('Controller start is idempotent', async () => {
     const ctrl = createController();
 
-    // We stub activeBleController inside the test environment if needed, but here we can just skip start and mock it manually or mock activeBleController globally.
-    // Instead of testing start details, we test idempotent stop/cleanup which don't require BLE.
+    // Start details require a real/mocked BLE connection. This verifies the
+    // lifecycle test fixture can represent an already-active controller.
     ctrl['currentState'] = 'ACTIVE';
     ctrl['commitQueue'] = {
       drain: jest.fn().mockResolvedValue(undefined),
       getHasFailed: jest.fn().mockReturnValue(false)
     } as any;
+
+    expect(ctrl['currentState']).toBe('ACTIVE');
   });
 
   it('Double Stop shares terminal promise', async () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';
-
-    // mock activeBleController
-    (global as any).activeBleController = { releaseConnection: jest.fn() };
 
     const p1 = ctrl.stopSession();
     const p2 = ctrl.stopSession();
@@ -78,7 +78,6 @@ describe('RealLiveSessionController Integration', () => {
   it('Failed final block prevents COMPLETED', async () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';
-    (global as any).activeBleController = { releaseConnection: jest.fn() };
 
     (ctrl as any).commitQueue.getHasFailed = jest.fn().mockReturnValue(true);
 
@@ -92,22 +91,42 @@ describe('RealLiveSessionController Integration', () => {
   it('Disconnect produces INTERRUPTED once', async () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';
-    (global as any).activeBleController = { releaseConnection: jest.fn() };
 
     await ctrl.handleUnexpectedDisconnect('DEVICE_DISCONNECTED');
-    await ctrl.handleUnexpectedDisconnect('DEVICE_DISCONNECTED'); // Second call
+    await ctrl.handleUnexpectedDisconnect('DEVICE_DISCONNECTED');
 
     expect(mockSessionRepo.interruptSession).toHaveBeenCalledTimes(1);
     expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith('ws1', 'sess1', 'DEVICE_DISCONNECTED');
     expect(ctrl['currentState']).toBe('INTERRUPTED');
   });
 
-  it('Background produces INTERRUPTED once', async () => {
+  it('App background uses the Release-1 APP_BACKGROUND interruption policy', async () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';
-    (global as any).activeBleController = { releaseConnection: jest.fn() };
 
-    // Force background
+    (ctrl as any).handleAppStateChange('background');
+    await ctrl['terminalPromise'];
+
+    expect(mockSessionRepo.completeSession).not.toHaveBeenCalled();
+    expect(mockSessionRepo.interruptSession).toHaveBeenCalledTimes(1);
+    expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith('ws1', 'sess1', 'APP_BACKGROUND');
+    expect(ctrl['currentState']).toBe('INTERRUPTED');
+  });
+
+  it('Returning/remaining active does not terminate the session', () => {
+    const ctrl = createController();
+    ctrl['currentState'] = 'ACTIVE';
+
+    (ctrl as any).handleAppStateChange('active');
+
+    expect(ctrl['terminalPromise']).toBeNull();
+    expect(mockSessionRepo.interruptSession).not.toHaveBeenCalled();
+  });
+
+  it('Unexpected unmount produces INTERRUPTED once', async () => {
+    const ctrl = createController();
+    ctrl['currentState'] = 'ACTIVE';
+
     ctrl.forceCleanup();
     await ctrl['terminalPromise'];
 
@@ -115,10 +134,28 @@ describe('RealLiveSessionController Integration', () => {
     expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith('ws1', 'sess1', 'UNEXPECTED_UNMOUNT');
   });
 
+  it('Telemetry drain timeout prevents COMPLETED and records an explicit interruption reason', async () => {
+    const ctrl = createController();
+    ctrl['currentState'] = 'ACTIVE';
+    const consoleError = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    (ctrl as any).commitQueue.drain = jest.fn().mockRejectedValue(
+      new TelemetryCommitQueueDrainTimeoutError(5000, 1)
+    );
+
+    await ctrl.stopSession();
+
+    expect(mockSessionRepo.completeSession).not.toHaveBeenCalled();
+    expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith('ws1', 'sess1', 'TELEMETRY_DRAIN_TIMEOUT');
+    expect(ctrl['currentState']).toBe('INTERRUPTED');
+    expect(ctrl.recordingStatus).toBe('CLOSED');
+
+    consoleError.mockRestore();
+  });
+
   it('Stop/disconnect race has one terminal state', async () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';
-    (global as any).activeBleController = { releaseConnection: jest.fn() };
 
     const p1 = ctrl.stopSession();
     const p2 = ctrl.handleUnexpectedDisconnect('RACE');
@@ -126,7 +163,7 @@ describe('RealLiveSessionController Integration', () => {
     expect(p1).toBe(p2);
     await p1;
 
-    // The first call (stopSession) won the race
+    // The first call (stopSession) won the race.
     expect(mockSessionRepo.completeSession).toHaveBeenCalledTimes(1);
     expect(mockSessionRepo.interruptSession).not.toHaveBeenCalled();
   });
