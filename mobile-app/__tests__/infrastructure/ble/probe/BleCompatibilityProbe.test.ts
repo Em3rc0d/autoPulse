@@ -65,7 +65,7 @@ function createHarness() {
   jest.spyOn(CharacteristicCandidateSelector, 'selectCombinations').mockReturnValue([candidate]);
   jest.spyOn(ProbeHandshake, 'execute').mockResolvedValue(handshake);
 
-  return { fakeDevice, manager };
+  return { manager };
 }
 
 describe('BleCompatibilityProbe release grading', () => {
@@ -73,7 +73,7 @@ describe('BleCompatibilityProbe release grading', () => {
     jest.restoreAllMocks();
   });
 
-  it('grades an exact known profile with proven handshake as CERTIFIED', async () => {
+  it('keeps an exact known profile at COMPATIBLE until the full behavioral contract is proven', async () => {
     const { manager } = createHarness();
     jest.spyOn(AdapterProfileMatcher, 'match').mockReturnValue({
       matchType: 'EXACT_PROFILE_MATCH',
@@ -84,7 +84,7 @@ describe('BleCompatibilityProbe release grading', () => {
     const { result } = await probe.run();
 
     expect(result.verdict).toBe(ProbeVerdict.SUPPORTED_WITH_PROFILE);
-    expect(result.compatibilityGrade).toBe(AdapterCompatibilityGrade.CERTIFIED);
+    expect(result.compatibilityGrade).toBe(AdapterCompatibilityGrade.COMPATIBLE);
     expect(result.profileMatch).toBe('EXACT_PROFILE_MATCH');
     expect(result.connectionRetained).toBe(true);
   });
@@ -109,7 +109,7 @@ describe('BleCompatibilityProbe release grading', () => {
     jest.spyOn(AdapterProfileMatcher, 'match').mockReturnValue({
       matchType: 'NO_PROFILE_MATCH',
     });
-    jest.spyOn(CharacteristicCandidateSelector, 'selectCombinations').mockReturnValue([]);
+    (CharacteristicCandidateSelector.selectCombinations as jest.Mock).mockReturnValue([]);
 
     const probe = new BleCompatibilityProbe(manager, 'adapter-1', jest.fn());
     const { result } = await probe.run();

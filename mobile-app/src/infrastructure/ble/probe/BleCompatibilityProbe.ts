@@ -47,7 +47,7 @@ export class BleCompatibilityProbe {
     ): { result: ProbeResult, device?: Device, handshakeComb?: CandidateCombination } => ({
       result: {
         verdict,
-        compatibilityGrade: this.classifyCompatibility(verdict, matchType),
+        compatibilityGrade: this.classifyCompatibility(verdict),
         probeStage: stage,
         failureReason: reason,
         profileMatch: matchType,
@@ -132,7 +132,6 @@ export class BleCompatibilityProbe {
       }
 
       if (successfulHandshake) {
-        // A profile match is provenance, not authority. A working generic adapter is still supported.
         const verdict = matchType === 'NO_PROFILE_MATCH'
           ? ProbeVerdict.SUPPORTED
           : ProbeVerdict.SUPPORTED_WITH_PROFILE;
@@ -150,14 +149,13 @@ export class BleCompatibilityProbe {
     }
   }
 
-  private classifyCompatibility(verdict: ProbeVerdict, matchType: ProfileMatchType): AdapterCompatibilityGrade {
-    if (verdict === ProbeVerdict.SUPPORTED_WITH_PROFILE) {
-      return matchType === 'EXACT_PROFILE_MATCH'
-        ? AdapterCompatibilityGrade.CERTIFIED
-        : AdapterCompatibilityGrade.COMPATIBLE;
-    }
-
-    if (verdict === ProbeVerdict.SUPPORTED) {
+  private classifyCompatibility(verdict: ProbeVerdict): AdapterCompatibilityGrade {
+    if (
+      verdict === ProbeVerdict.SUPPORTED_WITH_PROFILE ||
+      verdict === ProbeVerdict.SUPPORTED
+    ) {
+      // The current probe proves a usable AT-like channel. It does not yet prove
+      // the full behavioral contract required for CERTIFIED.
       return AdapterCompatibilityGrade.COMPATIBLE;
     }
 
