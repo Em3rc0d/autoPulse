@@ -1,5 +1,4 @@
-import { NativeEventSubscription, Platform } from 'react-native';
-import ReactNativeForegroundService from '@supersami/rn-foreground-service';
+import { AppState, NativeEventSubscription } from 'react-native';
 import { RealObdController } from '../../infrastructure/ble/real/RealObdController';
 import { RealTelemetryPoller } from '../../infrastructure/ble/real/RealTelemetryPoller';
 import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
@@ -13,11 +12,17 @@ import {
 import { CommandResult } from '../../infrastructure/ble/real/pipeline/types';
 import { ObdAcquisitionMapper } from '../../domain/telemetry/factories/ObdAcquisitionMapper';
 import { TelemetryBlockAssembler } from '../../domain/telemetry/logic/TelemetryBlockAssembler';
-import { BinaryObd2V3BlockMapper } from '../../infrastructure/telemetry-codecs/binary-obd2-v3/BinaryObd2V3BlockMapper';
 import { BinaryObd2V3Codec } from '../../infrastructure/telemetry-codecs/binary-obd2-v3/BinaryObd2V3Codec';
 
 export type RecordingStatus = 'NOT_STARTED' | 'RECORDING' | 'FLUSHING' | 'DEGRADED' | 'FAILED' | 'CLOSED';
 
+/**
+ * Release-1 lifecycle policy:
+ * - Live acquisition is foreground-only.
+ * - Leaving the app while ACTIVE produces an explicit INTERRUPTED session.
+ * - A future background-recording mode must be introduced as a separate,
+ *   explicitly tested product capability rather than happening implicitly.
+ */
 export class RealLiveSessionController {
   private obdController: RealObdController | null = null;
   public poller: RealTelemetryPoller | null = null;
@@ -72,18 +77,21 @@ export class RealLiveSessionController {
       this.handleCommandResult(result, onUiUpdate);
     });
 
-    this.recordingStatus = 'RECORDING';
+    this.appStateSubscription = AppState.addEventListener('change', nextState => {
+      if (nextState !== 'active' && this.currentState === 'ACTIVE') {
+        void this.handleUnexpectedDisconnect('APP_BACKGROUND');
+      }
+    });
 
+    this.recordingStatus = 'RECORDING';
     this.poller.start(250);
   }
 
   private handleCommandResult(result: CommandResult, onUiUpdate: (res: CommandResult) => void) {
     if (this.currentState !== 'ACTIVE') return;
 
-    // Give UI the update
     onUiUpdate(result);
 
-    // Map to acquisition event
     const event = ObdAcquisitionMapper.fromCommandResult(
       result,
       this.sessionId,
@@ -108,7 +116,6 @@ export class RealLiveSessionController {
     if (event.type === 'FAILED') {
       this.recordingStatus = 'FAILED';
       onRecordingError(event.errorReason);
-      // Initiate safety stop if recording failed
       this.handleUnexpectedDisconnect('TELEMETRY_PERSISTENCE_FAILED');
     }
   }
@@ -128,13 +135,15 @@ export class RealLiveSessionController {
   private async performStop(mode: 'NORMAL' | 'INTERRUPTED', reason?: string): Promise<void> {
     const wasActive = this.currentState === 'ACTIVE';
     this.currentState = mode === 'NORMAL' ? 'STOPPING' : 'INTERRUPTED';
+
+    this.appStateSubscription?.remove();
+    this.appStateSubscription = null;
+
     if (wasActive && mode === 'NORMAL') {
       await this.sessionRepo.requestStop(this.workspaceId, this.sessionId, 'USER_INITIATED');
     }
 
-    if (this.poller) {
-      this.poller.stop();
-    }
+    this.poller?.stop();
 
     const stopTime = Date.now();
     this.recordingStatus = 'FLUSHING';
@@ -167,10 +176,7 @@ export class RealLiveSessionController {
       }
     }
 
-    if (this.obdController) {
-      this.obdController.disconnect();
-    }
-
+    this.obdController?.disconnect();
     activeBleController.releaseConnection();
     this.recordingStatus = 'CLOSED';
 
@@ -190,7 +196,7 @@ export class RealLiveSessionController {
 
   public forceCleanup() {
     if (this.currentState === 'ACTIVE' || this.currentState === 'STOPPING') {
-      this.handleUnexpectedDisconnect('UNEXPECTED_UNMOUNT');
+      void this.handleUnexpectedDisconnect('UNEXPECTED_UNMOUNT');
     }
   }
 }
