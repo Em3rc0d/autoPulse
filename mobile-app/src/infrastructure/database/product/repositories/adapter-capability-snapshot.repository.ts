@@ -2,8 +2,18 @@ import { ExpoSQLiteDatabase } from 'drizzle-orm/expo-sqlite';
 import { and, desc, eq } from 'drizzle-orm';
 import * as schema from '../schema';
 import { ProductIdGenerator } from '../uuidv7';
+import { AdapterBehaviorAssessment } from '../../../../domain/telemetry/probe/AdapterBehaviorAssessment';
 import { AdapterCapabilitySnapshot } from '../../../../domain/telemetry/probe/AdapterCapabilitySnapshot';
 import { AdapterCompatibilityGrade, ProfileMatchType } from '../../../../domain/telemetry/probe/ProbeResult';
+
+function parseBehaviorAssessment(value: string | null): AdapterBehaviorAssessment | undefined {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value) as AdapterBehaviorAssessment;
+  } catch {
+    return undefined;
+  }
+}
 
 export class AdapterCapabilitySnapshotRepository {
   constructor(private db: ExpoSQLiteDatabase<typeof schema>) {}
@@ -15,6 +25,7 @@ export class AdapterCapabilitySnapshotRepository {
   ) {
     const id = ProductIdGenerator.generate();
     const createdAt = Date.now();
+    const behaviorAssessment = snapshot.behavior.assessment;
 
     const [row] = await this.db.insert(schema.adapterCapabilitySnapshots).values({
       id,
@@ -37,6 +48,8 @@ export class AdapterCapabilitySnapshotRepository {
       latencyMs: snapshot.behavior.latencyMs,
       echoObserved: snapshot.behavior.echoObserved,
       promptObserved: snapshot.behavior.promptObserved,
+      behaviorAssessmentJson: behaviorAssessment ? JSON.stringify(behaviorAssessment) : undefined,
+      certificationReady: behaviorAssessment?.certificationReady,
       probeStage: snapshot.assessment.probeStage,
       failureReason: snapshot.assessment.failureReason,
       connectionRetained: snapshot.assessment.connectionRetained,
@@ -80,6 +93,7 @@ export class AdapterCapabilitySnapshotRepository {
         latencyMs: row.latencyMs ?? undefined,
         echoObserved: row.echoObserved ?? undefined,
         promptObserved: row.promptObserved ?? undefined,
+        assessment: parseBehaviorAssessment(row.behaviorAssessmentJson),
       }),
       assessment: Object.freeze({
         probeStage: row.probeStage,
