@@ -1,7 +1,11 @@
 import { AppState, NativeEventSubscription } from 'react-native';
+import type { Subscription } from 'react-native-ble-plx';
 import { RealObdController } from '../../infrastructure/ble/real/RealObdController';
 import { RealTelemetryPoller } from '../../infrastructure/ble/real/RealTelemetryPoller';
-import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
+import {
+  activeBleController,
+  ActiveConnection
+} from '../../infrastructure/ble/ActiveBleConnectionController';
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { ITelemetryBlockRepository } from '../../domain/telemetry/repositories/TelemetryBlockRepository';
 import {
@@ -37,6 +41,7 @@ export class RealLiveSessionController {
   private codec = new BinaryObd2V3Codec();
   private commitQueue: TelemetryCommitQueue | null = null;
   private appStateSubscription: NativeEventSubscription | null = null;
+  private bleDisconnectSubscription: Subscription | null = null;
 
   private terminalPromise: Promise<void> | null = null;
 
@@ -63,6 +68,7 @@ export class RealLiveSessionController {
     }
 
     this.obdController = new RealObdController(conn);
+    this.observePhysicalDisconnect(conn);
     this.recordingStartedAt = Date.now();
     this.assembler = new TelemetryBlockAssembler(this.sessionId, this.recordingStartedAt, 5000);
 
@@ -89,6 +95,15 @@ export class RealLiveSessionController {
     if (nextState !== 'active' && this.currentState === 'ACTIVE') {
       void this.handleUnexpectedDisconnect('APP_BACKGROUND');
     }
+  }
+
+  private observePhysicalDisconnect(conn: ActiveConnection) {
+    this.bleDisconnectSubscription?.remove();
+    this.bleDisconnectSubscription = conn.device.onDisconnected(() => {
+      if (this.currentState === 'ACTIVE') {
+        void this.handleUnexpectedDisconnect('DEVICE_DISCONNECTED');
+      }
+    });
   }
 
   private handleCommandResult(result: CommandResult, onUiUpdate: (res: CommandResult) => void) {
@@ -142,6 +157,8 @@ export class RealLiveSessionController {
 
     this.appStateSubscription?.remove();
     this.appStateSubscription = null;
+    this.bleDisconnectSubscription?.remove();
+    this.bleDisconnectSubscription = null;
 
     if (wasActive && mode === 'NORMAL') {
       await this.sessionRepo.requestStop(this.workspaceId, this.sessionId, 'USER_INITIATED');
