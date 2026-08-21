@@ -2,6 +2,7 @@ import {
   AdapterBehaviorEvidence,
   AdapterCompatibilityClassifier,
 } from '../AdapterCompatibilityAssessment';
+import type { AdapterInitializationCheck } from '../AdapterInitializationBehavior';
 
 const baseEvidence = (overrides: Partial<AdapterBehaviorEvidence> = {}): AdapterBehaviorEvidence => ({
   profileMatch: 'NO_PROFILE_MATCH',
@@ -14,6 +15,18 @@ const baseEvidence = (overrides: Partial<AdapterBehaviorEvidence> = {}): Adapter
   latencyMs: 120,
   receiveMode: 'NOTIFY',
   writeMode: 'WITH_RESPONSE',
+  ...overrides,
+});
+
+const preferredCheck = (overrides: Partial<AdapterInitializationCheck> = {}): AdapterInitializationCheck => ({
+  behavior: 'SPACES_CONTROL',
+  requirement: 'PREFERRED',
+  command: 'ATS0',
+  outcome: 'ACKNOWLEDGED',
+  response: 'OK',
+  latencyMs: 40,
+  timedOut: false,
+  promptDetected: true,
   ...overrides,
 });
 
@@ -67,6 +80,33 @@ describe('AdapterCompatibilityClassifier', () => {
     }))).toEqual({
       grade: 'UNSUPPORTED',
       reasons: ['DISCONNECTED_DURING_PROBE'],
+    });
+  });
+
+  it('degrades a preferred formatting command rejection instead of rejecting the adapter', () => {
+    expect(AdapterCompatibilityClassifier.classify(baseEvidence({
+      initializationChecks: [preferredCheck({ outcome: 'REJECTED', response: '?' })],
+    }))).toEqual({
+      grade: 'DEGRADED',
+      reasons: ['PREFERRED_BEHAVIOR_UNAVAILABLE:SPACES_CONTROL:REJECTED'],
+    });
+  });
+
+  it('degrades an acknowledged preferred behavior when prompt reliability is poor', () => {
+    expect(AdapterCompatibilityClassifier.classify(baseEvidence({
+      initializationChecks: [preferredCheck({ timedOut: true, promptDetected: false })],
+    }))).toEqual({
+      grade: 'DEGRADED',
+      reasons: ['PREFERRED_BEHAVIOR_UNRELIABLE:SPACES_CONTROL'],
+    });
+  });
+
+  it('rejects a disconnect during an initialization behavior check', () => {
+    expect(AdapterCompatibilityClassifier.classify(baseEvidence({
+      initializationChecks: [preferredCheck({ outcome: 'DISCONNECTED', response: null })],
+    }))).toEqual({
+      grade: 'UNSUPPORTED',
+      reasons: ['DISCONNECTED_DURING_INITIALIZATION_BEHAVIOR:SPACES_CONTROL'],
     });
   });
 });
