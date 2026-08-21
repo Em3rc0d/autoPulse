@@ -6,6 +6,7 @@ import { ProductIdGenerator } from '../uuidv7';
 import { VehicleParameterEvidence } from '../../../../domain/acquisition/VehicleParameterEvidence';
 import { deriveVehicleDiscoveryStatus } from '../../../../domain/acquisition/VehicleDiscoveryStatus';
 import { resolveParameterDefinition } from '../../../../domain/acquisition/ParameterDefinitionResolver';
+import { STANDARD_OBD_CATALOG_VERSION } from '../../../../domain/obd/StandardObdCatalogV1';
 
 export type ECUInput = {
   address: number;
@@ -52,7 +53,7 @@ export class CapabilitySnapshotRepository {
         compatibilityProfileVersion: profileVersion,
         discoveredAt: now,
         protocolCode,
-        decoderCatalogVersion: '1.0',
+        decoderCatalogVersion: STANDARD_OBD_CATALOG_VERSION,
         discoveryStatus,
         rawDiscoveryHash: '0x0',
         createdAt: now
