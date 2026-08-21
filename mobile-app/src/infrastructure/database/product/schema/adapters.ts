@@ -55,6 +55,11 @@ export const obdAdapterInstances = sqliteTable('obd_adapter_instances', {
  * Append-only observations from real adapter probes.
  * Compatibility profiles are reusable definitions; these snapshots are the
  * evidence of what one concrete adapter instance actually did at one time.
+ *
+ * Behavioral details intentionally live in a versioned JSON payload. This
+ * preserves explicit null/absent observations, keeps the relational surface
+ * stable as discovery evolves, and avoids coercing unknown evidence into fake
+ * scalar sentinel values.
  */
 export const obdAdapterCapabilitySnapshots = sqliteTable('obd_adapter_capability_snapshots', {
   id: text('id').primaryKey(),
@@ -63,20 +68,10 @@ export const obdAdapterCapabilitySnapshots = sqliteTable('obd_adapter_capability
   observedAt: integer('observed_at').notNull(),
   transportType: text('transport_type').notNull(),
   profileMatch: text('profile_match').notNull(),
-  matchedProfileId: text('matched_profile_id'),
   compatibilityGrade: text('compatibility_grade').notNull(),
   compatibilityReasonsJson: text('compatibility_reasons_json').notNull(),
-  writeCharacteristic: text('write_characteristic'),
-  receiveCharacteristic: text('receive_characteristic'),
-  writeMode: text('write_mode'),
-  receiveMode: text('receive_mode'),
-  commandUsed: text('command_used'),
-  sanitizedResponse: text('sanitized_response'),
-  latencyMs: integer('latency_ms'),
-  echoDetected: integer('echo_detected').notNull(),
-  promptDetected: integer('prompt_detected').notNull(),
-  timedOut: integer('timed_out').notNull(),
-  disconnectObserved: integer('disconnect_observed').notNull(),
+  evidenceSchemaVersion: text('evidence_schema_version').notNull(),
+  evidenceJson: text('evidence_json').notNull(),
   createdAt: integer('created_at').notNull()
 }, (table) => ({
   workspaceAdapterObservedIdx: index('idx_adapter_capability_snapshots_workspace_adapter_observed')
