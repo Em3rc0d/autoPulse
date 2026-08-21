@@ -169,7 +169,7 @@ export default function InitializationScreen() {
             const probed = probedPids.includes(pid);
             parameters.push({
               ecuAddress,
-              parameterDefinitionId: pid,
+              observedRequestId: pid,
               supportState: probed ? 'DIRECTLY_OBSERVED' : 'SUPPORTED',
               evidence: initializationEvidence({
                 definitionExists: true,
@@ -182,7 +182,7 @@ export default function InitializationScreen() {
           if (!pidsForEcu.includes('0142')) {
             parameters.push({
               ecuAddress,
-              parameterDefinitionId: '0142',
+              observedRequestId: '0142',
               supportState: 'NOT_AVAILABLE',
               evidence: initializationEvidence({
                 definitionExists: true,
