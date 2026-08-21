@@ -54,6 +54,34 @@ describe('RealTelemetryPoller', () => {
     expect(mockExecutor.executeCommand).toHaveBeenCalledTimes(3);
   });
 
+  it('polls any discovered Tier-1 catalog PID and rejects unknown requests', async () => {
+    mockExecutor.executeCommand.mockResolvedValue({
+      status: 'SUCCESS_DECODED',
+      request: {} as any,
+      rawResponse: {} as any
+    } as any);
+
+    const poller = new RealTelemetryPoller(
+      mockExecutor,
+      ['FFFF', '0104', '0104'],
+      onData,
+      onDiagnostic
+    );
+    poller.start(10);
+    await Promise.resolve();
+    poller.stop();
+
+    expect(mockExecutor.executeCommand).toHaveBeenCalledTimes(1);
+    expect(mockExecutor.executeCommand).toHaveBeenCalledWith(
+      expect.objectContaining({
+        command: '0104',
+        family: 'OBD_MODE_01',
+        expectedService: '41',
+        expectedPid: '04'
+      })
+    );
+  });
+
   it('resets NO_DATA counter on SUCCESS_DECODED', async () => {
     mockExecutor.executeCommand
       .mockResolvedValue({ status: 'SUCCESS_DECODED', request: {} as any, rawResponse: {} as any } as any) // fallback

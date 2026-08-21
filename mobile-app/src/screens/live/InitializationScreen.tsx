@@ -12,6 +12,10 @@ import { LiveSessionRepository } from '../../infrastructure/database/product/rep
 import { CapabilitySnapshotRepository, ECUInput, ParameterInput } from '../../infrastructure/database/product/repositories/capability-snapshot.repository';
 import { initializationEvidence } from '../../domain/acquisition/VehicleParameterEvidence';
 import { UNKNOWN_ECU_KEY, ecuKeyToStorageAddress } from '../../domain/acquisition/SourceEcuEvidence';
+import {
+  STANDARD_OBD_CATALOG_VERSION,
+  STANDARD_OBD_TIER_1
+} from '../../domain/obd/StandardObdCatalogV1';
 
 import { useKeepAwake } from 'expo-keep-awake';
 
@@ -204,65 +208,63 @@ export default function InitializationScreen() {
           parameters
         );
 
-        const coreSignalDefinitions: Record<string, {
-          numericType: string;
-          unit: string;
-          decoderKey: string;
-          precision: number;
-          priority: string;
-        }> = {
-          '010C': { numericType: 'float', unit: 'RPM', decoderKey: 'MODE01_010C', precision: 0, priority: 'HIGH' },
-          '010D': { numericType: 'integer', unit: 'km/h', decoderKey: 'MODE01_010D', precision: 0, priority: 'HIGH' },
-          '0105': { numericType: 'float', unit: '°C', decoderKey: 'MODE01_0105', precision: 1, priority: 'MEDIUM' },
-          '0142': { numericType: 'float', unit: 'V', decoderKey: 'MODE01_0142', precision: 2, priority: 'LOW' }
-        };
-        const discoveredSupportedPids = [...snapshot.supportedPids];
-        const requiredLivePids = ['010C', '010D', '0105', '0142'];
-        const probeCandidatePids = requiredLivePids.filter(pid => !discoveredSupportedPids.includes(pid));
-        
-        const activePollingPids = [...discoveredSupportedPids];
+        const catalogByRequestId = new Map(
+          STANDARD_OBD_TIER_1.map(definition => [definition.requestId, definition] as const)
+        );
+        const discoveredSupportedPids = Array.from(new Set(snapshot.supportedPids))
+          .filter(pid => catalogByRequestId.has(pid));
+
+        // A fallback is only a bounded probe when discovery found no decodable
+        // Tier-1 signal. It is never persisted as advertised vehicle truth.
+        const probeCandidatePids = discoveredSupportedPids.length === 0
+          ? ['010C', '010D', '0105', '0104', '010B']
+          : [];
+        const activePollingPids = discoveredSupportedPids.length > 0
+          ? discoveredSupportedPids
+          : probeCandidatePids;
+
         if (probeCandidatePids.length > 0) {
-          console.log(`[InitializationScreen] Injecting live polling fallbacks: ${probeCandidatePids.join(', ')}`);
-          activePollingPids.push(...probeCandidatePids);
+          console.log(`[InitializationScreen] No advertised Tier-1 signal; bounded probes: ${probeCandidatePids.join(', ')}`);
         }
         liveSupportedPids = activePollingPids;
 
         const signals = activePollingPids
-          .filter(pid => coreSignalDefinitions[pid])
+          .filter(pid => catalogByRequestId.has(pid))
           .map((pid, index) => {
             const isProbed = probeCandidatePids.includes(pid);
+            const definition = catalogByRequestId.get(pid)!;
             return {
               signalDefinitionId: pid,
               parameterDefinitionId: pid,
               service: 1,
               pid: parseInt(pid.replace('01', ''), 16) || 0,
               targetEcu: 0,
-              effectiveUnit: coreSignalDefinitions[pid].unit,
-              numericType: coreSignalDefinitions[pid].numericType,
+              effectiveUnit: definition.unit,
+              numericType: definition.numericType,
               scale: 1,
               offset: 0,
-              precision: coreSignalDefinitions[pid].precision,
-              decoderVersion: '1.0',
-              decoderKey: coreSignalDefinitions[pid].decoderKey,
+              precision: definition.precision,
+              decoderVersion: definition.catalogVersion,
+              decoderKey: definition.decoderKey,
               origin: isProbed ? 'PROBE' : (snapshot.directlyObservedPids?.includes(pid) ? 'DIRECTLY_OBSERVED' : 'BITMAP'),
-              priority: coreSignalDefinitions[pid].priority,
+              priority: definition.priority,
               targetPeriodMs: 250,
               indexInBlock: index,
-              supportState: isProbed ? 'NOT_AVAILABLE' : 'SUPPORTED',
+              supportState: isProbed ? 'PROBE_PENDING' : 'SUPPORTED',
               localTargetIndex: index,
               localSignalIndex: index
             };
           });
 
         if (signals.length === 0) {
-          throw new Error('NO_SUPPORTED_CORE_SIGNALS: ECU responded, but no supported RPM/Speed/Coolant/Voltage signals were available.');
+          throw new Error('NO_DECODABLE_STANDARD_SIGNALS: ECU responded, but no Release-1 catalog signal was available.');
         }
 
         await sessionRepo.attachCapabilitySnapshot(
           localContext.defaultWorkspaceId,
           sessionIdForRun,
           capSnapshot.id,
-          '1.0',
+          STANDARD_OBD_CATALOG_VERSION,
           snapshot.protocol || 'UNKNOWN',
           'BLE'
         );
