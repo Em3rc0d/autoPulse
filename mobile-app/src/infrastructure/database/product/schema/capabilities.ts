@@ -43,11 +43,16 @@ export const vehicleCapabilityParameters = sqliteTable('vehicle_capability_param
   id: text('id').primaryKey(),
   snapshotId: text('snapshot_id').notNull().references(() => vehicleCapabilitySnapshots.id, { onDelete: 'cascade' }),
   ecuAddress: integer('ecu_address').notNull(),
-  parameterDefinitionId: text('parameter_definition_id').notNull().references(() => obdParameterDefinitions.id, { onDelete: 'restrict' }),
+  observedRequestId: text('observed_request_id').notNull(),
+  parameterDefinitionId: text('parameter_definition_id').references(() => obdParameterDefinitions.id, { onDelete: 'restrict' }),
   supportState: text('support_state').notNull(),
   discoveryOutcome: text('discovery_outcome').notNull(),
+  standardDefinitionState: text('standard_definition_state').notNull().default('DEFINED'),
+  capabilityAdvertisedState: text('capability_advertised_state').notNull().default('UNKNOWN'),
+  probeResult: text('probe_result').notNull().default('NOT_PROBED'),
+  liveObservationState: text('live_observation_state').notNull().default('NOT_OBSERVED'),
   errorCode: text('error_code'),
   discoveredAt: integer('discovered_at').notNull()
 }, (table) => ({
-  snapshotEcuParamIdx: unique('uq_capability_params').on(table.snapshotId, table.ecuAddress, table.parameterDefinitionId)
+  snapshotEcuParamIdx: unique('uq_capability_params').on(table.snapshotId, table.ecuAddress, table.observedRequestId)
 }));

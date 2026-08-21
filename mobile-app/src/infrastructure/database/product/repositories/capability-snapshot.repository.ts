@@ -3,6 +3,9 @@ import * as schema from '../schema';
 import { eq, and, desc } from 'drizzle-orm';
 import * as Crypto from 'expo-crypto';
 import { ProductIdGenerator } from '../uuidv7';
+import { VehicleParameterEvidence } from '../../../../domain/acquisition/VehicleParameterEvidence';
+import { deriveVehicleDiscoveryStatus } from '../../../../domain/acquisition/VehicleDiscoveryStatus';
+import { resolveParameterDefinition } from '../../../../domain/acquisition/ParameterDefinitionResolver';
 
 export type ECUInput = {
   address: number;
@@ -11,8 +14,9 @@ export type ECUInput = {
 
 export type ParameterInput = {
   ecuAddress: number;
-  parameterDefinitionId: string;
+  observedRequestId: string;
   supportState: string;
+  evidence: VehicleParameterEvidence;
 };
 
 export class CapabilitySnapshotRepository {
@@ -31,6 +35,14 @@ export class CapabilitySnapshotRepository {
     return await this.db.transaction(async (tx) => {
       const snapshotId = ProductIdGenerator.generate();
       const now = Date.now();
+      const definitionRows = await tx
+        .select({ id: schema.obdParameterDefinitions.id })
+        .from(schema.obdParameterDefinitions);
+      const verifiedDefinitionIds = new Set(definitionRows.map(row => row.id));
+      const resolvedParameters = parameters.map(param =>
+        resolveParameterDefinition(param, verifiedDefinitionIds)
+      );
+      const discoveryStatus = deriveVehicleDiscoveryStatus(ecus, resolvedParameters);
 
       const [snapshot] = await tx.insert(schema.vehicleCapabilitySnapshots).values({
         id: snapshotId,
@@ -41,7 +53,7 @@ export class CapabilitySnapshotRepository {
         discoveredAt: now,
         protocolCode,
         decoderCatalogVersion: '1.0',
-        discoveryStatus: 'COMPLETED',
+        discoveryStatus,
         rawDiscoveryHash: '0x0',
         createdAt: now
       } as any).returning();
@@ -57,15 +69,20 @@ export class CapabilitySnapshotRepository {
         );
       }
 
-      if (parameters.length > 0) {
+      if (resolvedParameters.length > 0) {
         await tx.insert(schema.vehicleCapabilityParameters).values(
-          parameters.map(param => ({
+          resolvedParameters.map(param => ({
             id: ProductIdGenerator.generate(),
             snapshotId,
             ecuAddress: param.ecuAddress,
+            observedRequestId: param.observedRequestId,
             parameterDefinitionId: param.parameterDefinitionId,
             supportState: param.supportState,
-            discoveryOutcome: 'SUCCESS',
+            discoveryOutcome: param.evidence.probeResult,
+            standardDefinitionState: param.evidence.standardDefinition,
+            capabilityAdvertisedState: param.evidence.capabilityAdvertised,
+            probeResult: param.evidence.probeResult,
+            liveObservationState: param.evidence.liveObservation,
             discoveredAt: now
           }))
         );
@@ -98,10 +115,15 @@ export class CapabilitySnapshotRepository {
       ecuAddress: schema.vehicleCapabilityParameters.ecuAddress,
       supportState: schema.vehicleCapabilityParameters.supportState,
       discoveryOutcome: schema.vehicleCapabilityParameters.discoveryOutcome,
+      standardDefinitionState: schema.vehicleCapabilityParameters.standardDefinitionState,
+      capabilityAdvertisedState: schema.vehicleCapabilityParameters.capabilityAdvertisedState,
+      probeResult: schema.vehicleCapabilityParameters.probeResult,
+      liveObservationState: schema.vehicleCapabilityParameters.liveObservationState,
       errorCode: schema.vehicleCapabilityParameters.errorCode,
       technicalName: schema.obdParameterDefinitions.technicalName,
       service: schema.obdParameterDefinitions.service,
       parameterIdentifier: schema.obdParameterDefinitions.parameterIdentifier,
+      observedRequestId: schema.vehicleCapabilityParameters.observedRequestId,
       parameterDefinitionId: schema.vehicleCapabilityParameters.parameterDefinitionId
     })
     .from(schema.vehicleCapabilityParameters)
