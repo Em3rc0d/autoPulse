@@ -1,4 +1,8 @@
-import { TelemetryCommitQueue, CommitQueueEvent } from '../TelemetryCommitQueue';
+import {
+  TelemetryCommitQueue,
+  CommitQueueEvent,
+  TelemetryCommitQueueDrainTimeoutError
+} from '../TelemetryCommitQueue';
 import { ITelemetryBlockRepository } from '../../../domain/telemetry/repositories/TelemetryBlockRepository';
 import { EncodedTelemetryBlock } from '../../../domain/telemetry/models/EncodedTelemetryBlock';
 
@@ -53,7 +57,7 @@ describe('TelemetryCommitQueue', () => {
     expect(events[1].type).toBe('COMMITTED');
   });
 
-  it('Retry uses identical payload on transiant failure', async () => {
+  it('Retry uses identical payload on transient failure', async () => {
     mockRepo.commitBlock
       .mockResolvedValueOnce({ success: false, reason: 'DATABASE_WRITE_FAILED' })
       .mockResolvedValueOnce({ success: true, disposition: 'COMMITTED' });
@@ -91,6 +95,16 @@ describe('TelemetryCommitQueue', () => {
     expect(queue.getHasFailed()).toBe(true);
 
     queue.enqueue(makeBlock(2));
-    expect(queue.getPendingCount()).toBe(1); // Block 1 is still in the queue due to failure, block 2 rejected
+    expect(queue.getPendingCount()).toBe(1); // Block 1 is retained after failure; block 2 is rejected.
+  });
+
+  it('drain is bounded when a repository commit never resolves', async () => {
+    mockRepo.commitBlock.mockImplementation(() => new Promise(() => undefined));
+
+    queue.enqueue(makeBlock(1));
+
+    await expect(queue.drain(20, 2)).rejects.toBeInstanceOf(TelemetryCommitQueueDrainTimeoutError);
+    expect(queue.getPendingCount()).toBe(1);
+    expect(queue.getHasFailed()).toBe(false);
   });
 });
