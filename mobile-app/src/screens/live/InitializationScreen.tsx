@@ -11,6 +11,7 @@ import { useProductDb } from '../../infrastructure/hooks/useProductDb';
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { CapabilitySnapshotRepository, ECUInput, ParameterInput } from '../../infrastructure/database/product/repositories/capability-snapshot.repository';
 import { initializationEvidence } from '../../domain/acquisition/VehicleParameterEvidence';
+import { UNKNOWN_ECU_KEY, ecuKeyToStorageAddress } from '../../domain/acquisition/SourceEcuEvidence';
 
 import { useKeepAwake } from 'expo-keep-awake';
 
@@ -145,30 +146,51 @@ export default function InitializationScreen() {
 
       // Persist capabilities
       try {
-        const ecus: ECUInput[] = [{ address: 0, protocol: snapshot.protocol || 'UNKNOWN' }];
-        const parameters: ParameterInput[] = snapshot.supportedPids.map(pid => ({
-          ecuAddress: 0,
-          parameterDefinitionId: pid,
-          supportState: snapshot.directlyObservedPids?.includes(pid) ? 'DIRECTLY_OBSERVED' : 'SUPPORTED',
-          evidence: initializationEvidence({
-            definitionExists: true,
-            advertised: true,
-            probeResult: snapshot.directlyObservedPids?.includes(pid) ? 'SUCCESS' : 'NOT_PROBED'
-          })
+        const sourceEcuKeys = Array.from(new Set([
+          ...Object.keys(snapshot.advertisedPidsByEcu),
+          ...Object.keys(snapshot.directlyObservedPidsByEcu)
+        ]));
+        if (sourceEcuKeys.length === 0) sourceEcuKeys.push(UNKNOWN_ECU_KEY);
+
+        const ecus: ECUInput[] = sourceEcuKeys.map(ecuKey => ({
+          address: ecuKeyToStorageAddress(ecuKey),
+          protocol: snapshot.protocol || 'UNKNOWN'
         }));
 
-        // Add 0142 as NOT_AVAILABLE if not in supportedPids
-        if (!snapshot.supportedPids.includes('0142')) {
-          parameters.push({
-            ecuAddress: 0,
-            parameterDefinitionId: '0142',
-            supportState: 'NOT_AVAILABLE',
-            evidence: initializationEvidence({
-              definitionExists: true,
-              advertised: false,
-              probeResult: 'UNKNOWN'
-            })
-          });
+        const parameters: ParameterInput[] = [];
+        for (const ecuKey of sourceEcuKeys) {
+          const ecuAddress = ecuKeyToStorageAddress(ecuKey);
+          const advertisedPids = snapshot.advertisedPidsByEcu[ecuKey] ?? [];
+          const probedPids = snapshot.directlyObservedPidsByEcu[ecuKey] ?? [];
+          const pidsForEcu = Array.from(new Set([...advertisedPids, ...probedPids]));
+
+          for (const pid of pidsForEcu) {
+            const advertised = advertisedPids.includes(pid);
+            const probed = probedPids.includes(pid);
+            parameters.push({
+              ecuAddress,
+              parameterDefinitionId: pid,
+              supportState: probed ? 'DIRECTLY_OBSERVED' : 'SUPPORTED',
+              evidence: initializationEvidence({
+                definitionExists: true,
+                advertised,
+                probeResult: probed ? 'SUCCESS' : 'NOT_PROBED'
+              })
+            });
+          }
+
+          if (!pidsForEcu.includes('0142')) {
+            parameters.push({
+              ecuAddress,
+              parameterDefinitionId: '0142',
+              supportState: 'NOT_AVAILABLE',
+              evidence: initializationEvidence({
+                definitionExists: true,
+                advertised: false,
+                probeResult: 'UNKNOWN'
+              })
+            });
+          }
         }
 
         const capSnapshot = await capRepo.createSnapshot(
