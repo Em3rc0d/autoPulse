@@ -11,6 +11,8 @@ import { useLocalContext } from '../../infrastructure/hooks/useLocalContext';
 import { useProductDb } from '../../infrastructure/hooks/useProductDb';
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { AdapterRepository } from '../../infrastructure/database/product/repositories/adapter.repository';
+import { AdapterCapabilitySnapshotRepository } from '../../infrastructure/database/product/repositories/adapter-capability-snapshot.repository';
+import { AcceptProbedAdapter } from '../../application/live/AcceptProbedAdapter';
 
 const INTERNAL_VIRTUAL_OBD_ENABLED = true; // Feature flag for testing
 
@@ -67,20 +69,31 @@ export default function ConnectObdScreen() {
     const probeOutput = await probe.run();
     setProbeResult(probeOutput);
 
-    switch (probeOutput.result.verdict) {
-      case ProbeVerdict.SUPPORTED:
-      case ProbeVerdict.SUPPORTED_WITH_PROFILE:
+    if (probeOutput.result.verdict === ProbeVerdict.CANCELLED) {
+      setUiState('CANCELLED');
+      return;
+    }
+
+    switch (probeOutput.result.compatibilityGrade) {
+      case 'CERTIFIED':
+      case 'COMPATIBLE':
+      case 'DEGRADED':
         setUiState('SUPPORTED');
+        return;
+      case 'UNSUPPORTED':
+        setUiState('INCOMPATIBLE');
+        return;
+      default:
         break;
+    }
+
+    switch (probeOutput.result.verdict) {
       case ProbeVerdict.UNKNOWN:
         setUiState('UNKNOWN');
         break;
       case ProbeVerdict.INCOMPATIBLE_PROTOCOL:
       case ProbeVerdict.INCOMPATIBLE_TRANSPORT:
         setUiState('INCOMPATIBLE');
-        break;
-      case ProbeVerdict.CANCELLED:
-        setUiState('CANCELLED');
         break;
       default:
         setUiState('FAILED');
@@ -110,41 +123,40 @@ export default function ConnectObdScreen() {
 
     try {
       const adapterRepo = new AdapterRepository(productDb);
+      const adapterEvidenceRepo = new AdapterCapabilitySnapshotRepository(productDb);
       const sessionRepo = new LiveSessionRepository(productDb);
+      const acceptAdapter = new AcceptProbedAdapter(adapterRepo, adapterEvidenceRepo, sessionRepo);
 
-      const adapter = await adapterRepo.upsertAdapter(localContext.defaultWorkspaceId, {
-        alias: probeResult.device.name || 'Unknown OBD',
-        platformDeviceId: probeResult.device.id,
-        trustState: 'PROBED'
-      });
-
-      const sessionId = await sessionRepo.createSession(
-        localContext.defaultWorkspaceId,
+      const accepted = await acceptAdapter.execute({
+        workspaceId: localContext.defaultWorkspaceId,
+        operatorId: localContext.defaultOperatorId,
         vehicleId,
-        localContext.defaultOperatorId,
-        adapter.id
-      );
+        platformDeviceId: probeResult.device.id,
+        adapterAlias: probeResult.device.name || 'Unknown OBD',
+        advertisedName: probeResult.device.name || undefined,
+        probeResult: probeResult.result,
+      });
 
       const connectionHandleId = `conn_${Math.random().toString(36).substr(2, 9)}`;
 
-      // Retain the connection
+      // Retain the already-proven channel for vehicle initialization.
       activeBleController.retainConnection({
         connectionHandleId,
         device: probeResult.device,
         writeCharacteristic: probeResult.handshakeComb.writeCharacteristic,
         receiveCharacteristic: probeResult.handshakeComb.receiveCharacteristic,
-        profileId: probeResult.result.profileMatch !== 'NO_PROFILE_MATCH' ? probeResult.result.profileMatch : undefined,
+        profileId: probeResult.result.matchedProfileId,
       });
 
       navigation.navigate('Initialization', {
         vehicleId,
-        sessionId,
+        sessionId: accepted.sessionId,
         connectionHandleId,
         adapterMode: 'REAL_BLE',
-        adapterInstanceId: adapter.id
+        adapterInstanceId: accepted.adapterInstanceId
       });
     } catch (err) {
-      console.error('Error creating live session:', err);
+      console.error('Error accepting probed adapter:', err);
       setUiState('FAILED');
     }
   };
@@ -278,9 +290,13 @@ export default function ConnectObdScreen() {
             <Text style={styles.statusTextSuccess}>Device Supported!</Text>
 
             <View style={styles.probeSummary}>
+              <Text style={styles.probeText}>Compatibility: {probeResult?.result.compatibilityGrade || 'UNKNOWN'}</Text>
               <Text style={styles.probeText}>Profile: {probeResult?.result.profileMatch}</Text>
               <Text style={styles.probeText}>Handshake: {probeResult?.result.commandUsed} ➔ {probeResult?.result.sanitizedResponse || 'OK'}</Text>
               <Text style={styles.probeText}>Latency: {probeResult?.result.latencyMs}ms</Text>
+              {(probeResult?.result.compatibilityReasons || []).map(reason => (
+                <Text key={reason} style={styles.probeText}>Evidence: {reason}</Text>
+              ))}
             </View>
 
             <TouchableOpacity style={styles.primaryButton} onPress={confirmAndUseAdapter}>
