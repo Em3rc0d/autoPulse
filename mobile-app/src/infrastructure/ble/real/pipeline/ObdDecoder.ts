@@ -1,3 +1,4 @@
+import { decodeStandardObdPid } from '../../../../domain/obd/StandardObdCatalogV1';
 import { ObdFrame, DecodedValue } from './types';
 
 const MODE_01_BITMAP_PIDS = new Set(['00', '20', '40', '60', '80', 'A0', 'C0']);
@@ -22,37 +23,7 @@ export class ObdDecoder {
       return this.decodeCapabilityBitmap(pid, bytes);
     }
 
-    switch (pid) {
-      case '0C':
-        if (bytes.length >= 2) {
-          return { type: 'RPM', value: ((bytes[0] * 256) + bytes[1]) / 4, unit: 'RPM' };
-        }
-        break;
-
-      case '0D':
-        if (bytes.length >= 1) {
-          return { type: 'SPEED', value: bytes[0], unit: 'km/h' };
-        }
-        break;
-
-      case '42':
-        if (bytes.length >= 2) {
-          return {
-            type: 'VOLTAGE',
-            value: ((bytes[0] * 256) + bytes[1]) / 1000,
-            unit: 'V'
-          };
-        }
-        break;
-
-      case '05':
-        if (bytes.length >= 1) {
-          return { type: 'COOLANT', value: bytes[0] - 40, unit: '°C' };
-        }
-        break;
-    }
-
-    return null;
+    return decodeStandardObdPid(pid, bytes);
   }
 
   private static decodeCapabilityBitmap(pid: string, bytes: number[]): DecodedValue | null {
