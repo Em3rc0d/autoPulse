@@ -66,6 +66,7 @@ export const adapterCapabilitySnapshots = sqliteTable('adapter_capability_snapsh
   deviceName: text('device_name'),
   rssi: integer('rssi'),
   profileMatch: text('profile_match').notNull(),
+  matchedProfileId: text('matched_profile_id'),
   compatibilityGrade: text('compatibility_grade').notNull(),
   writeCharacteristicUuid: text('write_characteristic_uuid'),
   receiveCharacteristicUuid: text('receive_characteristic_uuid'),
