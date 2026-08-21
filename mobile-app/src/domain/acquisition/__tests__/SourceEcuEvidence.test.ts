@@ -15,7 +15,7 @@ describe('SourceEcuEvidence', () => {
 
   it('uses an explicit unknown bucket only when no header exists', () => {
     expect(canonicalEcuKey(null)).toBe(UNKNOWN_ECU_KEY);
-    expect(ecuKeyToStorageAddress(UNKNOWN_ECU_KEY)).toBe(0);
+    expect(ecuKeyToStorageAddress(UNKNOWN_ECU_KEY)).toBe(-1);
   });
 
   it('keeps conflicting ECU evidence separate and deduplicated', () => {
