@@ -10,6 +10,7 @@ import { useLocalContext } from '../../infrastructure/hooks/useLocalContext';
 import { useProductDb } from '../../infrastructure/hooks/useProductDb';
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { CapabilitySnapshotRepository, ECUInput, ParameterInput } from '../../infrastructure/database/product/repositories/capability-snapshot.repository';
+import { initializationEvidence } from '../../domain/acquisition/VehicleParameterEvidence';
 
 import { useKeepAwake } from 'expo-keep-awake';
 
@@ -148,7 +149,12 @@ export default function InitializationScreen() {
         const parameters: ParameterInput[] = snapshot.supportedPids.map(pid => ({
           ecuAddress: 0,
           parameterDefinitionId: pid,
-          supportState: snapshot.directlyObservedPids?.includes(pid) ? 'DIRECTLY_OBSERVED' : 'SUPPORTED'
+          supportState: snapshot.directlyObservedPids?.includes(pid) ? 'DIRECTLY_OBSERVED' : 'SUPPORTED',
+          evidence: initializationEvidence({
+            definitionExists: true,
+            advertised: true,
+            probeResult: snapshot.directlyObservedPids?.includes(pid) ? 'SUCCESS' : 'NOT_PROBED'
+          })
         }));
 
         // Add 0142 as NOT_AVAILABLE if not in supportedPids
@@ -156,7 +162,12 @@ export default function InitializationScreen() {
           parameters.push({
             ecuAddress: 0,
             parameterDefinitionId: '0142',
-            supportState: 'NOT_AVAILABLE'
+            supportState: 'NOT_AVAILABLE',
+            evidence: initializationEvidence({
+              definitionExists: true,
+              advertised: false,
+              probeResult: 'UNKNOWN'
+            })
           });
         }
 
