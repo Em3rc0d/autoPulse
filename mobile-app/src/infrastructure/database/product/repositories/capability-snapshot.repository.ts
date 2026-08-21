@@ -13,7 +13,7 @@ export type ECUInput = {
 
 export type ParameterInput = {
   ecuAddress: number;
-  parameterDefinitionId: string;
+  observedRequestId: string;
   supportState: string;
   evidence: VehicleParameterEvidence;
 };
@@ -34,7 +34,22 @@ export class CapabilitySnapshotRepository {
     return await this.db.transaction(async (tx) => {
       const snapshotId = ProductIdGenerator.generate();
       const now = Date.now();
-      const discoveryStatus = deriveVehicleDiscoveryStatus(ecus, parameters);
+      const definitionRows = await tx
+        .select({ id: schema.obdParameterDefinitions.id })
+        .from(schema.obdParameterDefinitions);
+      const verifiedDefinitionIds = new Set(definitionRows.map(row => row.id));
+      const resolvedParameters = parameters.map(param => {
+        const definitionExists = verifiedDefinitionIds.has(param.observedRequestId);
+        return {
+          ...param,
+          parameterDefinitionId: definitionExists ? param.observedRequestId : null,
+          evidence: {
+            ...param.evidence,
+            standardDefinition: definitionExists ? 'DEFINED' as const : 'UNDEFINED' as const
+          }
+        };
+      });
+      const discoveryStatus = deriveVehicleDiscoveryStatus(ecus, resolvedParameters);
 
       const [snapshot] = await tx.insert(schema.vehicleCapabilitySnapshots).values({
         id: snapshotId,
@@ -61,12 +76,13 @@ export class CapabilitySnapshotRepository {
         );
       }
 
-      if (parameters.length > 0) {
+      if (resolvedParameters.length > 0) {
         await tx.insert(schema.vehicleCapabilityParameters).values(
-          parameters.map(param => ({
+          resolvedParameters.map(param => ({
             id: ProductIdGenerator.generate(),
             snapshotId,
             ecuAddress: param.ecuAddress,
+            observedRequestId: param.observedRequestId,
             parameterDefinitionId: param.parameterDefinitionId,
             supportState: param.supportState,
             discoveryOutcome: param.evidence.probeResult,
@@ -114,6 +130,7 @@ export class CapabilitySnapshotRepository {
       technicalName: schema.obdParameterDefinitions.technicalName,
       service: schema.obdParameterDefinitions.service,
       parameterIdentifier: schema.obdParameterDefinitions.parameterIdentifier,
+      observedRequestId: schema.vehicleCapabilityParameters.observedRequestId,
       parameterDefinitionId: schema.vehicleCapabilityParameters.parameterDefinitionId
     })
     .from(schema.vehicleCapabilityParameters)
