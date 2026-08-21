@@ -8,7 +8,14 @@ module.exports = {
     '<rootDir>/__tests__/**/*.test.ts',
     '<rootDir>/__tests__/**/*.test.tsx'
   ],
-  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
+  // Match Metro's Android/native resolution before generic extensions.
+  moduleFileExtensions: [
+    'android.ts', 'native.ts', 'ts',
+    'android.tsx', 'native.tsx', 'tsx',
+    'android.js', 'native.js', 'js',
+    'android.jsx', 'native.jsx', 'jsx',
+    'json', 'node'
+  ],
   transform: {
     '^.+\\.tsx?$': ['ts-jest', {
       tsconfig: 'tsconfig.jest.json'
@@ -16,7 +23,7 @@ module.exports = {
     '^.+\\.jsx?$': '<rootDir>/scripts/jest-react-native-transformer.js'
   },
   transformIgnorePatterns: [
-    'node_modules/(?!(react-native|@react-native|expo-crypto|expo-sqlite|expo-modules-core|@expo)/)'
+    'node_modules/(?!(react-native|@react-native|expo(?:-|$)|@expo)/)'
   ],
   modulePathIgnorePatterns: [
     '<rootDir>/node_modules/'
