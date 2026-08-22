@@ -5,3 +5,4 @@ export * from './VehicleDocuments';
 export * from './DriverAdvisoryEvaluator';
 export * from './StartupBriefing';
 export * from './DrivingModePresentation';
+export * from './DriverVoicePolicy';
