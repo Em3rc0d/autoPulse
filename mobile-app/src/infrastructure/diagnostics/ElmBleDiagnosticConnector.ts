@@ -4,6 +4,7 @@ import type {
   DiagnosticConnectorHealth,
   DiagnosticConnectorIdentity,
   DiagnosticExecutionStatus,
+  DiagnosticMonitorStatus,
   DiagnosticRequest,
   DiagnosticRequestKind,
   DiagnosticResponse,
@@ -54,9 +55,6 @@ function diagnosticCodesFromFrames(frames: readonly ObdFrame[]): string[] {
   const codes: string[] = [];
   for (const frame of frames) {
     if (frame.validity !== 'VALID' || !DTC_RESPONSE_SERVICES.has(frame.service) || !frame.pid) continue;
-    // The generic frame parser treats the first byte following services 43/47/4A
-    // as a PID. For DTC responses that byte is actually the first DTC byte, so
-    // reconstruct the payload before decoding the standard two-byte code pairs.
     const bytes = [parseInt(frame.pid, 16), ...frame.payloadBytes];
     for (let index = 0; index + 1 < bytes.length; index += 2) {
       const code = decodeDtcPair(bytes[index], bytes[index + 1]);
@@ -64,6 +62,21 @@ function diagnosticCodesFromFrames(frames: readonly ObdFrame[]): string[] {
     }
   }
   return codes;
+}
+
+function monitorStatusFromFrames(frames: readonly ObdFrame[]): DiagnosticMonitorStatus | undefined {
+  // Standard Mode 01 PID 01: byte A bit 7 is MIL, bits 0-6 are confirmed DTC count.
+  // We intentionally expose only those two facts here; detailed readiness monitor
+  // decoding will be added separately rather than guessing unsupported semantics.
+  const frame = frames.find(item =>
+    item.validity === 'VALID' && item.service === '41' && item.pid === '01' && item.payloadBytes.length >= 1
+  );
+  if (!frame) return undefined;
+  const a = frame.payloadBytes[0];
+  return {
+    milOn: (a & 0x80) !== 0,
+    confirmedDtcCount: a & 0x7f,
+  };
 }
 
 export interface ElmBleDiagnosticConnectorOptions {
@@ -154,6 +167,7 @@ export class ElmBleDiagnosticConnector implements DiagnosticConnector {
       decodedValues: result.decodedValues,
       sourceEcus,
       diagnosticCodes: diagnosticCodesFromFrames(result.obdFrames),
+      monitorStatus: monitorStatusFromFrames(result.obdFrames),
       latencyMs: result.latencyMs,
       errors: result.errors,
     };
