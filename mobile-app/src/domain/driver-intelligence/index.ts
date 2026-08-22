@@ -4,6 +4,7 @@ export * from './ModeDecisionDimensions';
 export * from './VehicleDocuments';
 export * from './VehicleHealthFromCompatibility';
 export * from './DriverAdvisoryEvaluator';
+export * from './ContextualDriverAdvisories';
 export * from './StartupBriefing';
 export * from './StartupAssessment';
 export * from './DrivingModePresentation';
