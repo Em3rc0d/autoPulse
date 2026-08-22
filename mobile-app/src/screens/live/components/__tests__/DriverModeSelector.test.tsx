@@ -10,8 +10,8 @@ const signals = [
 ];
 
 describe('DriverModeSelector', () => {
-  it('shows all five driver modes and explains adaptive degradation', () => {
-    const { getByText, getByTestId } = render(
+  it('shows all five modes as decision coverage instead of a sensor checklist', () => {
+    const { getByText, getByTestId, queryByText } = render(
       <DriverModeSelector selectedMode="PERFORMANCE" availableSignals={signals} onSelectMode={jest.fn()} />,
     );
 
@@ -20,8 +20,15 @@ describe('DriverModeSelector', () => {
     expect(getByTestId('driver-mode-performance')).toBeTruthy();
     expect(getByTestId('driver-mode-off_road')).toBeTruthy();
     expect(getByTestId('driver-mode-diagnostic')).toBeTruthy();
+
     expect(getByText('ADAPTIVE')).toBeTruthy();
-    expect(getByText(/Using 4 available signals/)).toBeTruthy();
+    expect(getByText('Engine state')).toBeTruthy();
+    expect(getByText('Thermal state')).toBeTruthy();
+    expect(getByText('Power demand')).toBeTruthy();
+    expect(getByText('Air / boost')).toBeTruthy();
+    expect(getByText('Electrical')).toBeTruthy();
+    expect(queryByText(/Using 4 available signals/)).toBeNull();
+    expect(queryByText(/preferred unavailable/)).toBeNull();
   });
 
   it('emits the selected mode without changing acquisition state', () => {
