@@ -5,6 +5,7 @@ export * from './VehicleDocuments';
 export * from './VehicleHealthFromCompatibility';
 export * from './DriverAdvisoryEvaluator';
 export * from './ContextualDriverAdvisories';
+export * from './ColdStartMaturity';
 export * from './StartupBriefing';
 export * from './StartupAssessment';
 export * from './DrivingModePresentation';
