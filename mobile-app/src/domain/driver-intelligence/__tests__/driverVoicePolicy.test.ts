@@ -2,6 +2,7 @@ import {
   createDriverVoiceMemory,
   decideAdvisoryVoice,
   decideStartupVoice,
+  decideStartupVoiceWhenReady,
   markAdvisorySpoken,
   markStartupSpoken,
   type DriverAdvisory,
@@ -19,13 +20,14 @@ const warning: DriverAdvisory = {
   cooldownMs: 60_000,
 };
 
+const briefing = {
+  headline: '1 important warning',
+  voiceMessage: 'AutoPulse ready. One engine warning.',
+  advisories: [warning],
+};
+
 describe('Driver voice policy', () => {
   it('speaks startup briefing only once', () => {
-    const briefing = {
-      headline: '1 important warning',
-      voiceMessage: 'AutoPulse ready. One engine warning.',
-      advisories: [warning],
-    };
     const memory = createDriverVoiceMemory();
 
     expect(decideStartupVoice(briefing, memory)).toEqual({
@@ -38,6 +40,28 @@ describe('Driver voice policy', () => {
       shouldSpeak: false,
       reason: 'SILENT',
     });
+  });
+
+  it('does not speak the normal startup briefing while the deeper scan is still running', () => {
+    const memory = createDriverVoiceMemory();
+    expect(decideStartupVoiceWhenReady(briefing, memory, {
+      phase: 'DIAGNOSTIC_SCAN',
+      canBrief: false,
+      canDriveLive: true,
+      scanInProgress: true,
+      criticalFindingPresent: false,
+    })).toEqual({
+      shouldSpeak: false,
+      reason: 'SCAN_IN_PROGRESS',
+    });
+
+    expect(decideStartupVoiceWhenReady(briefing, memory, {
+      phase: 'READY',
+      canBrief: true,
+      canDriveLive: true,
+      scanInProgress: false,
+      criticalFindingPresent: false,
+    }).shouldSpeak).toBe(true);
   });
 
   it('keeps info and notice advisories silent by default', () => {
