@@ -14,6 +14,10 @@ import { speakDriverMessage } from '../../infrastructure/voice/AndroidDriverVoic
 import { characterizeRuntimeCompatibility } from '../../application/diagnostics/RuntimeCompatibilityCharacterization';
 import { runtimeCompatibilityStore } from '../../application/diagnostics/RuntimeCompatibilityStore';
 import { persistCompatibilitySnapshot } from '../../application/diagnostics/CompatibilityPersistence';
+import {
+  buildPhysicalValidationReceipt,
+  persistPhysicalValidationReceipt,
+} from '../../application/diagnostics/PhysicalValidationReceipt';
 import { loadVehicleDocuments } from '../../application/driver-intelligence/VehicleDocumentPersistence';
 import {
   createDriverVoiceMemory,
@@ -96,6 +100,19 @@ export default function DriverLiveSessionScreen() {
           const health = vehicleHealthFromCompatibility(snapshot);
           const nextAdvisories = evaluateDriverAdvisories({ health, documents, nowMs: Date.now() });
           setAdvisories(nextAdvisories);
+
+          try {
+            await persistPhysicalValidationReceipt(buildPhysicalValidationReceipt({
+              sessionId,
+              vehicleId,
+              compatibility: snapshot,
+              health,
+              documents,
+              advisories: nextAdvisories,
+            }));
+          } catch (error) {
+            console.warn('[DriverLiveSession] Physical validation receipt persistence degraded:', error);
+          }
 
           for (const advisory of nextAdvisories) {
             const decision = decideAdvisoryVoice(advisory, voiceMemory.current, Date.now());
