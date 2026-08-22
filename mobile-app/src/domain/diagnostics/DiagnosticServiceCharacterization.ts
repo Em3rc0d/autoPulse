@@ -109,7 +109,7 @@ const makeRequest = (probe: DiagnosticServiceProbe): DiagnosticRequest => ({
   expectedPid: probe.expectedPid,
 });
 
-const unique = (values: readonly string[]) => Array.from(new Set(values));
+const unique = <T,>(values: readonly T[]): T[] => Array.from(new Set(values));
 
 export async function characterizeDiagnosticServices(
   connector: DiagnosticConnector,
@@ -133,7 +133,7 @@ export async function characterizeDiagnosticServices(
     });
   }
 
-  const families = unique(observations.map(item => item.family));
+  const families = unique<DiagnosticServiceFamily>(observations.map(item => item.family));
   const services: DiagnosticServiceAvailability[] = families.map(family => {
     const evidence = observations.filter(item => item.family === family);
     const successful = evidence.filter(item => item.status === 'SUCCESS');
