@@ -14,6 +14,9 @@ class AutoPulseVoiceModule(
 
   private var tts: TextToSpeech? = null
   private var ready = false
+  private var initializationFailed = false
+  private var pendingText: String? = null
+  private var pendingPromise: Promise? = null
 
   init {
     reactContext.addLifecycleEventListener(this)
@@ -24,23 +27,59 @@ class AutoPulseVoiceModule(
 
   override fun onInit(status: Int) {
     ready = status == TextToSpeech.SUCCESS
+    initializationFailed = !ready
+
     if (ready) {
       tts?.language = Locale.getDefault()
+      val text = pendingText
+      val promise = pendingPromise
+      pendingText = null
+      pendingPromise = null
+      if (!text.isNullOrBlank() && promise != null) {
+        speakNow(text, promise)
+      }
+    } else {
+      pendingPromise?.resolve(false)
+      pendingText = null
+      pendingPromise = null
     }
   }
 
-  @ReactMethod
-  fun speak(text: String, promise: Promise) {
-    if (!ready || text.isBlank()) {
-      promise.resolve(false)
-      return
-    }
-    val result = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "autopulse-${System.currentTimeMillis()}")
+  private fun speakNow(text: String, promise: Promise) {
+    val result = tts?.speak(
+      text,
+      TextToSpeech.QUEUE_FLUSH,
+      null,
+      "autopulse-${System.currentTimeMillis()}"
+    )
     promise.resolve(result == TextToSpeech.SUCCESS)
   }
 
   @ReactMethod
+  fun speak(text: String, promise: Promise) {
+    if (text.isBlank() || initializationFailed) {
+      promise.resolve(false)
+      return
+    }
+
+    if (!ready) {
+      // Startup warnings can arrive almost immediately after JS mounts. Keep the
+      // newest message until Android TTS reports readiness rather than silently
+      // dropping the first important advisory.
+      pendingPromise?.resolve(false)
+      pendingText = text
+      pendingPromise = promise
+      return
+    }
+
+    speakNow(text, promise)
+  }
+
+  @ReactMethod
   fun stop(promise: Promise) {
+    pendingPromise?.resolve(false)
+    pendingText = null
+    pendingPromise = null
     tts?.stop()
     promise.resolve(true)
   }
@@ -49,6 +88,9 @@ class AutoPulseVoiceModule(
   override fun onHostPause() = Unit
 
   override fun onHostDestroy() {
+    pendingPromise?.resolve(false)
+    pendingText = null
+    pendingPromise = null
     tts?.stop()
     tts?.shutdown()
     tts = null
