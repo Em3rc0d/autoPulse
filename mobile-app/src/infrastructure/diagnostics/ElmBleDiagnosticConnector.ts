@@ -9,7 +9,7 @@ import type {
   DiagnosticResponse,
 } from '../../domain/diagnostics/DiagnosticConnector';
 import { RealObdController } from '../ble/real/RealObdController';
-import type { CommandFamily, CommandResultStatus } from '../ble/real/pipeline/types';
+import type { CommandFamily, CommandResultStatus, ObdFrame } from '../ble/real/pipeline/types';
 
 const familyFor = (kind: DiagnosticRequestKind): CommandFamily => {
   switch (kind) {
@@ -37,6 +37,34 @@ const statusFor = (status: CommandResultStatus): DiagnosticExecutionStatus => {
       return 'FAILED';
   }
 };
+
+const DTC_RESPONSE_SERVICES = new Set(['43', '47', '4A']);
+
+function decodeDtcPair(first: number, second: number): string | null {
+  if (first === 0 && second === 0) return null;
+  const system = ['P', 'C', 'B', 'U'][(first & 0xc0) >> 6];
+  const digit1 = (first & 0x30) >> 4;
+  const digit2 = first & 0x0f;
+  const digit3 = (second & 0xf0) >> 4;
+  const digit4 = second & 0x0f;
+  return `${system}${digit1}${digit2.toString(16).toUpperCase()}${digit3.toString(16).toUpperCase()}${digit4.toString(16).toUpperCase()}`;
+}
+
+function diagnosticCodesFromFrames(frames: readonly ObdFrame[]): string[] {
+  const codes: string[] = [];
+  for (const frame of frames) {
+    if (frame.validity !== 'VALID' || !DTC_RESPONSE_SERVICES.has(frame.service) || !frame.pid) continue;
+    // The generic frame parser treats the first byte following services 43/47/4A
+    // as a PID. For DTC responses that byte is actually the first DTC byte, so
+    // reconstruct the payload before decoding the standard two-byte code pairs.
+    const bytes = [parseInt(frame.pid, 16), ...frame.payloadBytes];
+    for (let index = 0; index + 1 < bytes.length; index += 2) {
+      const code = decodeDtcPair(bytes[index], bytes[index + 1]);
+      if (code && !codes.includes(code)) codes.push(code);
+    }
+  }
+  return codes;
+}
 
 export interface ElmBleDiagnosticConnectorOptions {
   identity?: Partial<DiagnosticConnectorIdentity>;
@@ -125,6 +153,7 @@ export class ElmBleDiagnosticConnector implements DiagnosticConnector {
       rawText: result.rawResponse?.accumulatedText,
       decodedValues: result.decodedValues,
       sourceEcus,
+      diagnosticCodes: diagnosticCodesFromFrames(result.obdFrames),
       latencyMs: result.latencyMs,
       errors: result.errors,
     };
