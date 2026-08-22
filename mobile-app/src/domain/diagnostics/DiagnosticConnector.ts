@@ -57,6 +57,11 @@ export interface DiagnosticConnectorHealth {
   lastError?: string;
 }
 
+export interface DiagnosticMonitorStatus {
+  milOn: boolean;
+  confirmedDtcCount: number;
+}
+
 export interface DiagnosticRequest {
   id: string;
   payload: string;
@@ -73,6 +78,7 @@ export interface DiagnosticResponse {
   decodedValues: readonly { type: string; value: unknown; unit?: string }[];
   sourceEcus: readonly string[];
   diagnosticCodes?: readonly string[];
+  monitorStatus?: DiagnosticMonitorStatus;
   latencyMs: number;
   errors: readonly string[];
 }
