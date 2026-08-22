@@ -7,6 +7,7 @@ interface DriverModeContextValue {
   setSelectedMode: (mode: DrivingMode) => void;
   availableSignals: AvailableSignal[];
   reportSignalQuality: (signalId: string, quality: SignalQuality) => void;
+  reportDeviceSignal: (signal: AvailableSignal) => void;
 }
 
 const DriverModeContext = createContext<DriverModeContextValue | null>(null);
@@ -19,19 +20,34 @@ interface ProviderProps {
 export function DriverModeProvider({ supportedPids = [], children }: ProviderProps) {
   const [selectedMode, setSelectedMode] = useState<DrivingMode>('ESSENTIAL');
   const [observedQualities, setObservedQualities] = useState<Record<string, SignalQuality>>({});
+  const [deviceSignals, setDeviceSignals] = useState<Record<string, AvailableSignal>>({});
 
-  const availableSignals = useMemo(
-    () => buildLiveSignalInventory(
+  const availableSignals = useMemo(() => {
+    const vehicleSignals = buildLiveSignalInventory(
       supportedPids,
       Object.entries(observedQualities).map(([signalId, quality]) => ({ signalId, quality })),
-    ),
-    [supportedPids, observedQualities],
-  );
+    );
+    const combined = new Map(vehicleSignals.map(signal => [signal.signalId, signal]));
+    Object.values(deviceSignals).forEach(signal => combined.set(signal.signalId, signal));
+    return Array.from(combined.values());
+  }, [supportedPids, observedQualities, deviceSignals]);
 
   const reportSignalQuality = (signalId: string, quality: SignalQuality) => {
     setObservedQualities(current => current[signalId] === quality
       ? current
       : { ...current, [signalId]: quality });
+  };
+
+  const reportDeviceSignal = (signal: AvailableSignal) => {
+    setDeviceSignals(current => {
+      const previous = current[signal.signalId];
+      if (
+        previous?.quality === signal.quality &&
+        previous?.origin === signal.origin &&
+        previous?.unit === signal.unit
+      ) return current;
+      return { ...current, [signal.signalId]: signal };
+    });
   };
 
   return (
@@ -40,6 +56,7 @@ export function DriverModeProvider({ supportedPids = [], children }: ProviderPro
       setSelectedMode,
       availableSignals,
       reportSignalQuality,
+      reportDeviceSignal,
     }}>
       {children}
     </DriverModeContext.Provider>
