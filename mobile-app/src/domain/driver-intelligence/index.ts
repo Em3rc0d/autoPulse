@@ -2,6 +2,7 @@ export * from './models';
 export * from './ModeSignalResolver';
 export * from './ModeDecisionDimensions';
 export * from './VehicleDocuments';
+export * from './VehicleHealthFromCompatibility';
 export * from './DriverAdvisoryEvaluator';
 export * from './StartupBriefing';
 export * from './StartupAssessment';
