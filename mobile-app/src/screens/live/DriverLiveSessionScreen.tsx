@@ -9,6 +9,7 @@ import { RealObdController } from '../../infrastructure/ble/real/RealObdControll
 import { ElmBleDiagnosticConnector } from '../../infrastructure/diagnostics/ElmBleDiagnosticConnector';
 import { characterizeRuntimeCompatibility } from '../../application/diagnostics/RuntimeCompatibilityCharacterization';
 import { runtimeCompatibilityStore } from '../../application/diagnostics/RuntimeCompatibilityStore';
+import { persistCompatibilitySnapshot } from '../../application/diagnostics/CompatibilityPersistence';
 
 function DriverModePanel() {
   const { selectedMode, setSelectedMode, availableSignals } = useDriverMode();
@@ -79,6 +80,12 @@ export default function DriverLiveSessionScreen() {
 
         if (!cancelled) {
           runtimeCompatibilityStore.set(sessionId, snapshot);
+          try {
+            await persistCompatibilitySnapshot(sessionId, snapshot);
+          } catch (error) {
+            // Durable caching is valuable but must never block a proven Live path.
+            console.warn('[DriverLiveSession] Compatibility persistence degraded:', error);
+          }
         }
       } catch (error) {
         // Characterization enriches the product but is never allowed to turn a
