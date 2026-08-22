@@ -11,7 +11,7 @@ import VehicleDetailScreen from '../screens/garage/VehicleDetailScreen';
 import VehicleCapabilitiesScreen from '../screens/garage/VehicleCapabilitiesScreen';
 import ConnectObdScreen from '../screens/live/ConnectObdScreen';
 import InitializationScreen from '../screens/live/InitializationScreen';
-import LiveSessionScreen from '../screens/live/LiveSessionScreen';
+import DriverLiveSessionScreen from '../screens/live/DriverLiveSessionScreen';
 import SessionSummaryScreen from '../screens/live/SessionSummaryScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
@@ -45,7 +45,7 @@ function LiveStack() {
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="ConnectObd" component={ConnectObdScreen} />
       <Stack.Screen name="Initialization" component={InitializationScreen} />
-      <Stack.Screen name="LiveSession" component={LiveSessionScreen} />
+      <Stack.Screen name="LiveSession" component={DriverLiveSessionScreen} />
       <Stack.Screen name="SessionSummary" component={SessionSummaryScreen} />
     </Stack.Navigator>
   );
