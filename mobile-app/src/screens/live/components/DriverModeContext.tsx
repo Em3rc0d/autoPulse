@@ -46,8 +46,12 @@ export function DriverModeProvider({ supportedPids = [], children }: ProviderPro
   );
 }
 
+export function useOptionalDriverMode() {
+  return useContext(DriverModeContext);
+}
+
 export function useDriverMode() {
-  const context = useContext(DriverModeContext);
+  const context = useOptionalDriverMode();
   if (!context) {
     throw new Error('useDriverMode must be used inside DriverModeProvider');
   }
