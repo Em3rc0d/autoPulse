@@ -5,6 +5,7 @@ import LiveSessionScreen from './LiveSessionScreen';
 import { DriverModeSelector } from './components/DriverModeSelector';
 import { DriverModeProvider, useDriverMode } from './components/DriverModeContext';
 import { PhoneSensorBridge } from './components/PhoneSensorBridge';
+import { DriverContextualIntelligence } from './components/DriverContextualIntelligence';
 import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
 import { RealObdController } from '../../infrastructure/ble/real/RealObdController';
 import { ElmBleDiagnosticConnector } from '../../infrastructure/diagnostics/ElmBleDiagnosticConnector';
@@ -41,6 +42,7 @@ function DriverLiveSessionContent() {
     <View style={styles.container}>
       <DriverModePanel />
       <PhoneSensorBridge />
+      <DriverContextualIntelligence />
       <View style={styles.liveContainer}>
         <LiveSessionScreen />
       </View>
