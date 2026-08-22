@@ -1,12 +1,26 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
-import type { AvailableSignal, DrivingMode, SignalQuality } from '../../../domain/driver-intelligence';
+import type { AvailableSignal, DrivingMode, SignalOrigin, SignalQuality } from '../../../domain/driver-intelligence';
 import { buildLiveSignalInventory } from './LiveSignalInventory';
+
+export interface DriverSignalObservation {
+  signalId: string;
+  value: number;
+  unit?: string;
+  quality: SignalQuality;
+  origin: SignalOrigin;
+  firstValue: number;
+  firstObservedAt: number;
+  observedAt: number;
+  sampleCount: number;
+}
 
 interface DriverModeContextValue {
   selectedMode: DrivingMode;
   setSelectedMode: (mode: DrivingMode) => void;
   availableSignals: AvailableSignal[];
+  observations: Record<string, DriverSignalObservation>;
   reportSignalQuality: (signalId: string, quality: SignalQuality) => void;
+  reportSignalObservation: (observation: Omit<DriverSignalObservation, 'firstValue' | 'firstObservedAt' | 'sampleCount'>) => void;
   reportDeviceSignal: (signal: AvailableSignal) => void;
 }
 
@@ -21,6 +35,7 @@ export function DriverModeProvider({ supportedPids = [], children }: ProviderPro
   const [selectedMode, setSelectedMode] = useState<DrivingMode>('ESSENTIAL');
   const [observedQualities, setObservedQualities] = useState<Record<string, SignalQuality>>({});
   const [deviceSignals, setDeviceSignals] = useState<Record<string, AvailableSignal>>({});
+  const [observations, setObservations] = useState<Record<string, DriverSignalObservation>>({});
 
   const availableSignals = useMemo(() => {
     const vehicleSignals = buildLiveSignalInventory(
@@ -36,6 +51,22 @@ export function DriverModeProvider({ supportedPids = [], children }: ProviderPro
     setObservedQualities(current => current[signalId] === quality
       ? current
       : { ...current, [signalId]: quality });
+  };
+
+  const reportSignalObservation: DriverModeContextValue['reportSignalObservation'] = observation => {
+    setObservations(current => {
+      const previous = current[observation.signalId];
+      return {
+        ...current,
+        [observation.signalId]: {
+          ...observation,
+          firstValue: previous?.firstValue ?? observation.value,
+          firstObservedAt: previous?.firstObservedAt ?? observation.observedAt,
+          sampleCount: (previous?.sampleCount ?? 0) + 1,
+        },
+      };
+    });
+    reportSignalQuality(observation.signalId, observation.quality);
   };
 
   const reportDeviceSignal = (signal: AvailableSignal) => {
@@ -55,7 +86,9 @@ export function DriverModeProvider({ supportedPids = [], children }: ProviderPro
       selectedMode,
       setSelectedMode,
       availableSignals,
+      observations,
       reportSignalQuality,
+      reportSignalObservation,
       reportDeviceSignal,
     }}>
       {children}
