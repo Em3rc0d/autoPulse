@@ -30,6 +30,7 @@ export interface DiagnosticServiceObservation {
   request: string;
   status: DiagnosticExecutionStatus;
   sourceEcus: readonly string[];
+  diagnosticCodes: readonly string[];
   latencyMs: number;
 }
 
@@ -37,6 +38,7 @@ export interface DiagnosticServiceAvailability {
   family: DiagnosticServiceFamily;
   observed: boolean;
   sourceEcus: readonly string[];
+  diagnosticCodes: readonly string[];
   evidence: readonly DiagnosticServiceObservation[];
 }
 
@@ -126,6 +128,7 @@ export async function characterizeDiagnosticServices(
       request: probe.payload,
       status: response.status,
       sourceEcus: unique(response.sourceEcus),
+      diagnosticCodes: unique(response.diagnosticCodes ?? []),
       latencyMs: response.latencyMs,
     });
   }
@@ -138,6 +141,7 @@ export async function characterizeDiagnosticServices(
       family,
       observed: successful.length > 0,
       sourceEcus: unique(successful.flatMap(item => item.sourceEcus)),
+      diagnosticCodes: unique(successful.flatMap(item => item.diagnosticCodes)),
       evidence,
     };
   });
