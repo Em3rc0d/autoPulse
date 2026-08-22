@@ -4,6 +4,7 @@ import { useRoute } from '@react-navigation/native';
 import LiveSessionScreen from './LiveSessionScreen';
 import { DriverModeSelector } from './components/DriverModeSelector';
 import { DriverModeProvider, useDriverMode } from './components/DriverModeContext';
+import { PhoneSensorBridge } from './components/PhoneSensorBridge';
 import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
 import { RealObdController } from '../../infrastructure/ble/real/RealObdController';
 import { ElmBleDiagnosticConnector } from '../../infrastructure/diagnostics/ElmBleDiagnosticConnector';
@@ -39,6 +40,7 @@ function DriverLiveSessionContent() {
   return (
     <View style={styles.container}>
       <DriverModePanel />
+      <PhoneSensorBridge />
       <View style={styles.liveContainer}>
         <LiveSessionScreen />
       </View>
@@ -105,9 +107,6 @@ export default function DriverLiveSessionScreen() {
           });
           setAdvisories(nextAdvisories);
 
-          // During the deeper/cold-start phase only real warnings/critical changes
-          // may speak. INFO/NOTICE remain visual and normal "ready" speech waits
-          // for a later mature startup briefing.
           for (const advisory of nextAdvisories) {
             const decision = decideAdvisoryVoice(advisory, voiceMemory.current, Date.now());
             if (!decision.shouldSpeak || !decision.message) continue;
