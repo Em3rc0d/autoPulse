@@ -5,6 +5,7 @@ import {
   DRIVING_MODE_PRESENTATION,
   resolveModeDecisionDimensions,
   type AvailableSignal,
+  type DecisionDimensionCoverage,
   type DrivingMode,
 } from '../../../domain/driver-intelligence';
 
@@ -14,9 +15,11 @@ interface Props {
   onSelectMode: (mode: DrivingMode) => void;
 }
 
-const coverageColor = (coverage: 'COVERED' | 'PARTIAL') => {
+const coverageColor = (coverage: DecisionDimensionCoverage) => {
   if (coverage === 'COVERED') return '#4ade80';
-  return '#f59e0b';
+  if (coverage === 'PARTIAL') return '#f59e0b';
+  // UNKNOWN is filtered before rendering; this fallback is defensive only.
+  return '#6b7280';
 };
 
 const visibleDimensionsForMode = (
