@@ -14,24 +14,37 @@ interface Props {
   onSelectMode: (mode: DrivingMode) => void;
 }
 
-const coverageColor = (coverage: 'COVERED' | 'PARTIAL' | 'UNKNOWN') => {
+const coverageColor = (coverage: 'COVERED' | 'PARTIAL') => {
   if (coverage === 'COVERED') return '#4ade80';
-  if (coverage === 'PARTIAL') return '#f59e0b';
-  return '#6b7280';
+  return '#f59e0b';
 };
 
-const modeState = (dimensions: ReturnType<typeof resolveModeDecisionDimensions>) => {
-  const covered = dimensions.filter(item => item.coverage === 'COVERED').length;
-  const known = dimensions.filter(item => item.coverage !== 'UNKNOWN').length;
-  if (covered === dimensions.length) return 'READY';
-  if (known === 0) return 'LIMITED';
+const visibleDimensionsForMode = (
+  mode: DrivingMode,
+  availableSignals: readonly AvailableSignal[],
+) => resolveModeDecisionDimensions(mode, availableSignals)
+  .filter(dimension => dimension.coverage !== 'UNKNOWN');
+
+const modeState = (
+  mode: DrivingMode,
+  availableSignals: readonly AvailableSignal[],
+) => {
+  const allDimensions = resolveModeDecisionDimensions(mode, availableSignals);
+  const visibleDimensions = allDimensions.filter(item => item.coverage !== 'UNKNOWN');
+
+  if (visibleDimensions.length === 0) return null;
+  if (
+    visibleDimensions.length === allDimensions.length &&
+    visibleDimensions.every(item => item.coverage === 'COVERED')
+  ) return 'READY';
+
   return 'ADAPTIVE';
 };
 
 export function DriverModeSelector({ selectedMode, availableSignals, onSelectMode }: Props) {
   const presentation = DRIVING_MODE_PRESENTATION[selectedMode];
-  const dimensions = resolveModeDecisionDimensions(selectedMode, availableSignals);
-  const state = modeState(dimensions);
+  const dimensions = visibleDimensionsForMode(selectedMode, availableSignals);
+  const state = modeState(selectedMode, availableSignals);
 
   return (
     <View style={styles.container}>
@@ -40,8 +53,8 @@ export function DriverModeSelector({ selectedMode, availableSignals, onSelectMod
         {DRIVING_MODE_ORDER.map(mode => {
           const item = DRIVING_MODE_PRESENTATION[mode];
           const active = mode === selectedMode;
-          const modeDimensions = resolveModeDecisionDimensions(mode, availableSignals);
-          const knownDimensions = modeDimensions.filter(dimension => dimension.coverage !== 'UNKNOWN').length;
+          const modeDimensions = visibleDimensionsForMode(mode, availableSignals);
+          const modeStatus = modeState(mode, availableSignals);
 
           return (
             <TouchableOpacity
@@ -53,40 +66,46 @@ export function DriverModeSelector({ selectedMode, availableSignals, onSelectMod
             >
               <Text style={[styles.modeIcon, active && styles.modeTextActive]}>{item.icon}</Text>
               <Text style={[styles.modeLabel, active && styles.modeTextActive]}>{item.shortLabel}</Text>
-              <Text style={[styles.modeCoverage, active && styles.modeTextActive]}>
-                {knownDimensions === modeDimensions.length ? 'Ready' : knownDimensions > 0 ? 'Adaptive' : 'Limited'}
-              </Text>
+              {modeDimensions.length > 0 && modeStatus ? (
+                <Text style={[styles.modeCoverage, active && styles.modeTextActive]}>
+                  {modeStatus === 'READY' ? 'Ready' : 'Adaptive'}
+                </Text>
+              ) : null}
             </TouchableOpacity>
           );
         })}
       </ScrollView>
 
-      <View style={styles.summaryCard}>
-        <View style={styles.summaryHeader}>
-          <View style={styles.summaryCopy}>
-            <Text style={styles.summaryTitle}>{presentation.label}</Text>
-            <Text style={styles.summaryPurpose}>{presentation.purpose}</Text>
-          </View>
-          <View style={[
-            styles.statePill,
-            state === 'READY' ? styles.statePillReady : state === 'ADAPTIVE' ? styles.statePillAdaptive : styles.statePillLimited,
-          ]}>
-            <Text style={styles.stateText}>{state}</Text>
-          </View>
-        </View>
-
-        <View style={styles.dimensionGrid}>
-          {dimensions.map(dimension => (
-            <View key={dimension.id} style={styles.dimensionRow} testID={`decision-dimension-${dimension.id.toLowerCase()}`}>
-              <View style={[styles.dimensionDot, { backgroundColor: coverageColor(dimension.coverage) }]} />
-              <Text style={styles.dimensionLabel}>{dimension.label}</Text>
-              <Text style={[styles.dimensionState, { color: coverageColor(dimension.coverage) }]}>
-                {dimension.coverage === 'COVERED' ? 'READY' : dimension.coverage === 'PARTIAL' ? 'PARTIAL' : 'UNKNOWN'}
-              </Text>
+      {dimensions.length > 0 ? (
+        <View style={styles.summaryCard}>
+          <View style={styles.summaryHeader}>
+            <View style={styles.summaryCopy}>
+              <Text style={styles.summaryTitle}>{presentation.label}</Text>
+              <Text style={styles.summaryPurpose}>{presentation.purpose}</Text>
             </View>
-          ))}
+            {state ? (
+              <View style={[
+                styles.statePill,
+                state === 'READY' ? styles.statePillReady : styles.statePillAdaptive,
+              ]}>
+                <Text style={styles.stateText}>{state}</Text>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={styles.dimensionGrid}>
+            {dimensions.map(dimension => (
+              <View key={dimension.id} style={styles.dimensionRow} testID={`decision-dimension-${dimension.id.toLowerCase()}`}>
+                <View style={[styles.dimensionDot, { backgroundColor: coverageColor(dimension.coverage) }]} />
+                <Text style={styles.dimensionLabel}>{dimension.label}</Text>
+                <Text style={[styles.dimensionState, { color: coverageColor(dimension.coverage) }]}>
+                  {dimension.coverage === 'COVERED' ? 'READY' : 'PARTIAL'}
+                </Text>
+              </View>
+            ))}
+          </View>
         </View>
-      </View>
+      ) : null}
     </View>
   );
 }
@@ -138,7 +157,6 @@ const styles = StyleSheet.create({
   statePill: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },
   statePillReady: { backgroundColor: '#14532d' },
   statePillAdaptive: { backgroundColor: '#78350f' },
-  statePillLimited: { backgroundColor: '#374151' },
   stateText: { color: '#fff', fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.7 },
   dimensionGrid: { marginTop: 14, gap: 8 },
   dimensionRow: { flexDirection: 'row', alignItems: 'center', minHeight: 24 },
