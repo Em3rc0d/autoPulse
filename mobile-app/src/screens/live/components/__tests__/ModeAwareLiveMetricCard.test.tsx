@@ -15,13 +15,13 @@ const state = {
 
 const stats = {
   validReadingCount: 1,
-  validMinObserved: 900,
-  validMaxObserved: 900,
+  validMinObserved: 42,
+  validMaxObserved: 42,
 };
 
 const profile = {
   vehicleId: 'demo',
-  signalId: 'ENGINE_RPM',
+  signalId: 'VEHICLE_SPEED',
   sourceType: 'GENERIC_REFERENCE' as const,
   calibrationStatus: 'GENERIC_ONLY' as const,
   bands: [],
@@ -29,20 +29,20 @@ const profile = {
   sustainDurationMs: 0,
 };
 
-function SwitchToDiagnostic() {
+function SwitchToPerformance() {
   const { setSelectedMode } = useDriverMode();
-  return <TouchableOpacity testID="diag" onPress={() => setSelectedMode('DIAGNOSTIC')} />;
+  return <TouchableOpacity testID="performance" onPress={() => setSelectedMode('PERFORMANCE')} />;
 }
 
 describe('mode-aware LiveMetricCard', () => {
-  it('shows essential RPM and hides it when Diagnostic does not select it from the actual inventory', () => {
+  it('shows essential speed and hides it when Performance does not select it', () => {
     const { getByText, getByTestId, queryByText } = render(
-      <DriverModeProvider supportedPids={['010C']}>
-        <SwitchToDiagnostic />
+      <DriverModeProvider supportedPids={['010D']}>
+        <SwitchToPerformance />
         <LiveMetricCard
-          label="Engine RPM"
-          value={900}
-          unit="rpm"
+          label="Vehicle Speed"
+          value={42}
+          unit="km/h"
           state={state}
           stats={stats}
           profile={profile}
@@ -50,8 +50,8 @@ describe('mode-aware LiveMetricCard', () => {
       </DriverModeProvider>,
     );
 
-    expect(getByText('Engine RPM')).toBeTruthy();
-    fireEvent.press(getByTestId('diag'));
-    expect(queryByText('Engine RPM')).toBeNull();
+    expect(getByText('Vehicle Speed')).toBeTruthy();
+    fireEvent.press(getByTestId('performance'));
+    expect(queryByText('Vehicle Speed')).toBeNull();
   });
 });
