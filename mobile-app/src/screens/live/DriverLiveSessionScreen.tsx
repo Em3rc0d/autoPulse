@@ -6,6 +6,7 @@ import { DriverModeSelector } from './components/DriverModeSelector';
 import { DriverModeProvider, useDriverMode } from './components/DriverModeContext';
 import { PhoneSensorBridge } from './components/PhoneSensorBridge';
 import { DriverContextualIntelligence } from './components/DriverContextualIntelligence';
+import { DriverStartupCoordinator } from './components/DriverStartupCoordinator';
 import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
 import { RealObdController } from '../../infrastructure/ble/real/RealObdController';
 import { ElmBleDiagnosticConnector } from '../../infrastructure/diagnostics/ElmBleDiagnosticConnector';
@@ -37,11 +38,12 @@ function DriverModePanel() {
   );
 }
 
-function DriverLiveSessionContent() {
+function DriverLiveSessionContent({ advisories }: { advisories: readonly DriverAdvisory[] }) {
   return (
     <View style={styles.container}>
       <DriverModePanel />
       <PhoneSensorBridge />
+      <DriverStartupCoordinator diagnosticScanComplete advisories={advisories} />
       <DriverContextualIntelligence />
       <View style={styles.liveContainer}>
         <LiveSessionScreen />
@@ -109,6 +111,9 @@ export default function DriverLiveSessionScreen() {
           });
           setAdvisories(nextAdvisories);
 
+          // Real warnings may interrupt the deeper startup observation immediately.
+          // INFO/NOTICE remain silent by default. The complete startup briefing is
+          // spoken later by DriverStartupCoordinator when engine evidence matures.
           for (const advisory of nextAdvisories) {
             const decision = decideAdvisoryVoice(advisory, voiceMemory.current, Date.now());
             if (!decision.shouldSpeak || !decision.message) continue;
@@ -148,7 +153,7 @@ export default function DriverLiveSessionScreen() {
         <ActivityIndicator size="large" />
         <Text style={styles.characterizationTitle}>Checking vehicle…</Text>
         <Text style={styles.characterizationText}>
-          Live data will start when the read-only compatibility scan is complete.
+          AutoPulse is running a read-only compatibility and diagnostic scan.
         </Text>
       </View>
     );
@@ -170,7 +175,7 @@ export default function DriverLiveSessionScreen() {
         </View>
       ) : null}
       <DriverModeProvider supportedPids={supportedPids}>
-        <DriverLiveSessionContent />
+        <DriverLiveSessionContent advisories={advisories} />
       </DriverModeProvider>
     </View>
   );
