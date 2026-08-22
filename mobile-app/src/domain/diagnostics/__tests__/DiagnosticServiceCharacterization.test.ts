@@ -15,6 +15,9 @@ const makeResponse = (
   rawText: status === 'SUCCESS' ? 'response' : undefined,
   decodedValues: [],
   sourceEcus,
+  monitorStatus: request.payload === '0101' && status === 'SUCCESS'
+    ? { milOn: true, confirmedDtcCount: 1 }
+    : undefined,
   latencyMs: 10,
   errors: [],
 });
@@ -32,6 +35,7 @@ const connector: DiagnosticConnector = {
   }),
   execute: async request => {
     if (request.payload === '0100') return makeResponse(request, 'SUCCESS', ['7E8', '7E9']);
+    if (request.payload === '0101') return makeResponse(request, 'SUCCESS', ['7E8']);
     if (request.payload === '03') return makeResponse(request, 'SUCCESS', ['7E8']);
     if (request.payload === '07') return makeResponse(request, 'NO_DATA');
     if (request.payload === '0900') return makeResponse(request, 'SUCCESS', ['7E8']);
@@ -52,6 +56,7 @@ describe('DiagnosticServiceCharacterization', () => {
 
     expect(currentData?.observed).toBe(true);
     expect(currentData?.sourceEcus).toEqual(['7E8', '7E9']);
+    expect(currentData?.monitorStatus).toEqual({ milOn: true, confirmedDtcCount: 1 });
     expect(storedDtc?.observed).toBe(true);
     expect(pendingDtc?.observed).toBe(false);
     expect(permanentDtc?.observed).toBe(false);
@@ -76,6 +81,6 @@ describe('DiagnosticServiceCharacterization', () => {
     };
 
     await characterizeDiagnosticServices(observingConnector);
-    expect(payloads).toEqual(['0100', '03', '07', '0900', '0A']);
+    expect(payloads).toEqual(['0100', '0101', '03', '07', '0900', '0A']);
   });
 });
