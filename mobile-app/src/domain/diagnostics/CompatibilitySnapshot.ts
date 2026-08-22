@@ -5,6 +5,7 @@ import type {
   DiagnosticProtocol,
 } from './DiagnosticConnector';
 import type { EcuCapabilityProfile } from './EcuCapabilityDiscovery';
+import type { DiagnosticServiceAvailability } from './DiagnosticServiceCharacterization';
 
 export interface VehicleDiagnosticIdentity {
   vehicleId?: string;
@@ -29,6 +30,9 @@ export interface CompatibilitySnapshot {
   protocol: DiagnosticProtocol;
   discoveredEcus: readonly string[];
   ecuCapabilities: readonly EcuCapabilityProfile[];
+  diagnosticServices: readonly DiagnosticServiceAvailability[];
+  enhancedDiagnosticsAdvertised: boolean;
+  enhancedDiagnosticsProbed: boolean;
   observations: readonly CompatibilityObservation[];
 }
 
@@ -41,6 +45,9 @@ export interface CompatibilitySnapshotInput {
   protocol?: DiagnosticProtocol;
   discoveredEcus?: readonly string[];
   ecuCapabilities?: readonly EcuCapabilityProfile[];
+  diagnosticServices?: readonly DiagnosticServiceAvailability[];
+  enhancedDiagnosticsAdvertised?: boolean;
+  enhancedDiagnosticsProbed?: boolean;
   observations?: readonly CompatibilityObservation[];
 }
 
@@ -61,6 +68,9 @@ export function createCompatibilitySnapshot(input: CompatibilitySnapshotInput): 
     protocol: input.protocol ?? 'UNKNOWN',
     discoveredEcus: [...new Set(discoveredEcus)],
     ecuCapabilities,
+    diagnosticServices: input.diagnosticServices ?? [],
+    enhancedDiagnosticsAdvertised: input.enhancedDiagnosticsAdvertised ?? false,
+    enhancedDiagnosticsProbed: input.enhancedDiagnosticsProbed ?? false,
     observations: input.observations ?? [],
   };
 }
