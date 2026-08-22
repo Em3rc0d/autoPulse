@@ -4,23 +4,32 @@ import { usePhoneDrivingSensors } from '../../../infrastructure/sensors/usePhone
 import { useDriverMode } from './DriverModeContext';
 
 export function PhoneSensorBridge() {
-  const { selectedMode, reportDeviceSignal } = useDriverMode();
+  const { selectedMode, reportDeviceSignal, reportSignalObservation } = useDriverMode();
   const sensors = usePhoneDrivingSensors(selectedMode === 'OFF_ROAD');
 
   useEffect(() => {
-    if (sensors.altitude !== undefined) {
-      reportDeviceSignal({ signalId: 'ALTITUDE', origin: 'DEVICE_SENSOR', quality: 'VALID', unit: 'm' });
-    }
-    if (sensors.pitch !== undefined) {
-      reportDeviceSignal({ signalId: 'PITCH', origin: 'DEVICE_SENSOR', quality: 'VALID', unit: '°' });
-    }
-    if (sensors.roll !== undefined) {
-      reportDeviceSignal({ signalId: 'ROLL', origin: 'DEVICE_SENSOR', quality: 'VALID', unit: '°' });
-    }
-    if (sensors.heading !== undefined) {
-      reportDeviceSignal({ signalId: 'HEADING', origin: 'DEVICE_SENSOR', quality: 'VALID', unit: '°' });
-    }
-  }, [reportDeviceSignal, sensors.altitude, sensors.pitch, sensors.roll, sensors.heading]);
+    const now = Date.now();
+    const publish = (signalId: string, value: number | undefined, unit: string) => {
+      if (value === undefined || !Number.isFinite(value)) return;
+      reportDeviceSignal({ signalId, origin: 'DEVICE_SENSOR', quality: 'VALID', unit });
+      reportSignalObservation({
+        signalId,
+        value,
+        unit,
+        quality: 'VALID',
+        origin: 'DEVICE_SENSOR',
+        observedAt: now,
+      });
+    };
+
+    publish('ALTITUDE', sensors.altitude, 'm');
+    publish('PITCH', sensors.pitch, '°');
+    publish('ROLL', sensors.roll, '°');
+    publish('HEADING', sensors.heading, '°');
+    // Context callbacks change identity as observations are retained; publish
+    // only when an actual sensor value changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sensors.altitude, sensors.pitch, sensors.roll, sensors.heading]);
 
   if (selectedMode !== 'OFF_ROAD') return null;
 
@@ -31,7 +40,6 @@ export function PhoneSensorBridge() {
     sensors.heading !== undefined ? { label: 'HEADING', value: `${Math.round(sensors.heading)}°` } : null,
   ].filter((item): item is { label: string; value: string } => Boolean(item));
 
-  // Unknown phone signals stay invisible, matching the global AutoPulse UX rule.
   if (values.length === 0) return null;
 
   return (
