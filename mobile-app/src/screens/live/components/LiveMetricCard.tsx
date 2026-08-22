@@ -43,23 +43,32 @@ function toDriverQuality(quality: SignalAdvisoryState['quality']): SignalQuality
 export function LiveMetricCard(props: Props) {
   const driverMode = useOptionalDriverMode();
   const signalId = SIGNAL_BY_LABEL[props.label];
+  const driverQuality = toDriverQuality(props.state.quality);
 
   useEffect(() => {
     if (!driverMode || !signalId) return;
-    driverMode.reportSignalQuality(signalId, toDriverQuality(props.state.quality));
-  }, [driverMode, signalId, props.state.quality]);
+    driverMode.reportSignalQuality(signalId, driverQuality);
+    if (typeof props.value === 'number' && Number.isFinite(props.value)) {
+      driverMode.reportSignalObservation({
+        signalId,
+        value: props.value,
+        unit: props.unit,
+        quality: driverQuality,
+        origin: signalId === 'ADAPTER_VOLTAGE' ? 'DEVICE_SENSOR' : 'ECU_DIRECT',
+        observedAt: Date.now(),
+      });
+    }
+    // Deliberately keyed to real observation changes rather than the context
+    // object, whose identity changes when observations are published.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signalId, props.value, props.unit, driverQuality]);
 
-  // Keep legacy/direct rendering behavior intact for tests and any screen that
-  // intentionally renders a metric card outside the DriverModeProvider.
   if (!driverMode || !signalId) {
     return <BaseLiveMetricCard {...props} />;
   }
 
   const resolved = resolveDrivingMode(driverMode.selectedMode, driverMode.availableSignals);
   const selected = resolved.selectedSignals.some(signal => signal.signalId === signalId);
-
-  // Adapter voltage is useful technical evidence but is not a preferred driver-mode
-  // signal today. Keep it visible only in Diagnostic mode.
   const diagnosticAdapter = driverMode.selectedMode === 'DIAGNOSTIC' && signalId === 'ADAPTER_VOLTAGE';
 
   if (!selected && !diagnosticAdapter) {
