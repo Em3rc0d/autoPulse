@@ -4,5 +4,6 @@ export * from './ModeDecisionDimensions';
 export * from './VehicleDocuments';
 export * from './DriverAdvisoryEvaluator';
 export * from './StartupBriefing';
+export * from './StartupAssessment';
 export * from './DrivingModePresentation';
 export * from './DriverVoicePolicy';
