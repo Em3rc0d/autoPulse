@@ -72,6 +72,7 @@ export interface DiagnosticResponse {
   rawText?: string;
   decodedValues: readonly { type: string; value: unknown; unit?: string }[];
   sourceEcus: readonly string[];
+  diagnosticCodes?: readonly string[];
   latencyMs: number;
   errors: readonly string[];
 }
