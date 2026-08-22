@@ -64,6 +64,33 @@ describe('connector-agnostic diagnostics', () => {
 
     expect(snapshot.protocol).toBe('UNKNOWN');
     expect(snapshot.discoveredEcus).toEqual([]);
+    expect(snapshot.ecuCapabilities).toEqual([]);
     expect(snapshot.connector.family).toBe('ELM327_COMPATIBLE');
+  });
+
+  it('derives discovered ECU addresses from persisted ECU capability evidence', () => {
+    const snapshot = createCompatibilitySnapshot({
+      capturedAt: 200,
+      connector: { transport: 'WIFI', family: 'STN_OBDLINK' },
+      connectorCapabilities: {
+        requestKinds: ['OBD_STANDARD'],
+        protocols: ['ISO_15765_CAN'],
+        supportsAutomaticProtocolDiscovery: true,
+        supportsRawDiagnosticRequests: true,
+        supportsMultipleEcus: true,
+      },
+      connectorHealth: { connected: true, reliability: 'GOOD' },
+      protocol: 'ISO_15765_CAN',
+      ecuCapabilities: [{
+        ecu: '7E8',
+        observedRequests: ['0100', '010C'],
+        observedServices: ['41'],
+        observedPids: ['00', '0C'],
+        observations: [],
+      }],
+    });
+
+    expect(snapshot.discoveredEcus).toEqual(['7E8']);
+    expect(snapshot.ecuCapabilities[0].observedPids).toEqual(['00', '0C']);
   });
 });
