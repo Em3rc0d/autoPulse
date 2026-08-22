@@ -1,6 +1,7 @@
 import type {
   DiagnosticConnector,
   DiagnosticExecutionStatus,
+  DiagnosticMonitorStatus,
   DiagnosticRequest,
   DiagnosticRequestKind,
 } from './DiagnosticConnector';
@@ -31,6 +32,7 @@ export interface DiagnosticServiceObservation {
   status: DiagnosticExecutionStatus;
   sourceEcus: readonly string[];
   diagnosticCodes: readonly string[];
+  monitorStatus?: DiagnosticMonitorStatus;
   latencyMs: number;
 }
 
@@ -39,6 +41,7 @@ export interface DiagnosticServiceAvailability {
   observed: boolean;
   sourceEcus: readonly string[];
   diagnosticCodes: readonly string[];
+  monitorStatus?: DiagnosticMonitorStatus;
   evidence: readonly DiagnosticServiceObservation[];
 }
 
@@ -49,54 +52,31 @@ export interface DiagnosticServiceCharacterizationResult {
   observations: readonly DiagnosticServiceObservation[];
 }
 
-/**
- * Safe, generic, read-only OBD probes. These do not change ECU state.
- * Enhanced UDS/vendor probes are intentionally excluded: arbitrary DIDs,
- * routines or sessions must only be used when a vehicle/module profile defines
- * a known-safe contract for the target.
- */
+/** Safe, generic, read-only OBD probes. */
 export const SAFE_STANDARD_SERVICE_PROBES: readonly DiagnosticServiceProbe[] = [
   {
-    id: 'mode01-capabilities',
-    family: 'CURRENT_DATA',
-    payload: '0100',
-    kind: 'OBD_STANDARD',
-    expectedService: '41',
-    expectedPid: '00',
-    timeoutMs: 8000,
+    id: 'mode01-capabilities', family: 'CURRENT_DATA', payload: '0100', kind: 'OBD_STANDARD',
+    expectedService: '41', expectedPid: '00', timeoutMs: 8000,
   },
   {
-    id: 'mode03-stored-dtc',
-    family: 'STORED_DTC',
-    payload: '03',
-    kind: 'OBD_STANDARD',
-    expectedService: '43',
-    timeoutMs: 5000,
+    id: 'mode01-monitor-status', family: 'CURRENT_DATA', payload: '0101', kind: 'OBD_STANDARD',
+    expectedService: '41', expectedPid: '01', timeoutMs: 5000,
   },
   {
-    id: 'mode07-pending-dtc',
-    family: 'PENDING_DTC',
-    payload: '07',
-    kind: 'OBD_STANDARD',
-    expectedService: '47',
-    timeoutMs: 5000,
+    id: 'mode03-stored-dtc', family: 'STORED_DTC', payload: '03', kind: 'OBD_STANDARD',
+    expectedService: '43', timeoutMs: 5000,
   },
   {
-    id: 'mode09-vehicle-information',
-    family: 'VEHICLE_INFORMATION',
-    payload: '0900',
-    kind: 'OBD_STANDARD',
-    expectedService: '49',
-    expectedPid: '00',
-    timeoutMs: 5000,
+    id: 'mode07-pending-dtc', family: 'PENDING_DTC', payload: '07', kind: 'OBD_STANDARD',
+    expectedService: '47', timeoutMs: 5000,
   },
   {
-    id: 'mode0a-permanent-dtc',
-    family: 'PERMANENT_DTC',
-    payload: '0A',
-    kind: 'OBD_STANDARD',
-    expectedService: '4A',
-    timeoutMs: 5000,
+    id: 'mode09-vehicle-information', family: 'VEHICLE_INFORMATION', payload: '0900', kind: 'OBD_STANDARD',
+    expectedService: '49', expectedPid: '00', timeoutMs: 5000,
+  },
+  {
+    id: 'mode0a-permanent-dtc', family: 'PERMANENT_DTC', payload: '0A', kind: 'OBD_STANDARD',
+    expectedService: '4A', timeoutMs: 5000,
   },
 ];
 
@@ -120,7 +100,6 @@ export async function characterizeDiagnosticServices(
 
   for (const probe of probes) {
     if (!capabilities.requestKinds.includes(probe.kind)) continue;
-
     const response = await connector.execute(makeRequest(probe));
     observations.push({
       probeId: probe.id,
@@ -129,6 +108,7 @@ export async function characterizeDiagnosticServices(
       status: response.status,
       sourceEcus: unique(response.sourceEcus),
       diagnosticCodes: unique(response.diagnosticCodes ?? []),
+      monitorStatus: response.monitorStatus,
       latencyMs: response.latencyMs,
     });
   }
@@ -137,27 +117,22 @@ export async function characterizeDiagnosticServices(
   const services: DiagnosticServiceAvailability[] = families.map(family => {
     const evidence = observations.filter(item => item.family === family);
     const successful = evidence.filter(item => item.status === 'SUCCESS');
+    const monitorStatus = successful.map(item => item.monitorStatus).find(Boolean);
     return {
       family,
       observed: successful.length > 0,
       sourceEcus: unique(successful.flatMap(item => item.sourceEcus)),
       diagnosticCodes: unique(successful.flatMap(item => item.diagnosticCodes)),
+      monitorStatus,
       evidence,
     };
   });
 
   const enhancedDiagnosticsAdvertised =
-    capabilities.requestKinds.includes('UDS') ||
-    capabilities.requestKinds.includes('VENDOR_SPECIFIC');
-
+    capabilities.requestKinds.includes('UDS') || capabilities.requestKinds.includes('VENDOR_SPECIFIC');
   const enhancedDiagnosticsProbed = observations.some(item =>
     item.family === 'UDS_ENHANCED' || item.family === 'VENDOR_ENHANCED'
   );
 
-  return {
-    services,
-    enhancedDiagnosticsAdvertised,
-    enhancedDiagnosticsProbed,
-    observations,
-  };
+  return { services, enhancedDiagnosticsAdvertised, enhancedDiagnosticsProbed, observations };
 }
