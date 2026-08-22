@@ -1,4 +1,5 @@
 import React from 'react';
+import { TouchableOpacity } from 'react-native';
 import { fireEvent, render } from '@testing-library/react-native';
 import { DriverModeProvider, useDriverMode } from '../DriverModeContext';
 import { LiveMetricCard } from '../LiveMetricCard';
@@ -30,7 +31,7 @@ const profile = {
 
 function SwitchToDiagnostic() {
   const { setSelectedMode } = useDriverMode();
-  return <button testID="diag" onClick={() => setSelectedMode('DIAGNOSTIC')} /> as any;
+  return <TouchableOpacity testID="diag" onPress={() => setSelectedMode('DIAGNOSTIC')} />;
 }
 
 describe('mode-aware LiveMetricCard', () => {
