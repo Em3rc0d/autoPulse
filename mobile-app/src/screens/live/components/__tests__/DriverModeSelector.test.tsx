@@ -10,8 +10,8 @@ const signals = [
 ];
 
 describe('DriverModeSelector', () => {
-  it('shows all five modes as decision coverage instead of a sensor checklist', () => {
-    const { getByText, getByTestId, queryByText } = render(
+  it('shows only evidence-backed decision dimensions and never renders unknown ones', () => {
+    const { getByText, getByTestId, queryByText, queryByTestId } = render(
       <DriverModeSelector selectedMode="PERFORMANCE" availableSignals={signals} onSelectMode={jest.fn()} />,
     );
 
@@ -25,10 +25,25 @@ describe('DriverModeSelector', () => {
     expect(getByText('Engine state')).toBeTruthy();
     expect(getByText('Thermal state')).toBeTruthy();
     expect(getByText('Power demand')).toBeTruthy();
-    expect(getByText('Air / boost')).toBeTruthy();
-    expect(getByText('Electrical')).toBeTruthy();
+
+    expect(queryByText('Air / boost')).toBeNull();
+    expect(queryByText('Electrical')).toBeNull();
+    expect(queryByText('UNKNOWN')).toBeNull();
+    expect(queryByTestId('decision-dimension-airflow')).toBeNull();
+    expect(queryByTestId('decision-dimension-electrical')).toBeNull();
     expect(queryByText(/Using 4 available signals/)).toBeNull();
     expect(queryByText(/preferred unavailable/)).toBeNull();
+  });
+
+  it('renders no decision summary when a mode has no reliable evidence', () => {
+    const { queryByText } = render(
+      <DriverModeSelector selectedMode="PERFORMANCE" availableSignals={[]} onSelectMode={jest.fn()} />,
+    );
+
+    expect(queryByText('Engine state')).toBeNull();
+    expect(queryByText('Thermal state')).toBeNull();
+    expect(queryByText('UNKNOWN')).toBeNull();
+    expect(queryByText('LIMITED')).toBeNull();
   });
 
   it('emits the selected mode without changing acquisition state', () => {
