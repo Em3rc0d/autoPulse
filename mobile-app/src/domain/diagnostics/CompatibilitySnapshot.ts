@@ -4,6 +4,7 @@ import type {
   DiagnosticConnectorIdentity,
   DiagnosticProtocol,
 } from './DiagnosticConnector';
+import type { EcuCapabilityProfile } from './EcuCapabilityDiscovery';
 
 export interface VehicleDiagnosticIdentity {
   vehicleId?: string;
@@ -27,6 +28,7 @@ export interface CompatibilitySnapshot {
   vehicle: VehicleDiagnosticIdentity;
   protocol: DiagnosticProtocol;
   discoveredEcus: readonly string[];
+  ecuCapabilities: readonly EcuCapabilityProfile[];
   observations: readonly CompatibilityObservation[];
 }
 
@@ -38,11 +40,18 @@ export interface CompatibilitySnapshotInput {
   vehicle?: VehicleDiagnosticIdentity;
   protocol?: DiagnosticProtocol;
   discoveredEcus?: readonly string[];
+  ecuCapabilities?: readonly EcuCapabilityProfile[];
   observations?: readonly CompatibilityObservation[];
 }
 
 /** Stable evidence record for one connector x vehicle characterization run. */
 export function createCompatibilitySnapshot(input: CompatibilitySnapshotInput): CompatibilitySnapshot {
+  const ecuCapabilities = input.ecuCapabilities ?? [];
+  const discoveredEcus = [
+    ...(input.discoveredEcus ?? []),
+    ...ecuCapabilities.map(profile => profile.ecu),
+  ];
+
   return {
     capturedAt: input.capturedAt ?? Date.now(),
     connector: input.connector,
@@ -50,7 +59,8 @@ export function createCompatibilitySnapshot(input: CompatibilitySnapshotInput): 
     connectorHealth: input.connectorHealth,
     vehicle: input.vehicle ?? {},
     protocol: input.protocol ?? 'UNKNOWN',
-    discoveredEcus: [...new Set(input.discoveredEcus ?? [])],
+    discoveredEcus: [...new Set(discoveredEcus)],
+    ecuCapabilities,
     observations: input.observations ?? [],
   };
 }
