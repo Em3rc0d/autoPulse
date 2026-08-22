@@ -16,6 +16,21 @@ export interface DriverIntelligenceInput {
 
 export function evaluateDriverAdvisories(input: DriverIntelligenceInput): DriverAdvisory[] {
   const advisories: DriverAdvisory[] = [];
+  const hasConfirmedDtc = input.health.dtcs.some(dtc => dtc.status === 'CONFIRMED');
+
+  if (input.health.mil === 'ON' && !hasConfirmedDtc) {
+    advisories.push({
+      id: 'health:mil:on',
+      severity: 'WARNING',
+      title: 'CHECK ENGINE',
+      shortMessage: 'Engine warning light reported by ECU',
+      voiceMessage: 'The engine warning light is on. AutoPulse did not read a confirmed diagnostic code yet.',
+      confidence: 'HIGH',
+      evidence: [{ kind: 'SYSTEM', reference: 'MIL', observedValue: true }],
+      startedAt: input.nowMs,
+      cooldownMs: DTC_COOLDOWN_MS,
+    });
+  }
 
   for (const dtc of input.health.dtcs) {
     if (dtc.status === 'PENDING') {
