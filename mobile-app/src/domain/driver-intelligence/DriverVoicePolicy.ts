@@ -1,4 +1,5 @@
 import type { DriverAdvisory, StartupBriefing } from './models';
+import type { StartupAssessmentState } from './StartupAssessment';
 
 export interface DriverVoiceMemory {
   startupSpoken: boolean;
@@ -8,7 +9,7 @@ export interface DriverVoiceMemory {
 export interface DriverVoiceDecision {
   shouldSpeak: boolean;
   message?: string;
-  reason: 'STARTUP' | 'NEW_WARNING' | 'NEW_CRITICAL' | 'COOLDOWN' | 'SILENT' | 'NO_MESSAGE';
+  reason: 'STARTUP' | 'NEW_WARNING' | 'NEW_CRITICAL' | 'COOLDOWN' | 'SILENT' | 'NO_MESSAGE' | 'SCAN_IN_PROGRESS';
 }
 
 export const createDriverVoiceMemory = (): DriverVoiceMemory => ({
@@ -30,6 +31,23 @@ export function decideStartupVoice(
   }
 
   return { shouldSpeak: true, message, reason: 'STARTUP' };
+}
+
+/**
+ * Normal startup voice is gated by assessment maturity. A real warning/critical
+ * advisory can still be spoken immediately through decideAdvisoryVoice while the
+ * deeper diagnostic/cold-start scan continues.
+ */
+export function decideStartupVoiceWhenReady(
+  briefing: StartupBriefing,
+  memory: DriverVoiceMemory,
+  assessment: StartupAssessmentState,
+): DriverVoiceDecision {
+  if (!assessment.canBrief || assessment.scanInProgress) {
+    return { shouldSpeak: false, reason: 'SCAN_IN_PROGRESS' };
+  }
+
+  return decideStartupVoice(briefing, memory);
 }
 
 export function decideAdvisoryVoice(
