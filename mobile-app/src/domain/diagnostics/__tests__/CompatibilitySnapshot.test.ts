@@ -112,6 +112,7 @@ describe('connector-agnostic diagnostics', () => {
         family: 'STORED_DTC',
         observed: true,
         sourceEcus: ['7E8'],
+        diagnosticCodes: ['P0302'],
         evidence: [],
       }],
       enhancedDiagnosticsAdvertised: true,
@@ -120,6 +121,7 @@ describe('connector-agnostic diagnostics', () => {
 
     expect(snapshot.diagnosticServices[0].family).toBe('STORED_DTC');
     expect(snapshot.diagnosticServices[0].observed).toBe(true);
+    expect(snapshot.diagnosticServices[0].diagnosticCodes).toEqual(['P0302']);
     expect(snapshot.enhancedDiagnosticsAdvertised).toBe(true);
     expect(snapshot.enhancedDiagnosticsProbed).toBe(false);
   });
