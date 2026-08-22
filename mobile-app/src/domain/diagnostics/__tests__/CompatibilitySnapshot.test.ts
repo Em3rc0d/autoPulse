@@ -1,0 +1,69 @@
+import {
+  createCompatibilitySnapshot,
+  type DiagnosticConnector,
+  type DiagnosticRequest,
+} from '..';
+
+class FakeConnector implements DiagnosticConnector {
+  async connect() {}
+  async disconnect() {}
+  async identify() {
+    return { transport: 'WIFI' as const, family: 'STN_OBDLINK' as const, model: 'Fake STN' };
+  }
+  async discoverCapabilities() {
+    return {
+      requestKinds: ['OBD_STANDARD', 'UDS'] as const,
+      protocols: ['ISO_15765_CAN', 'UDS'] as const,
+      supportsAutomaticProtocolDiscovery: true,
+      supportsRawDiagnosticRequests: true,
+      supportsMultipleEcus: true,
+    };
+  }
+  async execute(request: DiagnosticRequest) {
+    return {
+      request,
+      status: 'SUCCESS' as const,
+      rawText: '410C1AF8',
+      decodedValues: [{ type: 'ENGINE_RPM', value: 1726, unit: 'rpm' }],
+      sourceEcus: ['7E8'],
+      latencyMs: 24,
+      errors: [],
+    };
+  }
+  health() {
+    return { connected: true, reliability: 'GOOD' as const, lastLatencyMs: 24 };
+  }
+}
+
+describe('connector-agnostic diagnostics', () => {
+  it('allows non-ELM transports to satisfy the same connector contract', async () => {
+    const connector = new FakeConnector();
+    const response = await connector.execute({
+      id: 'rpm', payload: '010C', kind: 'OBD_STANDARD', timeoutMs: 1_000,
+    });
+
+    expect((await connector.identify()).transport).toBe('WIFI');
+    expect(response.decodedValues[0].type).toBe('ENGINE_RPM');
+  });
+
+  it('records connector x vehicle evidence without inventing protocol or ECU support', () => {
+    const snapshot = createCompatibilitySnapshot({
+      capturedAt: 100,
+      connector: { transport: 'BLE', family: 'ELM327_COMPATIBLE' },
+      connectorCapabilities: {
+        requestKinds: ['OBD_STANDARD'],
+        protocols: ['UNKNOWN'],
+        supportsAutomaticProtocolDiscovery: true,
+        supportsRawDiagnosticRequests: true,
+        supportsMultipleEcus: false,
+      },
+      connectorHealth: { connected: true, reliability: 'DEGRADED' },
+      vehicle: { make: 'Renault', model: 'Logan' },
+      discoveredEcus: [],
+    });
+
+    expect(snapshot.protocol).toBe('UNKNOWN');
+    expect(snapshot.discoveredEcus).toEqual([]);
+    expect(snapshot.connector.family).toBe('ELM327_COMPATIBLE');
+  });
+});
