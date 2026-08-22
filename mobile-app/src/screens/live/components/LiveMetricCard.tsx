@@ -6,7 +6,7 @@ import type {
 } from '../../../domain/telemetry/SignalAdvisory';
 import { resolveDrivingMode, type SignalQuality } from '../../../domain/driver-intelligence';
 import { LiveMetricCard as BaseLiveMetricCard } from './BaseLiveMetricCard';
-import { useDriverMode } from './DriverModeContext';
+import { useOptionalDriverMode } from './DriverModeContext';
 
 interface Props {
   label: string;
@@ -41,25 +41,29 @@ function toDriverQuality(quality: SignalAdvisoryState['quality']): SignalQuality
 }
 
 export function LiveMetricCard(props: Props) {
-  const { selectedMode, availableSignals, reportSignalQuality } = useDriverMode();
+  const driverMode = useOptionalDriverMode();
   const signalId = SIGNAL_BY_LABEL[props.label];
 
   useEffect(() => {
-    if (!signalId) return;
-    reportSignalQuality(signalId, toDriverQuality(props.state.quality));
-  }, [signalId, props.state.quality]);
+    if (!driverMode || !signalId) return;
+    driverMode.reportSignalQuality(signalId, toDriverQuality(props.state.quality));
+  }, [driverMode, signalId, props.state.quality]);
 
-  if (signalId) {
-    const resolved = resolveDrivingMode(selectedMode, availableSignals);
-    const selected = resolved.selectedSignals.some(signal => signal.signalId === signalId);
+  // Keep legacy/direct rendering behavior intact for tests and any screen that
+  // intentionally renders a metric card outside the DriverModeProvider.
+  if (!driverMode || !signalId) {
+    return <BaseLiveMetricCard {...props} />;
+  }
 
-    // Adapter voltage is useful technical evidence but is not a preferred driver-mode
-    // signal today. Keep it visible only in Diagnostic mode.
-    const diagnosticAdapter = selectedMode === 'DIAGNOSTIC' && signalId === 'ADAPTER_VOLTAGE';
+  const resolved = resolveDrivingMode(driverMode.selectedMode, driverMode.availableSignals);
+  const selected = resolved.selectedSignals.some(signal => signal.signalId === signalId);
 
-    if (!selected && !diagnosticAdapter) {
-      return null;
-    }
+  // Adapter voltage is useful technical evidence but is not a preferred driver-mode
+  // signal today. Keep it visible only in Diagnostic mode.
+  const diagnosticAdapter = driverMode.selectedMode === 'DIAGNOSTIC' && signalId === 'ADAPTER_VOLTAGE';
+
+  if (!selected && !diagnosticAdapter) {
+    return null;
   }
 
   return <BaseLiveMetricCard {...props} />;
