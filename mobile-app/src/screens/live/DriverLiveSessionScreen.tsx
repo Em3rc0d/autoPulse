@@ -26,14 +26,9 @@ import {
 
 function DriverModePanel() {
   const { selectedMode, setSelectedMode, availableSignals } = useDriverMode();
-
   return (
     <View style={styles.modePanel}>
-      <DriverModeSelector
-        selectedMode={selectedMode}
-        availableSignals={availableSignals}
-        onSelectMode={setSelectedMode}
-      />
+      <DriverModeSelector selectedMode={selectedMode} availableSignals={availableSignals} onSelectMode={setSelectedMode} />
     </View>
   );
 }
@@ -45,9 +40,7 @@ function DriverLiveSessionContent({ advisories }: { advisories: readonly DriverA
       <PhoneSensorBridge />
       <DriverStartupCoordinator diagnosticScanComplete advisories={advisories} />
       <DriverContextualIntelligence />
-      <View style={styles.liveContainer}>
-        <LiveSessionScreen />
-      </View>
+      <View style={styles.liveContainer}><LiveSessionScreen /></View>
     </View>
   );
 }
@@ -89,10 +82,7 @@ export default function DriverLiveSessionScreen() {
           timeoutMs: 3000,
         });
 
-        const snapshot = await characterizeRuntimeCompatibility({
-          connector,
-          vehicle: { vehicleId },
-        });
+        const snapshot = await characterizeRuntimeCompatibility({ connector, vehicle: { vehicleId } });
 
         if (!cancelled) {
           runtimeCompatibilityStore.set(sessionId, snapshot);
@@ -104,23 +94,14 @@ export default function DriverLiveSessionScreen() {
 
           const documents = vehicleId ? await loadVehicleDocuments(vehicleId) : [];
           const health = vehicleHealthFromCompatibility(snapshot);
-          const nextAdvisories = evaluateDriverAdvisories({
-            health,
-            documents,
-            nowMs: Date.now(),
-          });
+          const nextAdvisories = evaluateDriverAdvisories({ health, documents, nowMs: Date.now() });
           setAdvisories(nextAdvisories);
 
-          // Real warnings may interrupt the deeper startup observation immediately.
-          // INFO/NOTICE remain silent by default. The complete startup briefing is
-          // spoken later by DriverStartupCoordinator when engine evidence matures.
           for (const advisory of nextAdvisories) {
             const decision = decideAdvisoryVoice(advisory, voiceMemory.current, Date.now());
             if (!decision.shouldSpeak || !decision.message) continue;
             const spoken = await speakDriverMessage(decision.message);
-            if (spoken) {
-              voiceMemory.current = markAdvisorySpoken(voiceMemory.current, advisory.id, Date.now());
-            }
+            if (spoken) voiceMemory.current = markAdvisorySpoken(voiceMemory.current, advisory.id, Date.now());
           }
         }
       } catch (error) {
@@ -135,6 +116,11 @@ export default function DriverLiveSessionScreen() {
           });
         } catch (error) {
           console.warn('[DriverLiveSession] Could not restore header preference:', error);
+        } finally {
+          // RealObdController.disconnect() only disposes this controller's local
+          // accumulator/monitor. The retained BLE device connection remains alive
+          // for LiveSessionScreen, which creates the sole active polling monitor.
+          controller.disconnect();
         }
 
         if (!cancelled) setCharacterizationComplete(true);
@@ -142,9 +128,7 @@ export default function DriverLiveSessionScreen() {
     };
 
     run();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [adapterMode, connectionHandleId, sessionId, vehicleId]);
 
   if (!characterizationComplete) {
@@ -152,23 +136,19 @@ export default function DriverLiveSessionScreen() {
       <View style={styles.characterizationContainer}>
         <ActivityIndicator size="large" />
         <Text style={styles.characterizationTitle}>Checking vehicle…</Text>
-        <Text style={styles.characterizationText}>
-          AutoPulse is running a read-only compatibility and diagnostic scan.
-        </Text>
+        <Text style={styles.characterizationText}>AutoPulse is running a read-only compatibility and diagnostic scan.</Text>
       </View>
     );
   }
 
   const visibleAdvisory = advisories[0];
-
   return (
     <View style={styles.container}>
       {visibleAdvisory ? (
         <View style={[
           styles.advisoryBanner,
           visibleAdvisory.severity === 'WARNING' || visibleAdvisory.severity === 'CRITICAL'
-            ? styles.advisoryBannerWarning
-            : styles.advisoryBannerNotice,
+            ? styles.advisoryBannerWarning : styles.advisoryBannerNotice,
         ]}>
           <Text style={styles.advisoryTitle}>{visibleAdvisory.title}</Text>
           <Text style={styles.advisoryMessage}>{visibleAdvisory.shortMessage}</Text>
@@ -182,64 +162,15 @@ export default function DriverLiveSessionScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#0e1417',
-  },
-  modePanel: {
-    backgroundColor: '#0e1417',
-    paddingHorizontal: 16,
-    paddingTop: 14,
-  },
-  liveContainer: {
-    flex: 1,
-  },
-  characterizationContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 28,
-    backgroundColor: '#0e1417',
-  },
-  characterizationTitle: {
-    marginTop: 18,
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#f8fafc',
-  },
-  characterizationText: {
-    marginTop: 8,
-    textAlign: 'center',
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#94a3b8',
-  },
-  advisoryBanner: {
-    marginHorizontal: 16,
-    marginTop: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  advisoryBannerWarning: {
-    backgroundColor: 'rgba(239, 68, 68, 0.12)',
-    borderColor: 'rgba(239, 68, 68, 0.55)',
-  },
-  advisoryBannerNotice: {
-    backgroundColor: 'rgba(245, 158, 11, 0.10)',
-    borderColor: 'rgba(245, 158, 11, 0.45)',
-  },
-  advisoryTitle: {
-    color: '#f8fafc',
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  advisoryMessage: {
-    marginTop: 3,
-    color: '#e2e8f0',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  container: { flex: 1, backgroundColor: '#0e1417' },
+  modePanel: { backgroundColor: '#0e1417', paddingHorizontal: 16, paddingTop: 14 },
+  liveContainer: { flex: 1 },
+  characterizationContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: '#0e1417' },
+  characterizationTitle: { marginTop: 18, fontSize: 22, fontWeight: '700', color: '#f8fafc' },
+  characterizationText: { marginTop: 8, textAlign: 'center', fontSize: 14, lineHeight: 20, color: '#94a3b8' },
+  advisoryBanner: { marginHorizontal: 16, marginTop: 10, borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10 },
+  advisoryBannerWarning: { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.55)' },
+  advisoryBannerNotice: { backgroundColor: 'rgba(245, 158, 11, 0.10)', borderColor: 'rgba(245, 158, 11, 0.45)' },
+  advisoryTitle: { color: '#f8fafc', fontSize: 12, fontWeight: '800', letterSpacing: 0.8 },
+  advisoryMessage: { marginTop: 3, color: '#e2e8f0', fontSize: 14, fontWeight: '600' },
 });
