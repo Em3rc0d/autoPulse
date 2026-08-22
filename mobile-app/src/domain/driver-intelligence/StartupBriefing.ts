@@ -6,13 +6,15 @@ export function buildStartupBriefing(advisories: readonly DriverAdvisory[]): Sta
 
   const headline = warnings.length > 0
     ? `${warnings.length} important warning${warnings.length === 1 ? '' : 's'}`
-    : 'Vehicle ready';
+    : 'Startup scan complete';
 
   const spoken = active
     .filter(item => item.voiceMessage)
     .slice(0, 3)
     .map(item => item.voiceMessage as string);
 
+  // "AutoPulse ready" means the app's startup assessment is mature enough to
+  // brief the driver; it is deliberately not a claim that the entire vehicle is healthy.
   const voiceMessage = ['AutoPulse ready.', ...spoken].join(' ');
 
   return {
