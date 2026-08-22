@@ -65,6 +65,9 @@ describe('connector-agnostic diagnostics', () => {
     expect(snapshot.protocol).toBe('UNKNOWN');
     expect(snapshot.discoveredEcus).toEqual([]);
     expect(snapshot.ecuCapabilities).toEqual([]);
+    expect(snapshot.diagnosticServices).toEqual([]);
+    expect(snapshot.enhancedDiagnosticsAdvertised).toBe(false);
+    expect(snapshot.enhancedDiagnosticsProbed).toBe(false);
     expect(snapshot.connector.family).toBe('ELM327_COMPATIBLE');
   });
 
@@ -92,5 +95,32 @@ describe('connector-agnostic diagnostics', () => {
 
     expect(snapshot.discoveredEcus).toEqual(['7E8']);
     expect(snapshot.ecuCapabilities[0].observedPids).toEqual(['00', '0C']);
+  });
+
+  it('persists observed service support separately from advertised enhanced capability', () => {
+    const snapshot = createCompatibilitySnapshot({
+      connector: { transport: 'USB', family: 'J2534' },
+      connectorCapabilities: {
+        requestKinds: ['OBD_STANDARD', 'UDS'],
+        protocols: ['ISO_15765_CAN', 'UDS'],
+        supportsAutomaticProtocolDiscovery: false,
+        supportsRawDiagnosticRequests: true,
+        supportsMultipleEcus: true,
+      },
+      connectorHealth: { connected: true, reliability: 'GOOD' },
+      diagnosticServices: [{
+        family: 'STORED_DTC',
+        observed: true,
+        sourceEcus: ['7E8'],
+        evidence: [],
+      }],
+      enhancedDiagnosticsAdvertised: true,
+      enhancedDiagnosticsProbed: false,
+    });
+
+    expect(snapshot.diagnosticServices[0].family).toBe('STORED_DTC');
+    expect(snapshot.diagnosticServices[0].observed).toBe(true);
+    expect(snapshot.enhancedDiagnosticsAdvertised).toBe(true);
+    expect(snapshot.enhancedDiagnosticsProbed).toBe(false);
   });
 });
