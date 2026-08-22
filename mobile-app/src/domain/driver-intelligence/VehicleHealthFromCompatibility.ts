@@ -18,11 +18,6 @@ export function describeStandardDtc(code: string): string | undefined {
   return undefined;
 }
 
-/**
- * Converts only directly observed standard diagnostic-code evidence into the
- * Driver Intelligence health model. Missing MIL/readiness/freeze-frame data is
- * preserved as unknown and therefore remains absent from driver UI.
- */
 export function vehicleHealthFromCompatibility(snapshot: CompatibilitySnapshot): VehicleHealthState {
   const dtcs: DiagnosticTroubleCodeState[] = [];
   const seen = new Set<string>();
@@ -45,8 +40,13 @@ export function vehicleHealthFromCompatibility(snapshot: CompatibilitySnapshot):
     }
   }
 
+  const monitorStatus = snapshot.diagnosticServices
+    .filter(service => service.family === 'CURRENT_DATA' && service.observed)
+    .map(service => service.monitorStatus)
+    .find(Boolean);
+
   return {
-    mil: 'UNKNOWN',
+    mil: monitorStatus ? (monitorStatus.milOn ? 'ON' : 'OFF') : 'UNKNOWN',
     dtcs,
     freezeFrameAvailable: false,
   };
