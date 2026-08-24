@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useVehicle } from '../../infrastructure/hooks/useVehicle';
 import { useLocalContext } from '../../infrastructure/hooks/useLocalContext';
 import { useCapabilitySnapshot } from '../../infrastructure/hooks/useCapabilitySnapshot';
+import { presentObdProtocol, presentSourceEcu } from '../../application/diagnostics/ObdProtocolPresentation';
 
 type CapabilityTone = 'available' | 'observed' | 'pending' | 'unavailable' | 'unknown';
 
@@ -40,6 +41,12 @@ export function getCapabilityGroup(requestId?: string): string {
     default:
       return 'Engine';
   }
+}
+
+export function compactTechnicalIdentifier(value?: string | null): string {
+  if (!value) return 'Not identified';
+  if (value.length <= 18) return value;
+  return `${value.slice(0, 8)}…${value.slice(-4)}`;
 }
 
 export default function VehicleCapabilitiesScreen() {
@@ -90,12 +97,17 @@ export default function VehicleCapabilitiesScreen() {
       );
     }
 
+    const protocolPresentation = presentObdProtocol(snapshot.protocolCode);
+
     return (
       <ScrollView style={styles.scrollContainer} contentContainerStyle={{ paddingBottom: 24 }}>
         <View style={styles.snapshotInfo}>
           <Text style={styles.snapshotInfoText}>Discovered: {new Date(snapshot.discoveredAt).toLocaleString()}</Text>
-          <Text style={styles.snapshotInfoText}>Protocol: {snapshot.protocolCode}</Text>
-          <Text style={styles.snapshotInfoText}>Adapter: {snapshot.adapterInstanceId}</Text>
+          <Text style={styles.snapshotInfoText}>Protocol: {protocolPresentation.label}</Text>
+          {protocolPresentation.detail ? (
+            <Text style={styles.snapshotInfoDetail}>{protocolPresentation.detail}</Text>
+          ) : null}
+          <Text style={styles.snapshotInfoText}>Adapter instance: {compactTechnicalIdentifier(snapshot.adapterInstanceId)}</Text>
         </View>
 
         {parameters.length === 0 ? (
@@ -131,8 +143,9 @@ export default function VehicleCapabilitiesScreen() {
                       </View>
                       <Text style={styles.paramExplanation}>{presentation.explanation}</Text>
                       <Text style={styles.paramPid}>
-                        Mode {fallbackService.toString(16).padStart(2, '0').toUpperCase()} PID {fallbackPid.toString(16).padStart(2, '0').toUpperCase()} (ECU {param.ecuAddress.toString(16).toUpperCase()})
+                        Mode {fallbackService.toString(16).padStart(2, '0').toUpperCase()} · PID {fallbackPid.toString(16).padStart(2, '0').toUpperCase()}
                       </Text>
+                      <Text style={styles.paramSource}>Source ECU: {presentSourceEcu(param.ecuAddress)}</Text>
 
                       {param.errorCode && (
                         <Text style={styles.paramError}>Error Code: {param.errorCode}</Text>
@@ -200,6 +213,7 @@ const styles = StyleSheet.create({
     borderColor: '#374151'
   },
   snapshotInfoText: { color: '#9ca3af', fontSize: 13, fontFamily: 'SpaceMono_400Regular', marginBottom: 4 },
+  snapshotInfoDetail: { color: '#6b7280', fontSize: 12, fontFamily: 'Inter_400Regular', marginBottom: 6 },
 
   groupSection: { marginBottom: 12 },
   groupTitle: {
@@ -218,6 +232,7 @@ const styles = StyleSheet.create({
   paramName: { color: '#e5e7eb', fontSize: 15, fontFamily: 'Inter_500Medium', flex: 1, marginRight: 8 },
   paramExplanation: { color: '#9ca3af', fontSize: 13, fontFamily: 'Inter_400Regular', marginBottom: 8 },
   paramPid: { color: '#6b7280', fontSize: 12, fontFamily: 'SpaceMono_400Regular' },
+  paramSource: { color: '#6b7280', fontSize: 12, fontFamily: 'SpaceMono_400Regular', marginTop: 3 },
   paramError: { color: '#ef4444', fontSize: 12, fontFamily: 'SpaceMono_400Regular', marginTop: 4 },
 
   statusBadge: {

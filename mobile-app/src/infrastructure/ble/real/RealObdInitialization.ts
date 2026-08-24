@@ -63,10 +63,46 @@ export class RealObdInitialization {
     return result;
   }
 
+  private normalizedText(result: CommandResult): string {
+    return (result.normalizedResponse?.normalizedText || result.rawResponse?.accumulatedText || '')
+      .replace(/>/g, '')
+      .trim();
+  }
+
   private rememberIdentity(snapshot: CapabilitySnapshot, key: string, result: CommandResult) {
-    const text = result.normalizedResponse?.normalizedText || result.rawResponse?.accumulatedText || '';
+    const text = this.normalizedText(result);
     if (text && result.status !== 'ELM_ERROR' && result.status !== 'TIMEOUT') {
-      snapshot.adapterIdentity[key] = text.replace(/>/g, '').trim();
+      snapshot.adapterIdentity[key] = text;
+    }
+  }
+
+  private isResolvedProtocolNumber(value: string): boolean {
+    const upper = value.toUpperCase();
+    return Boolean(upper) && upper !== '0' && upper !== 'A0';
+  }
+
+  private isResolvedProtocolName(value: string): boolean {
+    const upper = value.toUpperCase();
+    if (!upper || upper === 'AUTO' || upper === 'AUTOMATIC' || upper === 'UNKNOWN') return false;
+    return true;
+  }
+
+  private async refreshResolvedProtocol(snapshot: CapabilitySnapshot): Promise<void> {
+    const protocolNameResult = await this.executeAndRecord(snapshot, 'ATDP', 5000, 'ELM_AT');
+    this.rememberIdentity(snapshot, 'protocolName', protocolNameResult);
+
+    const protocolNumberResult = await this.executeAndRecord(snapshot, 'ATDPN', 5000, 'ELM_AT');
+    this.rememberIdentity(snapshot, 'protocolNumber', protocolNumberResult);
+
+    const protocolNumber = this.normalizedText(protocolNumberResult);
+    if (this.isSuccessful(protocolNumberResult) && this.isResolvedProtocolNumber(protocolNumber)) {
+      snapshot.protocol = protocolNumber;
+      return;
+    }
+
+    const protocolName = this.normalizedText(protocolNameResult);
+    if (this.isSuccessful(protocolNameResult) && this.isResolvedProtocolName(protocolName)) {
+      snapshot.protocol = protocolName;
     }
   }
 
@@ -99,14 +135,18 @@ export class RealObdInitialization {
       this.rememberIdentity(snapshot, 'deviceDescription', await this.executeAndRecord(snapshot, 'AT@1', 3000, 'ELM_AT'));
       this.rememberIdentity(snapshot, 'supplyVoltage', await this.executeAndRecord(snapshot, 'ATRV', 3000, 'ELM_AT'));
 
-      // 3. Detect vehicle protocol
+      // 3. Start automatic vehicle-protocol negotiation. ATDPN can legitimately
+      // return A0 before the first real OBD exchange, so this is only provisional
+      // evidence. We refresh it after the ECU has actually answered.
       this.onProgress(3);
       await this.executeAndRecord(snapshot, 'ATSP0', 3000, 'ELM_AT');
-      const resProtocolName = await this.executeAndRecord(snapshot, 'ATDP', 5000, 'ELM_AT');
-      this.rememberIdentity(snapshot, 'protocolName', resProtocolName);
-      const resProtocol = await this.executeAndRecord(snapshot, 'ATDPN', 5000, 'ELM_AT');
-      if (resProtocol.status === 'SUCCESS_RAW' || resProtocol.status === 'SUCCESS_DECODED') {
-        snapshot.protocol = resProtocol.normalizedResponse?.normalizedText || null;
+      const provisionalProtocolName = await this.executeAndRecord(snapshot, 'ATDP', 5000, 'ELM_AT');
+      this.rememberIdentity(snapshot, 'protocolNameProvisional', provisionalProtocolName);
+      const provisionalProtocolNumber = await this.executeAndRecord(snapshot, 'ATDPN', 5000, 'ELM_AT');
+      this.rememberIdentity(snapshot, 'protocolNumberProvisional', provisionalProtocolNumber);
+      const provisionalNumber = this.normalizedText(provisionalProtocolNumber);
+      if (this.isSuccessful(provisionalProtocolNumber) && this.isResolvedProtocolNumber(provisionalNumber)) {
+        snapshot.protocol = provisionalNumber;
       }
 
       // 4. Discover the vehicle's advertised Mode 01 surface progressively.
@@ -134,6 +174,9 @@ export class RealObdInitialization {
       }
 
       if (this.isSuccessful(firstCapabilityResult)) {
+        // The bus has now answered. Re-query protocol evidence so A0 never gets
+        // persisted as though it were the resolved vehicle protocol.
+        await this.refreshResolvedProtocol(snapshot);
         await this.discoverMode01Capabilities(snapshot, firstCapabilityResult);
       } else {
         snapshot.failureReason =

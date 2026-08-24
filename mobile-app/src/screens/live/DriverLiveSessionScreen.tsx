@@ -37,11 +37,17 @@ function DriverModePanel() {
   );
 }
 
-function DriverLiveSessionContent({ advisories }: { advisories: readonly DriverAdvisory[] }) {
+function DriverLiveSessionContent({
+  advisories,
+  vehicleId,
+}: {
+  advisories: readonly DriverAdvisory[];
+  vehicleId?: string;
+}) {
   return (
     <View style={styles.container}>
       <DriverModePanel />
-      <PhoneSensorBridge />
+      <PhoneSensorBridge vehicleId={vehicleId} />
       <DriverStartupCoordinator diagnosticScanComplete advisories={advisories} />
       <DriverContextualIntelligence />
       <View style={styles.liveContainer}><LiveSessionScreen /></View>
@@ -172,7 +178,7 @@ export default function DriverLiveSessionScreen() {
         </View>
       ) : null}
       <DriverModeProvider supportedPids={supportedPids}>
-        <DriverLiveSessionContent advisories={advisories} />
+        <DriverLiveSessionContent advisories={advisories} vehicleId={vehicleId} />
       </DriverModeProvider>
     </View>
   );
