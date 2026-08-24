@@ -67,7 +67,11 @@ export class RealLiveSessionController {
   ) {
     if (this.currentState !== 'CREATED') return;
     this.currentState = 'ACTIVE';
-    this.onSessionTerminal = onSessionTerminal ?? null;
+    this.onSessionTerminal = onSessionTerminal ?? (outcome => {
+      if (outcome.state === 'INTERRUPTED') {
+        onRecordingError(`SESSION_INTERRUPTED:${outcome.reason ?? 'UNKNOWN'}`);
+      }
+    });
 
     const conn = activeBleController.getConnection(this.connectionHandleId);
     if (!conn) {
