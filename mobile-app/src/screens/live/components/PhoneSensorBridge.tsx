@@ -31,6 +31,19 @@ export function altitudeSignalQuality(accuracy?: number): 'VALID' | 'DEGRADED' {
     : 'DEGRADED';
 }
 
+export function shouldPresentAltitude(
+  altitude?: number,
+  altitudeAccuracy?: number,
+): boolean {
+  if (typeof altitude !== 'number' || !Number.isFinite(altitude)) return false;
+
+  // Some providers emit a transient zero while vertical accuracy is still
+  // unresolved. Do not present that as literal sea level. A real zero-altitude
+  // fix becomes displayable as soon as the provider supplies accuracy evidence.
+  if (Math.abs(altitude) <= 0.5 && altitudeAccuracy === undefined) return false;
+  return true;
+}
+
 export function PhoneSensorBridge({ vehicleId }: Props) {
   const { selectedMode, reportDeviceSignal, reportSignalObservation } = useDriverMode();
   const sensors = usePhoneDrivingSensors(selectedMode === 'OFF_ROAD');
@@ -80,6 +93,7 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
 
   const calibratedPitch = applyOffRoadCalibration(sensors.pitch, calibration?.pitchZero);
   const calibratedRoll = applyOffRoadCalibration(sensors.roll, calibration?.rollZero);
+  const altitudeReady = shouldPresentAltitude(sensors.altitude, sensors.altitudeAccuracy);
 
   useEffect(() => {
     const now = Date.now();
@@ -101,7 +115,9 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
       });
     };
 
-    publish('ALTITUDE', sensors.altitude, 'm', altitudeSignalQuality(sensors.altitudeAccuracy));
+    if (altitudeReady) {
+      publish('ALTITUDE', sensors.altitude, 'm', altitudeSignalQuality(sensors.altitudeAccuracy));
+    }
     publish('HEADING', sensors.heading, '°');
 
     // Raw phone orientation is observable, but it is not vehicle attitude.
@@ -118,6 +134,7 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
     // only when an actual sensor/calibration value changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    altitudeReady,
     sensors.altitude,
     sensors.altitudeAccuracy,
     sensors.pitch,
@@ -128,7 +145,8 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
     calibration?.calibratedAt,
   ]);
 
-  const canCalibrate = Number.isFinite(sensors.pitch) && Number.isFinite(sensors.roll);
+  const canCalibrate = typeof sensors.pitch === 'number' && Number.isFinite(sensors.pitch)
+    && typeof sensors.roll === 'number' && Number.isFinite(sensors.roll);
 
   const handleCalibrate = async () => {
     if (!canCalibrate || sensors.pitch === undefined || sensors.roll === undefined) return;
@@ -165,10 +183,14 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
       },
       {
         label: 'ALTITUDE',
-        value: sensors.altitude !== undefined ? `${Math.round(sensors.altitude)} m` : 'Acquiring…',
-        meta: sensors.altitudeAccuracy !== undefined
-          ? `Phone GPS · ±${Math.round(sensors.altitudeAccuracy)} m`
-          : 'Phone GPS · accuracy pending',
+        value: altitudeReady && sensors.altitude !== undefined
+          ? `${Math.round(sensors.altitude)} m`
+          : 'Acquiring…',
+        meta: altitudeReady
+          ? sensors.altitudeAccuracy !== undefined
+            ? `Phone GPS · ±${Math.round(sensors.altitudeAccuracy)} m`
+            : 'Phone GPS · accuracy degraded'
+          : 'Phone GPS · waiting for a usable fix',
       },
       {
         label: 'HEADING',
@@ -176,7 +198,7 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
         meta: 'Phone sensor',
       },
     ];
-  }, [calibration, calibratedPitch, calibratedRoll, sensors.altitude, sensors.altitudeAccuracy, sensors.heading, sensors.pitch, sensors.roll]);
+  }, [altitudeReady, calibration, calibratedPitch, calibratedRoll, sensors.altitude, sensors.altitudeAccuracy, sensors.heading, sensors.pitch, sensors.roll]);
 
   if (selectedMode !== 'OFF_ROAD') return null;
 
