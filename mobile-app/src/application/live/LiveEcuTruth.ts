@@ -19,6 +19,12 @@ export interface LiveEcuTruthPresentation {
 }
 
 export const DEFAULT_FIRST_ECU_SAMPLE_DELAY_MS = 90_000;
+const INTERRUPTED_PREFIX = 'SESSION_INTERRUPTED:';
+
+function interruptionDetail(sessionError: string): string {
+  const reason = sessionError.slice(INTERRUPTED_PREFIX.length).trim() || 'UNKNOWN';
+  return `The Live session ended unexpectedly (${reason.replace(/_/g, ' ')}). Persisted evidence remains available in Session Summary.`;
+}
 
 export function deriveLiveEcuTruth({
   hasValidEcuSample,
@@ -27,10 +33,11 @@ export function deriveLiveEcuTruth({
   delayedAfterMs = DEFAULT_FIRST_ECU_SAMPLE_DELAY_MS,
 }: LiveEcuTruthInput): LiveEcuTruthPresentation {
   if (sessionError) {
+    const interrupted = sessionError.startsWith(INTERRUPTED_PREFIX);
     return {
       state: 'RECORDING_DEGRADED',
-      label: 'RECORDING DEGRADED',
-      detail: sessionError,
+      label: interrupted ? 'SESSION INTERRUPTED' : 'RECORDING DEGRADED',
+      detail: interrupted ? interruptionDetail(sessionError) : sessionError,
       tone: 'error',
     };
   }
