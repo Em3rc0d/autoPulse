@@ -20,6 +20,11 @@ import { BinaryObd2V3Codec } from '../../infrastructure/telemetry-codecs/binary-
 
 export type RecordingStatus = 'NOT_STARTED' | 'RECORDING' | 'FLUSHING' | 'DEGRADED' | 'FAILED' | 'CLOSED';
 
+export interface LiveSessionTerminalOutcome {
+  state: 'COMPLETED' | 'INTERRUPTED';
+  reason?: string;
+}
+
 /**
  * Release-1 lifecycle policy:
  * - Live acquisition is foreground-only.
@@ -44,6 +49,7 @@ export class RealLiveSessionController {
   private bleDisconnectSubscription: Subscription | null = null;
 
   private terminalPromise: Promise<void> | null = null;
+  private onSessionTerminal: ((outcome: LiveSessionTerminalOutcome) => void) | null = null;
 
   constructor(
     private sessionRepo: LiveSessionRepository,
@@ -56,10 +62,12 @@ export class RealLiveSessionController {
 
   public async start(
     onUiUpdate: (result: CommandResult) => void,
-    onRecordingError: (err: string) => void
+    onRecordingError: (err: string) => void,
+    onSessionTerminal?: (outcome: LiveSessionTerminalOutcome) => void
   ) {
     if (this.currentState !== 'CREATED') return;
     this.currentState = 'ACTIVE';
+    this.onSessionTerminal = onSessionTerminal ?? null;
 
     const conn = activeBleController.getConnection(this.connectionHandleId);
     if (!conn) {
@@ -204,6 +212,7 @@ export class RealLiveSessionController {
     if (mode === 'NORMAL' && !this.commitQueue?.getHasFailed() && !drainTimedOut) {
       await this.sessionRepo.completeSession(this.workspaceId, this.sessionId);
       this.currentState = 'COMPLETED';
+      this.onSessionTerminal?.({ state: 'COMPLETED' });
     } else {
       const failReason = drainTimedOut ? 'TELEMETRY_DRAIN_TIMEOUT' : (reason || 'TELEMETRY_PERSISTENCE_FAILED');
       try {
@@ -212,6 +221,7 @@ export class RealLiveSessionController {
         console.error('Failed to record session interruption', err);
       }
       this.currentState = 'INTERRUPTED';
+      this.onSessionTerminal?.({ state: 'INTERRUPTED', reason: failReason });
     }
   }
 
