@@ -1,4 +1,5 @@
 import 'react-native-gesture-handler';
+import './src/infrastructure/runtime/TextEncodingPolyfill';
 import React, { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar, View } from 'react-native';
