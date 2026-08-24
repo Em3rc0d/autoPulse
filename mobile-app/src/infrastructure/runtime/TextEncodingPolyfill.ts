@@ -1,6 +1,6 @@
-type TextEncodingGlobal = typeof globalThis & {
-  TextEncoder?: new () => { encode(input?: string): Uint8Array };
-  TextDecoder?: new () => { decode(input?: ArrayBuffer | ArrayBufferView): string };
+type TextEncodingGlobal = {
+  TextEncoder?: any;
+  TextDecoder?: any;
 };
 
 function pushCodePointUtf8(bytes: number[], codePoint: number) {
@@ -143,7 +143,7 @@ class AutoPulseTextDecoder {
   }
 }
 
-export function installTextEncodingPolyfill(target: TextEncodingGlobal = globalThis as TextEncodingGlobal) {
+export function installTextEncodingPolyfill(target: TextEncodingGlobal = globalThis as unknown as TextEncodingGlobal) {
   if (typeof target.TextEncoder !== 'function') {
     target.TextEncoder = AutoPulseTextEncoder;
   }
