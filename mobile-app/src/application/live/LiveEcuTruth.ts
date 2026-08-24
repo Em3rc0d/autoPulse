@@ -64,7 +64,7 @@ export function deriveLiveEcuTruth({
 export function commandResultContainsValidEcuSample(result: {
   status?: string | null;
   request?: { family?: string | null } | null;
-  decodedValues?: readonly Array<{ value?: unknown }> | null;
+  decodedValues?: ReadonlyArray<{ value?: unknown }> | null;
 }): boolean {
   if (result.status !== 'SUCCESS_DECODED') return false;
   if (!result.request?.family?.startsWith('OBD_MODE_')) return false;
