@@ -61,10 +61,12 @@ export function resolveModeDecisionDimensions(
     const availableEvidence = definition.evidenceSignals
       .map(signalId => byId.get(signalId))
       .filter((signal): signal is AvailableSignal => Boolean(signal));
+    const validEvidenceCount = availableEvidence.filter(signal => signal.quality === 'VALID').length;
 
     const coverage: DecisionDimensionCoverage = availableEvidence.length === 0
       ? 'UNKNOWN'
-      : availableEvidence.length >= definition.evidenceSignals.length
+      : availableEvidence.length >= definition.evidenceSignals.length &&
+          validEvidenceCount >= definition.evidenceSignals.length
         ? 'COVERED'
         : availableEvidence.length >= definition.minimumSignals
           ? 'PARTIAL'
