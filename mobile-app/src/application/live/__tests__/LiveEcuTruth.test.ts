@@ -27,6 +27,19 @@ describe('LiveEcuTruth', () => {
     }).state).toBe('RECORDING_DEGRADED');
   });
 
+  it('labels terminal interruption explicitly and points to persisted evidence', () => {
+    const state = deriveLiveEcuTruth({
+      hasValidEcuSample: true,
+      elapsedMs: 10_000,
+      sessionError: 'SESSION_INTERRUPTED:DEVICE_DISCONNECTED',
+    });
+
+    expect(state.label).toBe('SESSION INTERRUPTED');
+    expect(state.detail).toContain('DEVICE DISCONNECTED');
+    expect(state.detail).toContain('Session Summary');
+    expect(state.tone).toBe('error');
+  });
+
   it('accepts decoded OBD observations as ECU samples', () => {
     expect(commandResultContainsValidEcuSample({
       status: 'SUCCESS_DECODED',
