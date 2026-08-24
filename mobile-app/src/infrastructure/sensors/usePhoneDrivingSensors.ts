@@ -4,9 +4,13 @@ import * as Location from 'expo-location';
 
 export interface PhoneDrivingSensors {
   altitude?: number;
+  altitudeAccuracy?: number;
+  horizontalAccuracy?: number;
   pitch?: number;
   roll?: number;
   heading?: number;
+  locationObservedAt?: number;
+  motionObservedAt?: number;
   locationAvailable: boolean;
   motionAvailable: boolean;
 }
@@ -47,7 +51,10 @@ export function usePhoneDrivingSensors(enabled: boolean): PhoneDrivingSensors {
               setState(current => ({
                 ...current,
                 altitude: location.coords.altitude ?? current.altitude,
+                altitudeAccuracy: location.coords.altitudeAccuracy ?? current.altitudeAccuracy,
+                horizontalAccuracy: location.coords.accuracy ?? current.horizontalAccuracy,
                 heading: location.coords.heading ?? current.heading,
+                locationObservedAt: location.timestamp,
                 locationAvailable: true,
               }));
             },
@@ -67,6 +74,7 @@ export function usePhoneDrivingSensors(enabled: boolean): PhoneDrivingSensors {
               pitch: event.pitch,
               roll: event.roll,
               heading: Number.isFinite(event.heading) ? event.heading : current.heading,
+              motionObservedAt: event.timestamp || Date.now(),
               motionAvailable: true,
             }));
           });
