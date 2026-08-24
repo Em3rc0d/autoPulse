@@ -20,6 +20,10 @@ import { TelemetryBlockRepository } from '../../infrastructure/database/product/
 import { RealLiveSessionController } from '../../application/live/RealLiveSessionController';
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
+import {
+  commandResultContainsValidEcuSample,
+  deriveLiveEcuTruth,
+} from '../../application/live/LiveEcuTruth';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -33,6 +37,8 @@ export default function LiveSessionScreen() {
 
   const [secondsElapsed, setSecondsElapsed] = useState(0);
   const [dataPoints, setDataPoints] = useState<number[]>([]); // For the graph
+  const [hasValidEcuSample, setHasValidEcuSample] = useState(adapterMode !== 'REAL_BLE');
+  const [firstEcuSampleAt, setFirstEcuSampleAt] = useState<number | null>(adapterMode !== 'REAL_BLE' ? Date.now() : null);
 
   const useGeneric = AppConfig.GENERIC_ADVISORY_PROFILES_ENABLED;
 
@@ -78,17 +84,18 @@ export default function LiveSessionScreen() {
           }
         }
 
-        // Start the foreground service after permissions are handled
+        // The foreground service describes the transport/session truth. It must
+        // not claim that ECU telemetry is already flowing before the first sample.
         try {
           ReactNativeForegroundService.start({
             id: 1234,
-            title: "AutoPulse",
-            message: "Conexión OBD2 activa leyendo telemetría...",
-            icon: "ic_launcher",
+            title: 'AutoPulse',
+            message: 'OBD2 session active. Waiting for or reading vehicle data…',
+            icon: 'ic_launcher',
             button: false,
             button2: false,
-            setOnlyAlertOnce: "true",
-            color: "#000000",
+            setOnlyAlertOnce: 'true',
+            color: '#000000',
           });
         } catch (err) {
           console.warn('Failed to start foreground service', err);
@@ -104,8 +111,6 @@ export default function LiveSessionScreen() {
     };
   }, []);
 
-
-
   // Timer
   useEffect(() => {
     const timer = setInterval(() => {
@@ -119,7 +124,7 @@ export default function LiveSessionScreen() {
     if (adapterMode !== 'VIRTUAL_PREVIEW') return;
 
     if (dataPoints.length === 0) {
-       setDataPoints([800]);
+      setDataPoints([800]);
     }
 
     const simulator = setInterval(() => {
@@ -129,29 +134,28 @@ export default function LiveSessionScreen() {
         const nextVal = Math.max(800, Math.min(6500, lastVal + drift));
         const newPoints = [...prev, nextVal];
         if (newPoints.length > 20) newPoints.shift();
-      const speedCtx = { value: speedTracker.value, quality: speedTracker.advisoryState.quality, observedAt: speedTracker.lastUpdateAt };
-      const rpmCtx = { value: rpmTracker.value, quality: rpmTracker.advisoryState.quality, observedAt: rpmTracker.lastUpdateAt };
+        const speedCtx = { value: speedTracker.value, quality: speedTracker.advisoryState.quality, observedAt: speedTracker.lastUpdateAt };
 
-      rpmTracker.update(nextVal, 'VALID', { speed: speedCtx });
-      return newPoints;
-    });
+        rpmTracker.update(nextVal, 'VALID', { speed: speedCtx });
+        return newPoints;
+      });
 
-    const numPrev = typeof speedTracker.value === 'number' ? speedTracker.value : 0;
-    const lastRpm = dataPoints.length > 0 ? dataPoints[dataPoints.length - 1] : 800;
-    const targetSpeed = (lastRpm / 6500) * 120;
-    const diff = targetSpeed - numPrev;
-    speedTracker.update(Math.max(0, numPrev + (diff * 0.1) + (Math.random() - 0.5)), 'VALID');
+      const numPrev = typeof speedTracker.value === 'number' ? speedTracker.value : 0;
+      const lastRpm = dataPoints.length > 0 ? dataPoints[dataPoints.length - 1] : 800;
+      const targetSpeed = (lastRpm / 6500) * 120;
+      const diff = targetSpeed - numPrev;
+      speedTracker.update(Math.max(0, numPrev + (diff * 0.1) + (Math.random() - 0.5)), 'VALID');
 
-    const coolantPrev = typeof coolantTracker.value === 'number' ? coolantTracker.value : 90;
-    coolantTracker.update(Math.min(105, coolantPrev + (Math.random() * 0.05)), 'VALID');
+      const coolantPrev = typeof coolantTracker.value === 'number' ? coolantTracker.value : 90;
+      coolantTracker.update(Math.min(105, coolantPrev + (Math.random() * 0.05)), 'VALID');
 
-    const voltagePrev = typeof adapterVoltageTracker.value === 'number' ? adapterVoltageTracker.value : 14.1;
-    const drift = (Math.random() - 0.5) * 0.05;
+      const voltagePrev = typeof adapterVoltageTracker.value === 'number' ? adapterVoltageTracker.value : 14.1;
+      const drift = (Math.random() - 0.5) * 0.05;
 
-    // Virtual is always running
-    const virtualRpmCtx = { value: 800, quality: 'VALID' as any, observedAt: Date.now() };
-    adapterVoltageTracker.update(Math.max(13.8, Math.min(14.4, voltagePrev + drift)), 'VALID', { rpm: virtualRpmCtx });
-    ecuVoltageTracker.update(Math.max(13.7, Math.min(14.7, voltagePrev + drift)), 'VALID', { rpm: virtualRpmCtx });
+      // Virtual is always running
+      const virtualRpmCtx = { value: 800, quality: 'VALID' as any, observedAt: Date.now() };
+      adapterVoltageTracker.update(Math.max(13.8, Math.min(14.4, voltagePrev + drift)), 'VALID', { rpm: virtualRpmCtx });
+      ecuVoltageTracker.update(Math.max(13.7, Math.min(14.7, voltagePrev + drift)), 'VALID', { rpm: virtualRpmCtx });
     }, 500);
     return () => clearInterval(simulator);
   }, [adapterMode, dataPoints]);
@@ -176,10 +180,15 @@ export default function LiveSessionScreen() {
     }
 
     controller.start((result) => {
+      if (commandResultContainsValidEcuSample(result)) {
+        setHasValidEcuSample(true);
+        setFirstEcuSampleAt(previous => previous ?? Date.now());
+      }
+
       if (result.status === 'NO_DATA' || result.status === 'TIMEOUT' || result.status === 'INVALID_RESPONSE' || result.status === 'ELM_ERROR') {
-         // handle unavailable/degraded in UI by updating trackers with null and appropriate quality
-         // Here we just let the useSignalTracker handle STALE over time.
-         return;
+        // Keep the last valid value visible while the tracker naturally moves to
+        // STALE/DEGRADED. Transport failures are not vehicle non-support evidence.
+        return;
       }
 
       const reading = result.status === 'SUCCESS_DECODED' ? result.decodedValues[0] : null;
@@ -210,7 +219,7 @@ export default function LiveSessionScreen() {
       // Don't kill it on unmount because we want it stable.
       // We will only cleanup when stop is pressed.
     };
-  }, [adapterMode, connectionHandleId, supportedPids, localContext, productDb]);
+  }, [adapterMode, connectionHandleId, supportedPids, localContext, productDb, sessionId]);
 
   // Laptop OBD replay over WebSocket.
   useEffect(() => {
@@ -279,10 +288,26 @@ export default function LiveSessionScreen() {
     });
   };
 
+  const liveTruth = deriveLiveEcuTruth({
+    hasValidEcuSample,
+    elapsedMs: secondsElapsed * 1000,
+    sessionError,
+  });
+
+  const liveTruthColor = liveTruth.tone === 'live'
+    ? '#10b981'
+    : liveTruth.tone === 'waiting'
+      ? '#f59e0b'
+      : liveTruth.tone === 'delayed'
+        ? '#f97316'
+        : '#ef4444';
+
+  const waitingForFirstEcuSample = adapterMode === 'REAL_BLE' && !hasValidEcuSample;
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View>
+        <View style={styles.headerCopy}>
           <Text style={styles.title}>Live Telemetry</Text>
           {vehicleLoading ? (
             <Text style={styles.subtitle}>Loading vehicle...</Text>
@@ -291,30 +316,46 @@ export default function LiveSessionScreen() {
               <Text style={styles.vehicleAlias}>{vehicle.alias}</Text>
               <Text style={styles.subtitle}>{vehicle.make} {vehicle.model} · {vehicle.year}</Text>
               <Text style={styles.technicalText}>
-                {adapterMode === 'REAL_BLE' ? `ECU Direct · Session ${sessionId?.substring(0, 8)}...` : adapterMode === 'REPLAY_WS' ? `Laptop replay · Session ${sessionId?.substring(0, 8)}...` : `Virtual preview · Session ${sessionId?.substring(0, 8)}...`}
+                {adapterMode === 'REAL_BLE'
+                  ? `${hasValidEcuSample ? 'ECU observed' : 'ECU pending'} · Session ${sessionId?.substring(0, 8)}...`
+                  : adapterMode === 'REPLAY_WS'
+                    ? `Laptop replay · Session ${sessionId?.substring(0, 8)}...`
+                    : `Virtual preview · Session ${sessionId?.substring(0, 8)}...`}
               </Text>
+              {firstEcuSampleAt ? (
+                <Text style={styles.firstSampleText}>First ECU sample received</Text>
+              ) : null}
             </View>
           ) : (
             <Text style={styles.subtitle}>Vehicle unavailable</Text>
           )}
         </View>
-        <View style={styles.timerContainer}>
-          <Text style={styles.timerText}>{formatTime(secondsElapsed)}</Text>
-        </View>
+        <View style={styles.headerActions}>
+          <View style={styles.timerContainer}>
+            <Text style={styles.timerText}>{formatTime(secondsElapsed)}</Text>
+          </View>
 
-        {adapterMode === 'REAL_BLE' && AppConfig.INTERNAL_TOOLS_ENABLED && (
-          <TouchableOpacity style={styles.diagButton} onPress={() => setShowDiagnostics(true)}>
-            <Text style={styles.diagButtonText}>Logs</Text>
-          </TouchableOpacity>
-        )}
+          {adapterMode === 'REAL_BLE' && AppConfig.INTERNAL_TOOLS_ENABLED && (
+            <TouchableOpacity style={styles.diagButton} onPress={() => setShowDiagnostics(true)}>
+              <Text style={styles.diagButtonText}>Logs</Text>
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
 
       {adapterMode === 'REAL_BLE' ? (
-        <View style={[styles.badgeContainer, { backgroundColor: sessionError ? '#ef4444' : '#10b981' }]}>
-          <Text style={styles.badgeText}>
-            {sessionError ? `RECORDING FAILED: ${sessionError}` : 'LIVE · ECU DATA'}
-          </Text>
-        </View>
+        <>
+          <View style={[styles.badgeContainer, { backgroundColor: liveTruthColor }]}>
+            <Text style={[styles.badgeText, liveTruth.tone === 'error' && styles.badgeTextLight]}>
+              {liveTruth.label}
+            </Text>
+          </View>
+          {liveTruth.state !== 'LIVE_ECU_DATA' ? (
+            <View style={styles.statusDetailContainer}>
+              <Text style={styles.statusDetailText}>{liveTruth.detail}</Text>
+            </View>
+          ) : null}
+        </>
       ) : adapterMode === 'REPLAY_WS' ? (
         <View style={[styles.badgeContainer, { backgroundColor: '#60a5fa' }]}>
           <Text style={styles.badgeText}>LAPTOP · OBD RAW REPLAY</Text>
@@ -325,8 +366,7 @@ export default function LiveSessionScreen() {
         </View>
       )}
 
-      <ScrollView style={styles.content} contentContainerStyle={{ paddingBottom: 100 }}>
-
+      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         <View style={styles.grid}>
           <LiveMetricCard
             label="Engine RPM"
@@ -388,8 +428,8 @@ export default function LiveSessionScreen() {
                 labels: [],
                 datasets: [{ data: dataPoints }]
               }}
-              width={screenWidth - 48}
-              height={220}
+              width={screenWidth - 32}
+              height={180}
               chartConfig={{
                 backgroundColor: '#1f2937',
                 backgroundGradientFrom: '#1f2937',
@@ -404,12 +444,17 @@ export default function LiveSessionScreen() {
               style={{ marginVertical: 8, borderRadius: 12 }}
             />
           ) : (
-            <View style={{ height: 220, justifyContent: 'center', alignItems: 'center' }}>
-              <Text style={{ color: '#6b7280', fontFamily: 'Inter_500Medium' }}>Waiting for RPM data...</Text>
+            <View style={styles.chartPlaceholder}>
+              <Text style={styles.chartPlaceholderText}>
+                {waitingForFirstEcuSample
+                  ? liveTruth.state === 'ECU_DATA_DELAYED'
+                    ? 'ECU data is delayed. AutoPulse is still retrying…'
+                    : 'Waiting for first ECU sample…'
+                  : 'Waiting for RPM data…'}
+              </Text>
             </View>
           )}
         </View>
-
       </ScrollView>
 
       <View style={styles.footer}>
@@ -431,97 +476,109 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 24,
-    paddingTop: 60,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     backgroundColor: '#1a2227',
   },
-  title: { color: '#fff', fontSize: 20, fontFamily: 'Inter_600SemiBold', marginBottom: 8 },
+  headerCopy: { flex: 1, paddingRight: 12 },
+  headerActions: { alignItems: 'flex-end' },
+  title: { color: '#fff', fontSize: 18, fontFamily: 'Inter_600SemiBold', marginBottom: 6 },
   vehicleAlias: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     fontFamily: 'Inter_600SemiBold',
   },
-  subtitle: { color: '#9ca3af', fontSize: 13, fontFamily: 'Inter_400Regular' },
+  subtitle: { color: '#9ca3af', fontSize: 12, fontFamily: 'Inter_400Regular' },
   technicalText: {
     color: '#4b5563',
-    fontSize: 10,
+    fontSize: 9,
     fontFamily: 'SpaceMono_400Regular',
-    marginTop: 4,
+    marginTop: 3,
+  },
+  firstSampleText: {
+    color: '#10b981',
+    fontSize: 9,
+    fontFamily: 'Inter_600SemiBold',
+    marginTop: 3,
   },
   timerContainer: {
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#ef4444',
   },
-  timerText: { color: '#ef4444', fontFamily: 'SpaceMono_700Bold', fontSize: 16 },
+  timerText: { color: '#ef4444', fontFamily: 'SpaceMono_700Bold', fontSize: 14 },
   diagButton: {
     backgroundColor: '#374151',
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
-    marginLeft: 8,
+    marginTop: 6,
   },
   diagButtonText: {
     color: '#d1d5db',
-    fontSize: 12,
+    fontSize: 11,
     fontFamily: 'Inter_600SemiBold',
   },
   badgeContainer: {
     backgroundColor: '#ca8a04',
-    paddingVertical: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
     alignItems: 'center',
   },
   badgeText: {
-    color: '#000',
-    fontSize: 12,
+    color: '#0e1417',
+    fontSize: 11,
     fontFamily: 'Inter_700Bold',
-    letterSpacing: 1,
+    letterSpacing: 0.9,
+    textAlign: 'center',
   },
-  content: { flex: 1, padding: 24 },
+  badgeTextLight: { color: '#fff' },
+  statusDetailContainer: {
+    backgroundColor: '#11191d',
+    borderBottomWidth: 1,
+    borderBottomColor: '#2a3439',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  statusDetailText: {
+    color: '#94a3b8',
+    fontSize: 11,
+    lineHeight: 15,
+    fontFamily: 'Inter_400Regular',
+  },
+  content: { flex: 1, paddingHorizontal: 16, paddingTop: 14 },
+  contentContainer: { paddingBottom: 16 },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginBottom: 24,
-  },
-  card: {
-    width: '48%',
-    backgroundColor: '#1f2937',
-    padding: 16,
-    borderRadius: 12,
     marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#374151',
   },
-  cardLabel: { color: '#9ca3af', fontSize: 12, fontFamily: 'Inter_500Medium', marginBottom: 8 },
-  cardValue: { color: '#fff', fontSize: 24, fontFamily: 'SpaceMono_700Bold' },
-  originText: { color: '#6b7280', fontSize: 10, fontFamily: 'SpaceMono_400Regular', marginTop: 4 },
   chartContainer: {
     backgroundColor: '#1f2937',
-    padding: 16,
+    padding: 12,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#374151',
   },
-  chartTitle: { color: '#d1d5db', fontSize: 14, fontFamily: 'Inter_600SemiBold', marginBottom: 16 },
+  chartTitle: { color: '#d1d5db', fontSize: 13, fontFamily: 'Inter_600SemiBold', marginBottom: 10 },
+  chartPlaceholder: { height: 180, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
+  chartPlaceholderText: { color: '#6b7280', fontFamily: 'Inter_500Medium', textAlign: 'center' },
   footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    padding: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     backgroundColor: '#1a2227',
     borderTopWidth: 1,
     borderTopColor: '#2a3439',
   },
   stopButton: {
     backgroundColor: '#ef4444',
-    paddingVertical: 16,
-    borderRadius: 12,
+    paddingVertical: 12,
+    borderRadius: 10,
     alignItems: 'center',
   },
-  stopButtonText: { color: '#fff', fontSize: 16, fontFamily: 'Inter_600SemiBold' }
+  stopButtonText: { color: '#fff', fontSize: 15, fontFamily: 'Inter_600SemiBold' }
 });
