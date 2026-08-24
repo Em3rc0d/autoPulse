@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePhoneDrivingSensors } from '../../../infrastructure/sensors/usePhoneDrivingSensors';
 import { useDriverMode } from './DriverModeContext';
@@ -16,30 +16,18 @@ interface OffRoadCalibration {
 
 const calibrationKey = (vehicleId: string) => `autopulse.offroad.calibration.${vehicleId}`;
 
-export function applyOffRoadCalibration(
-  raw: number | undefined,
-  zero: number | undefined,
-): number | undefined {
+export function applyOffRoadCalibration(raw: number | undefined, zero: number | undefined): number | undefined {
   if (raw === undefined || zero === undefined) return undefined;
   const calibrated = raw - zero;
   return Number.isFinite(calibrated) ? calibrated : undefined;
 }
 
 export function altitudeSignalQuality(accuracy?: number): 'VALID' | 'DEGRADED' {
-  return typeof accuracy === 'number' && Number.isFinite(accuracy) && accuracy <= 50
-    ? 'VALID'
-    : 'DEGRADED';
+  return typeof accuracy === 'number' && Number.isFinite(accuracy) && accuracy <= 50 ? 'VALID' : 'DEGRADED';
 }
 
-export function shouldPresentAltitude(
-  altitude?: number,
-  altitudeAccuracy?: number,
-): boolean {
+export function shouldPresentAltitude(altitude?: number, altitudeAccuracy?: number): boolean {
   if (typeof altitude !== 'number' || !Number.isFinite(altitude)) return false;
-
-  // Some providers emit a transient zero while vertical accuracy is still
-  // unresolved. Do not present that as literal sea level. A real zero-altitude
-  // fix becomes displayable as soon as the provider supplies accuracy evidence.
   if (Math.abs(altitude) <= 0.5 && altitudeAccuracy === undefined) return false;
   return true;
 }
@@ -69,11 +57,7 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
         }
         try {
           const parsed = JSON.parse(raw) as OffRoadCalibration;
-          if (
-            Number.isFinite(parsed.pitchZero) &&
-            Number.isFinite(parsed.rollZero) &&
-            Number.isFinite(parsed.calibratedAt)
-          ) {
+          if (Number.isFinite(parsed.pitchZero) && Number.isFinite(parsed.rollZero) && Number.isFinite(parsed.calibratedAt)) {
             setCalibration(parsed);
           }
         } catch {
@@ -105,33 +89,18 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
     ) => {
       if (value === undefined || !Number.isFinite(value)) return;
       reportDeviceSignal({ signalId, origin: 'DEVICE_SENSOR', quality, unit });
-      reportSignalObservation({
-        signalId,
-        value,
-        unit,
-        quality,
-        origin: 'DEVICE_SENSOR',
-        observedAt: now,
-      });
+      reportSignalObservation({ signalId, value, unit, quality, origin: 'DEVICE_SENSOR', observedAt: now });
     };
 
-    if (altitudeReady) {
-      publish('ALTITUDE', sensors.altitude, 'm', altitudeSignalQuality(sensors.altitudeAccuracy));
-    }
+    if (altitudeReady) publish('ALTITUDE', sensors.altitude, 'm', altitudeSignalQuality(sensors.altitudeAccuracy));
     publish('HEADING', sensors.heading, '°');
-
-    // Raw phone orientation is observable, but it is not vehicle attitude.
     publish('PHONE_PITCH', sensors.pitch, '°');
     publish('PHONE_ROLL', sensors.roll, '°');
 
-    // Only a calibrated phone-to-vehicle reference is allowed to satisfy the
-    // vehicle attitude dimensions used by Off-Road mode.
     if (calibration) {
       publish('PITCH', calibratedPitch, '°');
       publish('ROLL', calibratedRoll, '°');
     }
-    // Context callbacks change identity as observations are retained; publish
-    // only when an actual sensor/calibration value changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     altitudeReady,
@@ -150,11 +119,7 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
 
   const handleCalibrate = async () => {
     if (!canCalibrate || sensors.pitch === undefined || sensors.roll === undefined) return;
-    const next: OffRoadCalibration = {
-      pitchZero: sensors.pitch,
-      rollZero: sensors.roll,
-      calibratedAt: Date.now(),
-    };
+    const next: OffRoadCalibration = { pitchZero: sensors.pitch, rollZero: sensors.roll, calibratedAt: Date.now() };
     setCalibration(next);
 
     if (!vehicleId) return;
@@ -172,30 +137,24 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
 
     return [
       {
-        label: orientationCalibrated ? 'VEHICLE PITCH' : 'PHONE PITCH',
-        value: pitch !== undefined ? `${pitch.toFixed(1)}°` : 'Acquiring…',
-        meta: orientationCalibrated ? 'Vehicle-relative · calibrated' : 'Phone-relative · calibration required',
+        label: orientationCalibrated ? 'PITCH' : 'PHONE PITCH',
+        value: pitch !== undefined ? `${pitch.toFixed(1)}°` : '…',
+        meta: orientationCalibrated ? 'vehicle' : 'phone',
       },
       {
-        label: orientationCalibrated ? 'VEHICLE ROLL' : 'PHONE ROLL',
-        value: roll !== undefined ? `${roll.toFixed(1)}°` : 'Acquiring…',
-        meta: orientationCalibrated ? 'Vehicle-relative · calibrated' : 'Phone-relative · calibration required',
+        label: orientationCalibrated ? 'ROLL' : 'PHONE ROLL',
+        value: roll !== undefined ? `${roll.toFixed(1)}°` : '…',
+        meta: orientationCalibrated ? 'vehicle' : 'phone',
       },
       {
         label: 'ALTITUDE',
-        value: altitudeReady && sensors.altitude !== undefined
-          ? `${Math.round(sensors.altitude)} m`
-          : 'Acquiring…',
-        meta: altitudeReady
-          ? sensors.altitudeAccuracy !== undefined
-            ? `Phone GPS · ±${Math.round(sensors.altitudeAccuracy)} m`
-            : 'Phone GPS · accuracy degraded'
-          : 'Phone GPS · waiting for a usable fix',
+        value: altitudeReady && sensors.altitude !== undefined ? `${Math.round(sensors.altitude)} m` : '…',
+        meta: altitudeReady && sensors.altitudeAccuracy !== undefined ? `±${Math.round(sensors.altitudeAccuracy)} m` : 'GPS',
       },
       {
         label: 'HEADING',
-        value: sensors.heading !== undefined ? `${Math.round(sensors.heading)}°` : 'Acquiring…',
-        meta: 'Phone sensor',
+        value: sensors.heading !== undefined ? `${Math.round(sensors.heading)}°` : '…',
+        meta: 'phone',
       },
     ];
   }, [altitudeReady, calibration, calibratedPitch, calibratedRoll, sensors.altitude, sensors.altitudeAccuracy, sensors.heading, sensors.pitch, sensors.roll]);
@@ -206,15 +165,13 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
     <View style={styles.container}>
       <View style={styles.calibrationRow}>
         <View style={styles.calibrationCopy}>
-          <Text style={styles.calibrationTitle}>
-            {calibration ? 'VEHICLE-RELATIVE ATTITUDE' : 'PHONE-RELATIVE ATTITUDE'}
-          </Text>
-          <Text style={styles.calibrationText}>
+          <Text style={styles.calibrationTitle}>{calibration ? 'VEHICLE ATTITUDE' : 'PHONE ATTITUDE'}</Text>
+          <Text numberOfLines={1} style={styles.calibrationText}>
             {!calibrationLoaded
-              ? 'Loading saved calibration…'
+              ? 'Loading calibration…'
               : calibration
-                ? 'Level reference is calibrated for this vehicle.'
-                : 'Mount the phone securely, park level, then calibrate.'}
+                ? 'Level reference calibrated'
+                : 'Mount phone securely, park level, then calibrate'}
           </Text>
         </View>
         <TouchableOpacity
@@ -222,11 +179,11 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
           disabled={!canCalibrate}
           onPress={handleCalibrate}
         >
-          <Text style={styles.calibrateButtonText}>{calibration ? 'Recalibrate' : 'Calibrate level'}</Text>
+          <Text style={styles.calibrateButtonText}>{calibration ? 'Recalibrate' : 'Calibrate'}</Text>
         </TouchableOpacity>
       </View>
 
-      <View style={styles.metricsGrid}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.metricStrip}>
         {values.map(item => (
           <View key={item.label} style={styles.metric}>
             <Text style={styles.label}>{item.label}</Text>
@@ -234,83 +191,44 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
             <Text style={styles.meta}>{item.meta}</Text>
           </View>
         ))}
-      </View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-  },
+  container: { marginTop: 4, marginBottom: 4 },
   calibrationRow: {
+    minHeight: 48,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#334155',
     backgroundColor: '#11191d',
-    padding: 12,
-    marginBottom: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginBottom: 7,
   },
   calibrationCopy: { flex: 1 },
-  calibrationTitle: {
-    color: '#cbd5e1',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  calibrationText: {
-    marginTop: 3,
-    color: '#94a3b8',
-    fontSize: 11,
-    lineHeight: 15,
-  },
-  calibrateButton: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#d7ff4f',
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-  },
+  calibrationTitle: { color: '#cbd5e1', fontSize: 9, fontWeight: '800', letterSpacing: 0.8 },
+  calibrationText: { marginTop: 2, color: '#64748b', fontSize: 9 },
+  calibrateButton: { borderRadius: 999, borderWidth: 1, borderColor: '#d7ff4f', paddingHorizontal: 10, paddingVertical: 6 },
   calibrateButtonDisabled: { opacity: 0.35 },
-  calibrateButtonText: {
-    color: '#d7ff4f',
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  metricsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
+  calibrateButtonText: { color: '#d7ff4f', fontSize: 9, fontWeight: '800' },
+  metricStrip: { gap: 7, paddingRight: 6 },
   metric: {
-    minWidth: '46%',
-    flexGrow: 1,
+    width: 92,
+    minHeight: 72,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#334155',
+    borderColor: '#263239',
     backgroundColor: '#11191d',
-    padding: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
   },
-  label: {
-    color: '#94a3b8',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-  },
-  value: {
-    marginTop: 4,
-    color: '#f8fafc',
-    fontSize: 20,
-    fontWeight: '800',
-  },
-  meta: {
-    marginTop: 4,
-    color: '#64748b',
-    fontSize: 9,
-    lineHeight: 12,
-  },
+  label: { color: '#64748b', fontSize: 8, fontWeight: '800', letterSpacing: 0.6 },
+  value: { marginTop: 4, color: '#f8fafc', fontSize: 19, fontWeight: '800' },
+  meta: { marginTop: 2, color: '#64748b', fontSize: 8 },
 });
