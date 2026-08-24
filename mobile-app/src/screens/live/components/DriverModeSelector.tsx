@@ -13,12 +13,12 @@ interface Props {
   selectedMode: DrivingMode;
   availableSignals: readonly AvailableSignal[];
   onSelectMode: (mode: DrivingMode) => void;
+  disabled?: boolean;
 }
 
 const coverageColor = (coverage: DecisionDimensionCoverage) => {
   if (coverage === 'COVERED') return '#4ade80';
   if (coverage === 'PARTIAL') return '#f59e0b';
-  // UNKNOWN is filtered before rendering; this fallback is defensive only.
   return '#6b7280';
 };
 
@@ -44,126 +44,121 @@ const modeState = (
   return 'ADAPTIVE';
 };
 
-export function DriverModeSelector({ selectedMode, availableSignals, onSelectMode }: Props) {
+export function DriverModeSelector({ selectedMode, availableSignals, onSelectMode, disabled = false }: Props) {
   const presentation = DRIVING_MODE_PRESENTATION[selectedMode];
   const dimensions = visibleDimensionsForMode(selectedMode, availableSignals);
   const state = modeState(selectedMode, availableSignals);
 
   return (
     <View style={styles.container}>
-      <Text style={styles.eyebrow}>DRIVER MODE</Text>
+      <View style={styles.headerRow}>
+        <View style={styles.modeIdentity}>
+          <Text style={styles.eyebrow}>DRIVER MODE</Text>
+          <Text style={styles.activeMode}>{presentation.label}</Text>
+        </View>
+        {state ? (
+          <View style={[
+            styles.statePill,
+            state === 'READY' ? styles.statePillReady : styles.statePillAdaptive,
+          ]}>
+            <Text style={styles.stateText}>{state}</Text>
+          </View>
+        ) : null}
+      </View>
+
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
         {DRIVING_MODE_ORDER.map(mode => {
           const item = DRIVING_MODE_PRESENTATION[mode];
           const active = mode === selectedMode;
-          const modeDimensions = visibleDimensionsForMode(mode, availableSignals);
-          const modeStatus = modeState(mode, availableSignals);
-
           return (
             <TouchableOpacity
               key={mode}
               testID={`driver-mode-${mode.toLowerCase()}`}
-              style={[styles.modeButton, active && styles.modeButtonActive]}
-              onPress={() => onSelectMode(mode)}
-              activeOpacity={0.8}
+              style={[styles.modeButton, active && styles.modeButtonActive, disabled && styles.modeButtonDisabled]}
+              onPress={() => !disabled && onSelectMode(mode)}
+              activeOpacity={0.82}
+              disabled={disabled}
             >
               <Text style={[styles.modeIcon, active && styles.modeTextActive]}>{item.icon}</Text>
-              <Text style={[styles.modeLabel, active && styles.modeTextActive]}>{item.shortLabel}</Text>
-              {modeDimensions.length > 0 && modeStatus ? (
-                <Text style={[styles.modeCoverage, active && styles.modeTextActive]}>
-                  {modeStatus === 'READY' ? 'Ready' : 'Adaptive'}
-                </Text>
-              ) : null}
+              <Text numberOfLines={1} style={[styles.modeLabel, active && styles.modeTextActive]}>{item.shortLabel}</Text>
             </TouchableOpacity>
           );
         })}
       </ScrollView>
 
       {dimensions.length > 0 ? (
-        <View style={styles.summaryCard}>
-          <View style={styles.summaryHeader}>
-            <View style={styles.summaryCopy}>
-              <Text style={styles.summaryTitle}>{presentation.label}</Text>
-              <Text style={styles.summaryPurpose}>{presentation.purpose}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dimensionStrip}>
+          {dimensions.map(dimension => (
+            <View key={dimension.id} style={styles.dimensionChip} testID={`decision-dimension-${dimension.id.toLowerCase()}`}>
+              <View style={[styles.dimensionDot, { backgroundColor: coverageColor(dimension.coverage) }]} />
+              <Text style={styles.dimensionLabel}>{dimension.label}</Text>
+              <Text style={[styles.dimensionState, { color: coverageColor(dimension.coverage) }]}>
+                {dimension.coverage === 'COVERED' ? 'READY' : 'PARTIAL'}
+              </Text>
             </View>
-            {state ? (
-              <View style={[
-                styles.statePill,
-                state === 'READY' ? styles.statePillReady : styles.statePillAdaptive,
-              ]}>
-                <Text style={styles.stateText}>{state}</Text>
-              </View>
-            ) : null}
-          </View>
-
-          <View style={styles.dimensionGrid}>
-            {dimensions.map(dimension => (
-              <View key={dimension.id} style={styles.dimensionRow} testID={`decision-dimension-${dimension.id.toLowerCase()}`}>
-                <View style={[styles.dimensionDot, { backgroundColor: coverageColor(dimension.coverage) }]} />
-                <Text style={styles.dimensionLabel}>{dimension.label}</Text>
-                <Text style={[styles.dimensionState, { color: coverageColor(dimension.coverage) }]}>
-                  {dimension.coverage === 'COVERED' ? 'READY' : 'PARTIAL'}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
+          ))}
+        </ScrollView>
       ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { marginBottom: 20 },
-  eyebrow: {
-    color: '#6b7280',
-    fontSize: 11,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: 1.4,
-    marginBottom: 10,
+  container: { paddingBottom: 8 },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 7,
   },
-  row: { paddingRight: 16, gap: 10 },
+  modeIdentity: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
+  eyebrow: {
+    color: '#64748b',
+    fontSize: 9,
+    fontFamily: 'Inter_700Bold',
+    letterSpacing: 1.2,
+  },
+  activeMode: {
+    color: '#f8fafc',
+    fontSize: 13,
+    fontFamily: 'Inter_700Bold',
+  },
+  row: { paddingRight: 12, gap: 7 },
   modeButton: {
-    minWidth: 104,
+    minWidth: 72,
+    height: 48,
     backgroundColor: '#172026',
     borderColor: '#2a3439',
     borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modeButtonActive: {
     backgroundColor: '#d7ff4f',
     borderColor: '#d7ff4f',
   },
-  modeIcon: { color: '#9ca3af', fontSize: 17, marginBottom: 5 },
-  modeLabel: { color: '#f3f4f6', fontSize: 13, fontFamily: 'Inter_700Bold' },
-  modeCoverage: { color: '#6b7280', fontSize: 10, fontFamily: 'SpaceMono_400Regular', marginTop: 3 },
+  modeButtonDisabled: { opacity: 0.45 },
+  modeIcon: { color: '#94a3b8', fontSize: 14, lineHeight: 16 },
+  modeLabel: { color: '#e5e7eb', fontSize: 10, fontFamily: 'Inter_700Bold', marginTop: 2 },
   modeTextActive: { color: '#0e1417' },
-  summaryCard: {
-    backgroundColor: '#172026',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#2a3439',
-    padding: 14,
-    marginTop: 12,
-  },
-  summaryHeader: { flexDirection: 'row', justifyContent: 'space-between', gap: 12 },
-  summaryCopy: { flex: 1 },
-  summaryTitle: { color: '#fff', fontSize: 16, fontFamily: 'Inter_700Bold', marginBottom: 4 },
-  summaryPurpose: {
-    color: '#9ca3af',
-    fontSize: 12,
-    lineHeight: 17,
-    fontFamily: 'Inter_400Regular',
-  },
-  statePill: { alignSelf: 'flex-start', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },
+  statePill: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
   statePillReady: { backgroundColor: '#14532d' },
   statePillAdaptive: { backgroundColor: '#78350f' },
-  stateText: { color: '#fff', fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 0.7 },
-  dimensionGrid: { marginTop: 14, gap: 8 },
-  dimensionRow: { flexDirection: 'row', alignItems: 'center', minHeight: 24 },
-  dimensionDot: { width: 8, height: 8, borderRadius: 4, marginRight: 9 },
-  dimensionLabel: { flex: 1, color: '#e5e7eb', fontSize: 12, fontFamily: 'Inter_600SemiBold' },
-  dimensionState: { fontSize: 9, fontFamily: 'SpaceMono_700Bold', letterSpacing: 0.5 },
+  stateText: { color: '#fff', fontSize: 8, fontFamily: 'Inter_700Bold', letterSpacing: 0.6 },
+  dimensionStrip: { paddingTop: 7, paddingRight: 12, gap: 6 },
+  dimensionChip: {
+    height: 27,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#263239',
+    backgroundColor: '#11191d',
+    paddingHorizontal: 8,
+  },
+  dimensionDot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
+  dimensionLabel: { color: '#cbd5e1', fontSize: 9, fontFamily: 'Inter_600SemiBold' },
+  dimensionState: { marginLeft: 5, fontSize: 8, fontFamily: 'SpaceMono_700Bold', letterSpacing: 0.3 },
 });
