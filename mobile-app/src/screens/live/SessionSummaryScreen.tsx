@@ -29,8 +29,10 @@ export default function SessionSummaryScreen() {
   };
 
   const handleDone = () => {
-    // Navigate back to history or garage
-    navigation.navigate('GarageHome');
+    // Session Summary lives inside LiveStack; History is a parent tab, so this
+    // action intentionally bubbles to the TabNavigator instead of targeting a
+    // sibling route that does not exist in LiveStack.
+    navigation.navigate('History');
   };
 
   if (isVirtual) {

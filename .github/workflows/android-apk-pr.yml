@@ -45,14 +45,27 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x android/gradlew
 
-      - name: Build debug APK
+      - name: Build standalone internal APK
         working-directory: mobile-app/android
-        run: ./gradlew assembleDebug --no-daemon
+        env:
+          NODE_ENV: production
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Verify React Native bundle is packaged
+        working-directory: mobile-app
+        run: |
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$APK"
+          unzip -l "$APK" | grep -Eq 'assets/(index\.android\.bundle|expo-root\.js|.*\.bundle)' || {
+            echo "ERROR: standalone JS bundle is missing from $APK"
+            unzip -l "$APK" | grep 'assets/' | head -200 || true
+            exit 1
+          }
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: autopulse-android-internal-apk
-          path: mobile-app/android/app/build/outputs/apk/debug/app-debug.apk
+          path: mobile-app/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 7

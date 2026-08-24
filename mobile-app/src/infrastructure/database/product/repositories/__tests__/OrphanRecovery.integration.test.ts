@@ -16,19 +16,31 @@ describe('LiveSessionRepository - Orphan Recovery', () => {
       where: jest.fn().mockImplementation(() => {
         whereCallCount++;
         if (whereCallCount === 1) {
-          return Promise.resolve([{ id: 'sess-1' }]);
+          return Promise.resolve([{
+            id: 'sess-1',
+            workspaceId: 'ws1',
+            status: 'ACTIVE',
+            startedAt: 1000,
+            createdAt: 900,
+            endedAt: null,
+            stopReason: null,
+            failureCode: null
+          }]);
         }
-        return Promise.resolve([{
-          blocks: 5,
-          events: 10,
-          readings: 20,
-          maxSeq: 5
-        }]);
+        if (whereCallCount === 2) {
+          return Promise.resolve([{
+            blocks: 5,
+            events: 10,
+            readings: 20,
+            maxSeq: 4,
+            maxBlockEnd: 7000
+          }]);
+        }
+        // nextEventSequence()
+        return Promise.resolve([{ max: 3 }]);
       }),
       all: jest.fn().mockResolvedValue([]),
-      transaction: jest.fn().mockImplementation(async (cb) => {
-        return cb(mockDb);
-      }),
+      transaction: jest.fn().mockImplementation(async (cb) => cb(mockDb)),
       update: jest.fn().mockReturnThis(),
       set: jest.fn().mockReturnThis(),
       insert: jest.fn().mockReturnThis(),
@@ -39,26 +51,22 @@ describe('LiveSessionRepository - Orphan Recovery', () => {
     repo = new LiveSessionRepository(mockDb);
   });
 
-  it('Recovery executes once per call and reconciles counters correctly', async () => {
-    // Mock the query that finds orphaned sessions (handled by where mock)
-
+  it('reconciles durable counters, sequence and end time before marking ACTIVE as INTERRUPTED', async () => {
     await repo.recoverOrphanedSessions('ws1');
 
     expect(mockDb.transaction).toHaveBeenCalledTimes(1);
     expect(mockDb.update).toHaveBeenCalledTimes(1);
 
-    // Assert the exact values that were passed to the update
-    const setCalls = mockDb.set.mock.calls;
-    expect(setCalls.length).toBe(1);
-    const updatePayload = setCalls[0][0];
-
+    const updatePayload = mockDb.set.mock.calls[0][0];
     expect(updatePayload).toMatchObject({
       status: 'INTERRUPTED',
-      stopReason: 'UNEXPECTED_APP_TERMINATION',
+      failureCode: 'UNEXPECTED_APP_TERMINATION',
+      endedAt: 7000,
       totalBlocks: 5,
       totalEvents: 10,
       totalReadings: 20,
-      lastSequenceNumber: 5
+      lastCommittedSequence: 4
     });
+    expect(updatePayload).not.toHaveProperty('lastSequenceNumber');
   });
 });

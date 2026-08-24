@@ -1,6 +1,7 @@
 import React from 'react';
 import { render } from '@testing-library/react-native';
 import VehicleCapabilitiesScreen, {
+  compactTechnicalIdentifier,
   getCapabilityGroup,
   getCapabilityPresentation
 } from '../VehicleCapabilitiesScreen';
@@ -28,13 +29,13 @@ jest.mock('@expo/vector-icons', () => ({
 }));
 
 describe('VehicleCapabilitiesScreen', () => {
-  it('renders technical PID, ECU provenance and fallback name when a definition is unavailable', () => {
+  it('renders technical PID and honest ECU provenance when a definition is unavailable', () => {
     (useCapabilitySnapshot as jest.Mock).mockReturnValue({
       snapshot: {
         id: 'snap-1',
         discoveredAt: 123,
         protocolCode: 'ISO_15765_4_CAN_11_500',
-        adapterInstanceId: 'adapter-1'
+        adapterInstanceId: 'adapter-instance-123456789'
       },
       loading: false,
       parameters: [
@@ -43,7 +44,7 @@ describe('VehicleCapabilitiesScreen', () => {
           snapshotId: 'snap-1',
           service: 1,
           parameterIdentifier: 0x0c,
-          ecuAddress: 0x7e8,
+          ecuAddress: -1,
           supportState: 'SUPPORTED',
           testedAt: 123,
           technicalName: null
@@ -54,12 +55,15 @@ describe('VehicleCapabilitiesScreen', () => {
     const { getByText, queryByText } = render(<VehicleCapabilitiesScreen />);
 
     expect(getByText('Standard OBD signal')).toBeTruthy();
-    expect(getByText('Mode 01 PID 0C (ECU 7E8)')).toBeTruthy();
+    expect(getByText('Mode 01 · PID 0C')).toBeTruthy();
+    expect(getByText('Source ECU: Not identified')).toBeTruthy();
+    expect(getByText('Protocol: ISO 15765-4 CAN · 11-bit · 500 kbit/s')).toBeTruthy();
     expect(getByText('Available')).toBeTruthy();
     expect(getByText('The vehicle reports that this signal is available.')).toBeTruthy();
 
     // Missing catalog metadata must not be confused with vehicle non-support.
     expect(queryByText('Unavailable')).toBeFalsy();
+    expect(queryByText(/ECU -1/)).toBeFalsy();
 
     expect(useCapabilitySnapshot).toHaveBeenCalledWith('WS-1', 'V-1');
   });
@@ -76,5 +80,10 @@ describe('VehicleCapabilitiesScreen', () => {
     expect(getCapabilityGroup('0105')).toBe('Temperatures');
     expect(getCapabilityGroup('010D')).toBe('Movement');
     expect(getCapabilityGroup('0142')).toBe('Electrical');
+  });
+
+  it('compacts opaque adapter instance identifiers for product UI', () => {
+    expect(compactTechnicalIdentifier('short-id')).toBe('short-id');
+    expect(compactTechnicalIdentifier('01a0348b-e2c7-7000-910f-0156f72c847b')).toBe('01a0348b…847b');
   });
 });

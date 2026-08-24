@@ -100,6 +100,24 @@ describe('RealLiveSessionController Integration', () => {
     expect(ctrl['currentState']).toBe('INTERRUPTED');
   });
 
+  it('publishes one explicit terminal interruption outcome to the Live UI boundary', async () => {
+    const ctrl = createController();
+    ctrl['currentState'] = 'ACTIVE';
+    const onTerminal = jest.fn();
+    (ctrl as any).onSessionTerminal = onTerminal;
+
+    const first = ctrl.handleUnexpectedDisconnect('DEVICE_DISCONNECTED');
+    const second = ctrl.handleUnexpectedDisconnect('DEVICE_DISCONNECTED');
+    expect(first).toBe(second);
+    await first;
+
+    expect(onTerminal).toHaveBeenCalledTimes(1);
+    expect(onTerminal).toHaveBeenCalledWith({
+      state: 'INTERRUPTED',
+      reason: 'DEVICE_DISCONNECTED'
+    });
+  });
+
   it('Native BLE disconnect observation terminalizes the active session', async () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';
