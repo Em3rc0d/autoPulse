@@ -304,6 +304,9 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
           : liveTruth.tone === 'delayed'
             ? '#f97316'
             : '#ef4444';
+  const showStatusBand = Boolean(terminalOutcome)
+    || adapterMode !== 'REAL_BLE'
+    || liveTruth.state !== 'LIVE_ECU_DATA';
 
   return (
     <View style={styles.container}>
@@ -313,6 +316,9 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
           <Text style={styles.subtitle}>{vehicle ? `${vehicle.make} ${vehicle.model} · ${vehicle.year}` : 'Live telemetry'}</Text>
         </View>
         <View style={styles.headerActions}>
+          {adapterMode === 'REAL_BLE' && firstEcuSampleAt && liveTruth.state === 'LIVE_ECU_DATA' && !terminalOutcome ? (
+            <View style={styles.liveDot} />
+          ) : null}
           <Text style={[styles.timerText, terminalOutcome && styles.timerTextTerminal]}>{formatTime(secondsElapsed)}</Text>
           {adapterMode === 'REAL_BLE' && AppConfig.INTERNAL_TOOLS_ENABLED && !terminalOutcome ? (
             <TouchableOpacity style={styles.diagButton} onPress={() => setShowDiagnostics(true)}>
@@ -322,9 +328,11 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
         </View>
       </View>
 
-      <View style={[styles.statusBand, { backgroundColor: statusColor }]}>
-        <Text style={styles.statusBandText}>{statusLabel}</Text>
-      </View>
+      {showStatusBand ? (
+        <View style={[styles.statusBand, { backgroundColor: statusColor }]}>
+          <Text style={styles.statusBandText}>{statusLabel}</Text>
+        </View>
+      ) : null}
 
       {terminalOutcome?.state === 'INTERRUPTED' ? (
         <View style={styles.terminalNotice}>
@@ -337,11 +345,6 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
       ) : liveTruth.state !== 'LIVE_ECU_DATA' && adapterMode === 'REAL_BLE' ? (
         <View style={styles.statusDetailContainer}>
           <Text style={styles.statusDetailText}>{liveTruth.detail}</Text>
-        </View>
-      ) : firstEcuSampleAt ? (
-        <View style={styles.liveHintRow}>
-          <View style={styles.liveDot} />
-          <Text style={styles.liveHintText}>ECU data confirmed · glance only while driving</Text>
         </View>
       ) : null}
 
