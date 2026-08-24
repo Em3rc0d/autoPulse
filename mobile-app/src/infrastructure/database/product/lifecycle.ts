@@ -4,6 +4,7 @@ import { migrate } from 'drizzle-orm/expo-sqlite/migrator';
 import * as schema from './schema';
 import migrations from './migrations/migrations';
 import { bootstrapProductDb } from './bootstrap';
+import { LiveSessionRepository } from './repositories/live-session.repository';
 import {
   STANDARD_OBD_CATALOG_VERSION,
   STANDARD_OBD_TIER_1
@@ -149,7 +150,17 @@ export async function initializeProductDb(): Promise<ExpoSQLiteDatabase<typeof s
         throw new Error('UNKNOWN_DATABASE_IDENTITY: Migration failed to set database_identity to PRODUCT.');
       }
 
-      await bootstrapProductDb(dbInstance);
+      const localContext = await bootstrapProductDb(dbInstance);
+
+      // A new JS process cannot own a previous process's active controller.
+      // Reconcile any durable session left in a non-terminal state before the
+      // database becomes READY, so History/Summary never expose phantom ACTIVE
+      // sessions after a process kill or crash.
+      const recoveredOrphans = await new LiveSessionRepository(dbInstance)
+        .recoverOrphanedSessions(localContext.defaultWorkspaceId);
+      if (recoveredOrphans > 0) {
+        console.warn(`[ProductLifecycle] Recovered ${recoveredOrphans} orphaned Live session(s) as INTERRUPTED.`);
+      }
 
       currentState = 'READY';
       return dbInstance;
