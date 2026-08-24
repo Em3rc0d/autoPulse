@@ -58,33 +58,62 @@ export class LiveSessionRepository {
       );
 
       for (const session of orphaned) {
-        // Reconciliation
+        // Reconcile only evidence that was durably committed before the process
+        // disappeared. Never manufacture an extra live window during recovery.
         const aggResult = await tx
           .select({
-             blocks: sql<number>`COUNT(*)`,
-             events: sql<number>`COALESCE(SUM(event_count), 0)`,
-             readings: sql<number>`COALESCE(SUM(reading_count), 0)`,
-             maxSeq: sql<number>`COALESCE(MAX(window_index), -1)`
+            blocks: sql<number>`COUNT(*)`,
+            events: sql<number>`COALESCE(SUM(${schema.telemetryBlocks.eventCount}), 0)`,
+            readings: sql<number>`COALESCE(SUM(${schema.telemetryBlocks.readingCount}), 0)`,
+            maxSeq: sql<number>`COALESCE(MAX(${schema.telemetryBlocks.sequenceNumber}), -1)`,
+            maxBlockEnd: sql<number>`COALESCE(MAX(${schema.telemetryBlocks.blockEndMs}), 0)`
           })
           .from(schema.telemetryBlocks)
           .where(eq(schema.telemetryBlocks.sessionId, session.id));
 
-        const stats = aggResult[0] || { blocks: 0, events: 0, readings: 0, maxSeq: -1 };
+        const stats = aggResult[0] || { blocks: 0, events: 0, readings: 0, maxSeq: -1, maxBlockEnd: 0 };
+        const maxSeq = Number(stats.maxSeq ?? -1);
+        const maxBlockEnd = Number(stats.maxBlockEnd ?? 0);
+        const recoveredEndedAt = maxBlockEnd > 0
+          ? maxBlockEnd
+          : (session.startedAt ?? session.createdAt);
+        const sessionOffsetMs = session.startedAt
+          ? Math.max(0, recoveredEndedAt - session.startedAt)
+          : 0;
 
         await tx.update(schema.liveSessions)
           .set({
-             status: 'INTERRUPTED',
-             stopReason: 'UNEXPECTED_APP_TERMINATION',
-             totalBlocks: stats.blocks,
-             totalEvents: stats.events,
-             totalReadings: stats.readings,
-             lastSequenceNumber: stats.maxSeq
-          } as any)
-          .where(eq(schema.liveSessions.id, session.id));
+            status: 'INTERRUPTED',
+            failureCode: session.failureCode ?? 'UNEXPECTED_APP_TERMINATION',
+            endedAt: session.endedAt ?? recoveredEndedAt,
+            totalBlocks: Number(stats.blocks ?? 0),
+            totalEvents: Number(stats.events ?? 0),
+            totalReadings: Number(stats.readings ?? 0),
+            lastCommittedSequence: maxSeq >= 0 ? maxSeq : null
+          })
+          .where(and(
+            eq(schema.liveSessions.id, session.id),
+            eq(schema.liveSessions.workspaceId, workspaceId)
+          ));
 
         const seq = await this.nextEventSequence(tx, session.id);
 
-        await this.appendEvent(tx, session.id, seq, 'SESSION_RECOVERED_AS_INTERRUPTED', 'SYSTEM', 'WARNING', '1.0', JSON.stringify({ reason: 'UNEXPECTED_APP_TERMINATION' }));
+        await this.appendEvent(
+          tx,
+          session.id,
+          seq,
+          'SESSION_RECOVERED_AS_INTERRUPTED',
+          'SYSTEM',
+          'WARNING',
+          '1.0',
+          JSON.stringify({
+            reason: 'UNEXPECTED_APP_TERMINATION',
+            previousStatus: session.status,
+            recoveredBlocks: Number(stats.blocks ?? 0),
+            lastCommittedSequence: maxSeq >= 0 ? maxSeq : null
+          }),
+          sessionOffsetMs
+        );
       }
 
       return orphaned.length;
@@ -102,6 +131,15 @@ export class LiveSessionRepository {
       where: and(eq(liveSessions.vehicleId, vehicleId), eq(liveSessions.workspaceId, workspaceId)),
       orderBy: [desc(liveSessions.startedAt)],
       limit: 50 // Limit for recent history
+    });
+  }
+
+  async getRecentSessions(workspaceId: string, limit: number = 50) {
+    const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    return await this.db.query.liveSessions.findMany({
+      where: eq(liveSessions.workspaceId, workspaceId),
+      orderBy: [desc(liveSessions.createdAt)],
+      limit: boundedLimit
     });
   }
 
