@@ -90,7 +90,7 @@ export class LiveSessionRepository {
             totalEvents: Number(stats.events ?? 0),
             totalReadings: Number(stats.readings ?? 0),
             lastCommittedSequence: maxSeq >= 0 ? maxSeq : null
-          })
+          } as any)
           .where(and(
             eq(schema.liveSessions.id, session.id),
             eq(schema.liveSessions.workspaceId, workspaceId)
