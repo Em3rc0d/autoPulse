@@ -19,6 +19,18 @@ const PROTOCOLS: Record<string, string> = {
   C: 'User protocol 2',
 };
 
+const INTERNAL_PROTOCOLS: Record<string, string> = {
+  ISO_15765_4_CAN_11_500: 'ISO 15765-4 CAN · 11-bit · 500 kbit/s',
+  ISO_15765_4_CAN_29_500: 'ISO 15765-4 CAN · 29-bit · 500 kbit/s',
+  ISO_15765_4_CAN_11_250: 'ISO 15765-4 CAN · 11-bit · 250 kbit/s',
+  ISO_15765_4_CAN_29_250: 'ISO 15765-4 CAN · 29-bit · 250 kbit/s',
+  ISO_9141_2: 'ISO 9141-2',
+  ISO_14230_4_KWP_FAST: 'ISO 14230-4 KWP · fast init',
+  ISO_14230_4_KWP_5_BAUD: 'ISO 14230-4 KWP · 5 baud init',
+  SAE_J1850_PWM: 'SAE J1850 PWM',
+  SAE_J1850_VPW: 'SAE J1850 VPW',
+};
+
 export function presentObdProtocol(rawProtocol?: string | null): ObdProtocolPresentation {
   const normalized = rawProtocol?.replace(/>/g, '').trim();
 
@@ -27,6 +39,11 @@ export function presentObdProtocol(rawProtocol?: string | null): ObdProtocolPres
   }
 
   const upper = normalized.toUpperCase();
+  const internal = INTERNAL_PROTOCOLS[upper];
+  if (internal) {
+    return { label: internal, resolved: true };
+  }
+
   if (upper === '0' || upper === 'A0') {
     return {
       label: 'Automatic detection',
