@@ -4,6 +4,7 @@ import HistoryScreen from '../HistoryScreen';
 
 const navigate = jest.fn();
 const getRecentSessions = jest.fn();
+const productDb = {};
 
 jest.mock('@react-navigation/native', () => ({
   useNavigation: () => ({ navigate }),
@@ -14,7 +15,7 @@ jest.mock('@react-navigation/native', () => ({
 }));
 
 jest.mock('../../infrastructure/hooks/useProductDb', () => ({
-  useProductDb: () => ({})
+  useProductDb: () => productDb
 }));
 
 jest.mock('../../infrastructure/hooks/useLocalContext', () => ({
