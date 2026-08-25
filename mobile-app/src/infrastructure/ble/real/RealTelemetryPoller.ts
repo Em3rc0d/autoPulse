@@ -1,4 +1,3 @@
-import { RealObdController } from './RealObdController';
 import { CommandRequest, CommandResult } from './pipeline/types';
 import { STANDARD_OBD_TIER_1 } from '../../../domain/obd/StandardObdCatalogV1';
 
@@ -7,12 +6,19 @@ type ObdCommandExecutor = {
   executeCommand(request: CommandRequest): Promise<CommandResult>;
 };
 
-// We use CommandResult directly for 05E
+export type PollerDiagnosticEvent =
+  | {
+      type: 'PID_RETIRED_NO_DATA';
+      pid: string;
+    }
+  | {
+      type: 'TRANSPORT_STALLED';
+      pid: string;
+      reason: 'TIMEOUT' | 'WRITE_FAILED' | 'DISCONNECTED';
+      consecutiveFailures: number;
+    };
 
-export interface PollerDiagnosticEvent {
-  type: 'PID_RETIRED_NO_DATA';
-  pid: string;
-}
+const TRANSPORT_FAILURE_THRESHOLD = 3;
 
 export class RealTelemetryPoller {
   private controller: ObdCommandExecutor;
@@ -23,12 +29,13 @@ export class RealTelemetryPoller {
   private intervalHandle: NodeJS.Timeout | null = null;
   private currentPidIndex: number = 0;
 
-  // Track consecutive failures per PID
   private consecutiveFailures: Record<string, number> = {};
+  private consecutiveTransportFailures = 0;
+  private transportStallEmitted = false;
 
   constructor(
-    controller: ObdCommandExecutor, 
-    supportedPids: string[], 
+    controller: ObdCommandExecutor,
+    supportedPids: string[],
     onData: (data: CommandResult) => void,
     onDiagnostic?: (event: PollerDiagnosticEvent) => void
   ) {
@@ -40,7 +47,6 @@ export class RealTelemetryPoller {
     this.supportedPids = Array.from(new Set(supportedPids))
       .filter(pid => decodableRequests.has(pid));
 
-    // Bounded standard probes when discovery yielded no decodable Tier-1 PID.
     if (this.supportedPids.length === 0) {
       this.supportedPids = ['010C', '010D', '0105', '0104', '010B'];
     }
@@ -53,22 +59,13 @@ export class RealTelemetryPoller {
     if (this.isPolling) return;
     this.isPolling = true;
 
-    // Use an asynchronous loop to prevent flooding the ELM327.
-    // We must wait for the PREVIOUS command to finish before waiting for the interval.
     const pollLoop = async () => {
       if (!this.isPolling || !this.controller.isConnected || this.supportedPids.length === 0) {
         this.stop();
         return;
       }
 
-      // Ensure we don't divide by zero if supportedPids was reduced to 0
-      if (this.supportedPids.length === 0) {
-        this.stop();
-        return;
-      }
-
       const pid = this.supportedPids[this.currentPidIndex];
-      // Increment index for next time, safely wrapping
       this.currentPidIndex = (this.currentPidIndex + 1) % this.supportedPids.length;
 
       const isAT = pid.toUpperCase().startsWith('AT');
@@ -89,8 +86,7 @@ export class RealTelemetryPoller {
       }
     };
 
-    // Kick off the loop
-    pollLoop();
+    void pollLoop();
   }
 
   public stop() {
@@ -101,12 +97,55 @@ export class RealTelemetryPoller {
     }
   }
 
+  private resetTransportHealth() {
+    this.consecutiveTransportFailures = 0;
+    this.transportStallEmitted = false;
+  }
+
+  private observeTransportHealth(pid: string, result: CommandResult) {
+    // NO_DATA and ELM_ERROR prove that the adapter answered. They are not a
+    // transport disconnect and must never trigger connection recovery.
+    if (
+      result.status === 'SUCCESS_DECODED' ||
+      result.status === 'SUCCESS_RAW' ||
+      result.status === 'NO_DATA' ||
+      result.status === 'ELM_ERROR'
+    ) {
+      this.resetTransportHealth();
+      return;
+    }
+
+    if (
+      result.status !== 'TIMEOUT' &&
+      result.status !== 'WRITE_FAILED' &&
+      result.status !== 'DISCONNECTED'
+    ) {
+      return;
+    }
+
+    this.consecutiveTransportFailures += 1;
+    if (
+      this.consecutiveTransportFailures >= TRANSPORT_FAILURE_THRESHOLD &&
+      !this.transportStallEmitted
+    ) {
+      this.transportStallEmitted = true;
+      this.onDiagnostic?.({
+        type: 'TRANSPORT_STALLED',
+        pid,
+        reason: result.status,
+        consecutiveFailures: this.consecutiveTransportFailures
+      });
+    }
+  }
+
   private handleResult(pid: string, result: CommandResult) {
+    this.observeTransportHealth(pid, result);
+
     if (result.status === 'SUCCESS_DECODED' || result.status === 'SUCCESS_RAW') {
       this.consecutiveFailures[pid] = 0;
     } else if (result.status === 'NO_DATA') {
       this.consecutiveFailures[pid] = (this.consecutiveFailures[pid] || 0) + 1;
-      
+
       if (this.consecutiveFailures[pid] >= 3) {
         console.log(`[RealTelemetryPoller] Retiring PID ${pid} after 3 consecutive NO_DATA`);
         const indexToRemove = this.supportedPids.indexOf(pid);
@@ -116,22 +155,17 @@ export class RealTelemetryPoller {
             this.currentPidIndex--;
           }
         }
-        
-        if (this.onDiagnostic) {
-          this.onDiagnostic({ type: 'PID_RETIRED_NO_DATA', pid });
-        }
-        
+
+        this.onDiagnostic?.({ type: 'PID_RETIRED_NO_DATA', pid });
         this.onData(result);
-        
+
         if (this.supportedPids.length === 0) {
           this.stop();
         }
         return;
       }
     }
-    
-    // Do not retire on TIMEOUT, ELM_ERROR, or DISCONNECTED
+
     this.onData(result);
   }
-
 }
