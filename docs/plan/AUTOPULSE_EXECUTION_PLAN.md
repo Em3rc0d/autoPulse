@@ -54,6 +54,21 @@ Proven/implemented areas include:
 
 Purpose: close the Duster defect where entering Off-Road could destabilize ECU acquisition and correct clean-stop Summary semantics.
 
+### Frozen RC4 test artifact
+
+- Commit: `4f463a0925cc069b5e835a430132da9e9b9ab092`
+- PR: #37 — `fix(rc4): isolate Off-Road phone sensors from ECU acquisition`
+- Mobile Verify: **SUCCESS**
+- Android APK PR Build: **SUCCESS**
+- Workflow run: `32801577080`
+- GitHub artifact ID: `9546933827`
+- Artifact name: `autopulse-android-internal-apk`
+- Artifact archive digest: `sha256:7aec6c135a972bf4e76b70f4b0ed170ce11fdf581a2a115a2bd75d24edc87015`
+- Extracted APK filename in artifact: `app-release.apk`
+- Extracted APK SHA-256: `437181487c0591e3083364accf1e38129af219b1a90227c8612026fbee4ee493`
+
+This exact APK is the preferred Q-003 physical target. If code changes before the retest, a new artifact identity must replace it and the test target resets.
+
 ### RC4 implementation acceptance
 
 - [x] Off-Road must never request location permission during ACTIVE Live.
@@ -65,8 +80,8 @@ Purpose: close the Duster defect where entering Off-Road could destabilize ECU a
 - [x] Expected final short block on clean Stop does not automatically downgrade entire session to PARTIAL.
 - [x] Regression tests added.
 - [x] Mobile Verify green on final RC4 head.
-- [ ] Final Android APK workflow green on final RC4 head.
-- [ ] Exact CI artifact retained for physical test.
+- [x] Final Android APK workflow green on final RC4 head.
+- [x] Exact CI artifact retained for physical test.
 
 ### RC4 Duster physical acceptance
 
@@ -189,7 +204,7 @@ Current evidence:
 - Off-Road exposed runtime-interference defect;
 - normal Stop exposed Summary semantics defect.
 
-Next: RC4 retest.
+Next: RC4 retest using the frozen artifact above.
 
 ### Vehicle #3 — non-Renault
 
