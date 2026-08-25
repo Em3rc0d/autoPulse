@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import * as Location from 'expo-location';
+import {
+  OFF_ROAD_MOTION_UI_MIN_INTERVAL_MS,
+  shouldPublishSidecarSample,
+} from './OffRoadSensorPolicy';
 
 export interface PhoneDrivingSensors {
   altitude?: number;
@@ -24,17 +28,6 @@ interface MotionEvent {
 }
 
 const motionModule = NativeModules.AutoPulseMotion;
-const MOTION_UI_MIN_INTERVAL_MS = 200;
-
-export function shouldEmitMotionSample(
-  lastPublishedAt: number,
-  candidateObservedAt: number,
-  minimumIntervalMs: number = MOTION_UI_MIN_INTERVAL_MS,
-): boolean {
-  if (!Number.isFinite(candidateObservedAt)) return false;
-  if (!Number.isFinite(lastPublishedAt) || lastPublishedAt <= 0) return true;
-  return candidateObservedAt - lastPublishedAt >= minimumIntervalMs;
-}
 
 export function usePhoneDrivingSensors(enabled: boolean): PhoneDrivingSensors {
   const [state, setState] = useState<PhoneDrivingSensors>({
@@ -101,7 +94,11 @@ export function usePhoneDrivingSensors(enabled: boolean): PhoneDrivingSensors {
           motionSubscription = emitter.addListener('AutoPulseMotion', (event: MotionEvent) => {
             if (cancelled) return;
             const observedAt = Number.isFinite(event.timestamp) ? event.timestamp : Date.now();
-            if (!shouldEmitMotionSample(lastMotionPublishedAt, observedAt)) return;
+            if (!shouldPublishSidecarSample(
+              lastMotionPublishedAt,
+              observedAt,
+              OFF_ROAD_MOTION_UI_MIN_INTERVAL_MS,
+            )) return;
             lastMotionPublishedAt = observedAt;
 
             setState(current => ({
