@@ -35,7 +35,6 @@ describe('RealLiveSessionController Integration', () => {
       'conn1',
       ['010C', '010D']
     );
-    // Stub out actual telemetry operations for pure lifecycle testing.
     (ctrl as any).assembler = {
       flush: jest.fn().mockReturnValue(null)
     };
@@ -49,9 +48,6 @@ describe('RealLiveSessionController Integration', () => {
 
   it('Controller start is idempotent', async () => {
     const ctrl = createController();
-
-    // Start details require a real/mocked BLE connection. This verifies the
-    // lifecycle test fixture can represent an already-active controller.
     ctrl['currentState'] = 'ACTIVE';
     ctrl['commitQueue'] = {
       drain: jest.fn().mockResolvedValue(undefined),
@@ -88,15 +84,15 @@ describe('RealLiveSessionController Integration', () => {
     expect(ctrl['currentState']).toBe('INTERRUPTED');
   });
 
-  it('Disconnect produces INTERRUPTED once', async () => {
+  it('Explicit terminal disconnect produces INTERRUPTED once', async () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';
 
-    await ctrl.handleUnexpectedDisconnect('DEVICE_DISCONNECTED');
-    await ctrl.handleUnexpectedDisconnect('DEVICE_DISCONNECTED');
+    await ctrl.handleUnexpectedDisconnect('DEVICE_DISCONNECTED_RECOVERY_FAILED');
+    await ctrl.handleUnexpectedDisconnect('DEVICE_DISCONNECTED_RECOVERY_FAILED');
 
     expect(mockSessionRepo.interruptSession).toHaveBeenCalledTimes(1);
-    expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith('ws1', 'sess1', 'DEVICE_DISCONNECTED');
+    expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith('ws1', 'sess1', 'DEVICE_DISCONNECTED_RECOVERY_FAILED');
     expect(ctrl['currentState']).toBe('INTERRUPTED');
   });
 
@@ -106,51 +102,48 @@ describe('RealLiveSessionController Integration', () => {
     const onTerminal = jest.fn();
     (ctrl as any).onSessionTerminal = onTerminal;
 
-    const first = ctrl.handleUnexpectedDisconnect('DEVICE_DISCONNECTED');
-    const second = ctrl.handleUnexpectedDisconnect('DEVICE_DISCONNECTED');
+    const first = ctrl.handleUnexpectedDisconnect('DEVICE_DISCONNECTED_RECOVERY_FAILED');
+    const second = ctrl.handleUnexpectedDisconnect('DEVICE_DISCONNECTED_RECOVERY_FAILED');
     expect(first).toBe(second);
     await first;
 
     expect(onTerminal).toHaveBeenCalledTimes(1);
     expect(onTerminal).toHaveBeenCalledWith({
       state: 'INTERRUPTED',
-      reason: 'DEVICE_DISCONNECTED'
+      reason: 'DEVICE_DISCONNECTED_RECOVERY_FAILED'
     });
   });
 
-  it('Native BLE disconnect observation terminalizes the active session', async () => {
+  it('Native BLE disconnect enters bounded recovery before terminalization', async () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';
     let disconnectListener: (() => void) | null = null;
     const remove = jest.fn();
-
-    (ctrl as any).observePhysicalDisconnect({
+    const connection = {
       device: {
         onDisconnected: jest.fn((listener: () => void) => {
           disconnectListener = listener;
           return { remove };
         })
       }
-    });
+    } as any;
+    const recovery = jest.spyOn(ctrl, 'attemptConnectionRecovery').mockResolvedValue(true);
 
+    (ctrl as any).observePhysicalDisconnect(connection);
     expect(disconnectListener).not.toBeNull();
     (disconnectListener as unknown as () => void)();
-    await ctrl['terminalPromise'];
+    await Promise.resolve();
 
-    expect(remove).toHaveBeenCalledTimes(1);
-    expect(mockSessionRepo.completeSession).not.toHaveBeenCalled();
-    expect(mockSessionRepo.interruptSession).toHaveBeenCalledTimes(1);
-    expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith(
-      'ws1',
-      'sess1',
-      'DEVICE_DISCONNECTED'
-    );
+    expect(recovery).toHaveBeenCalledTimes(1);
+    expect(recovery).toHaveBeenCalledWith('DEVICE_DISCONNECTED', connection);
+    expect(mockSessionRepo.interruptSession).not.toHaveBeenCalled();
   });
 
   it('Native BLE disconnect after terminalization cannot change the outcome', async () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';
     let disconnectListener: (() => void) | null = null;
+    const recovery = jest.spyOn(ctrl, 'attemptConnectionRecovery').mockResolvedValue(true);
 
     (ctrl as any).observePhysicalDisconnect({
       device: {
@@ -166,6 +159,7 @@ describe('RealLiveSessionController Integration', () => {
 
     expect(mockSessionRepo.completeSession).toHaveBeenCalledTimes(1);
     expect(mockSessionRepo.interruptSession).not.toHaveBeenCalled();
+    expect(recovery).not.toHaveBeenCalled();
   });
 
   it('App background uses the Release-1 APP_BACKGROUND interruption policy', async () => {
@@ -231,7 +225,6 @@ describe('RealLiveSessionController Integration', () => {
     expect(p1).toBe(p2);
     await p1;
 
-    // The first call (stopSession) won the race.
     expect(mockSessionRepo.completeSession).toHaveBeenCalledTimes(1);
     expect(mockSessionRepo.interruptSession).not.toHaveBeenCalled();
   });
