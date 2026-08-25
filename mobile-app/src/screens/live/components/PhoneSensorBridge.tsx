@@ -2,6 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePhoneDrivingSensors } from '../../../infrastructure/sensors/usePhoneDrivingSensors';
+import {
+  OFF_ROAD_CONTEXT_PUBLISH_INTERVAL_MS,
+  shouldPublishSidecarSample,
+} from '../../../infrastructure/sensors/OffRoadSensorPolicy';
 import { useDriverMode } from './DriverModeContext';
 
 interface Props {
@@ -15,7 +19,6 @@ interface OffRoadCalibration {
 }
 
 const calibrationKey = (vehicleId: string) => `autopulse.offroad.calibration.${vehicleId}`;
-const OFF_ROAD_CONTEXT_PUBLISH_INTERVAL_MS = 1000;
 
 export function applyOffRoadCalibration(raw: number | undefined, zero: number | undefined): number | undefined {
   if (raw === undefined || zero === undefined) return undefined;
@@ -31,16 +34,6 @@ export function shouldPresentAltitude(altitude?: number, altitudeAccuracy?: numb
   if (typeof altitude !== 'number' || !Number.isFinite(altitude)) return false;
   if (Math.abs(altitude) <= 0.5 && altitudeAccuracy === undefined) return false;
   return true;
-}
-
-export function shouldPublishOffRoadContext(
-  lastPublishedAt: number,
-  now: number,
-  minimumIntervalMs: number = OFF_ROAD_CONTEXT_PUBLISH_INTERVAL_MS,
-): boolean {
-  if (!Number.isFinite(now)) return false;
-  if (!Number.isFinite(lastPublishedAt) || lastPublishedAt <= 0) return true;
-  return now - lastPublishedAt >= minimumIntervalMs;
 }
 
 export function PhoneSensorBridge({ vehicleId }: Props) {
@@ -95,7 +88,11 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
     if (selectedMode !== 'OFF_ROAD') return;
 
     const now = Date.now();
-    if (!shouldPublishOffRoadContext(lastContextPublishAt.current, now)) return;
+    if (!shouldPublishSidecarSample(
+      lastContextPublishAt.current,
+      now,
+      OFF_ROAD_CONTEXT_PUBLISH_INTERVAL_MS,
+    )) return;
     lastContextPublishAt.current = now;
 
     const publish = (
