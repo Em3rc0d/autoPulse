@@ -32,6 +32,15 @@ Recovery remains read-only relative to the vehicle ECU. `ATSP0` configures the E
 
 Recovery never synthesizes telemetry for the missing interval. A sufficiently long gap remains visible to persisted block/window integrity and may cause a degraded summary rather than false completeness.
 
+## Automated gate
+
+The combined RC4+RC5 branch must pass both repository gates after targeting `main`:
+
+- AutoPulse Mobile Verify;
+- AutoPulse Android APK PR Build.
+
+Only the artifact from the final green head is valid for the physical drive.
+
 ## RC5 physical checks
 
 - intermittent ECU/ELM stall recovers without a new session when the adapter path returns;
