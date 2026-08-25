@@ -1,185 +1,231 @@
 # AutoPulse 🚗⚡
-### Plataforma Inteligente de Monitoreo Vehicular
-> Renault Logan 2014 · ELM327 Bluetooth · React Native · FastAPI · MongoDB
 
----
+**Android vehicle intelligence and Live OBD telemetry — local-first, evidence-driven, read-only.**
 
-## Arquitectura
+AutoPulse connects an Android phone to a supported OBD adapter, discovers the actual adapter/vehicle capabilities, presents only evidence it can justify, records durable Live sessions and reconstructs honest History/Summaries.
 
-```
-ELM327 (Bluetooth)
-    ↓
-React Native App
-    ↓  (HTTP POST cada 2s + WebSocket)
-FastAPI Backend
-    ↓
-MongoDB
-    ↓
-ML / Alertas / WebSocket broadcast
-```
+The current product is **not** a Logan-specific dashboard and does **not** promise every car/every reader. Compatibility expands through physical evidence.
 
----
+## Current v1 direction
 
-## Backend (FastAPI + Python)
-
-### Setup
-
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-
-cp .env.example .env
-# Editar .env con tu MONGO_URI y SECRET_KEY
-
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```text
+Vehicle ECU
+   ↓ OBD-II
+ELM-compatible adapter
+   ↓ BLE (current Release-1 physical lane)
+Android AutoPulse
+   ├─ adapter/vehicle capability discovery
+   ├─ Live ECU telemetry
+   ├─ Driver Intelligence + modes
+   ├─ phone-sensor Off-Road sidecar
+   ├─ voice / color / haptic alerts
+   ├─ BINARY_OBD2_V3 durable recording
+   ├─ SQLite product persistence
+   └─ History + reconstructed Session Summary
 ```
 
-### Endpoints principales
+Core operation for v1 is local-first. The historical `backend/` and other experiments remain in the repository, but a cloud backend/MongoDB/WebSocket pipeline is **not a core dependency of the current AutoPulse Live v1 release path**.
 
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| POST | /api/v1/auth/register | Registro |
-| POST | /api/v1/auth/login | Login |
-| GET  | /api/v1/vehicles/ | Mis vehículos |
-| POST | /api/v1/vehicles/ | Crear vehículo |
-| POST | /api/v1/telemetry/ingest | Enviar datos OBD |
-| GET  | /api/v1/telemetry/{id}/latest | Últimos registros |
-| GET  | /api/v1/telemetry/{id}/stats | Estadísticas |
-| WS   | /api/v1/telemetry/ws/{id} | WebSocket tiempo real |
-| POST | /api/v1/telemetry/{id}/train-model | Entrenar IA |
+## Product truth rules
 
-Swagger UI: http://localhost:8000/docs
+AutoPulse treats data provenance as part of the product:
 
----
+- missing data is not zero;
+- invalid data is not valid telemetry;
+- phone sensors are not ECU data;
+- `ATRV` adapter voltage is not Mode 01 PID `0142` ECU/control-module voltage;
+- adapter configuration success is not ECU-live proof;
+- a valid ECU-origin OBD observation is required before healthy Live;
+- `A0` is automatic/provisional protocol evidence until sufficient real exchange resolves the presentation;
+- internal unknown sentinels such as ECU `-1` never belong in user UI;
+- a successful test on one vehicle/adapter does not become a universal compatibility promise.
 
-## Mobile App (React Native + Expo)
+## Smartphone-first Live cockpit
 
-### Setup
+AutoPulse is designed for a phone-sized screen.
+
+Healthy driving state is intentionally quiet:
+
+- vehicle + session context;
+- compact Driver Mode selector;
+- primary metrics such as RPM/speed/coolant where available;
+- subtle healthy Live indicator;
+- trends/details below primary telemetry.
+
+Large colored status banners are reserved for waiting, degraded, interrupted or critical states.
+
+### Attention model
+
+- **Green:** healthy/available; usually silent.
+- **Amber/orange:** waiting, partial evidence or attention.
+- **Red:** critical/terminal/interrupted.
+- **Voice:** short meaning/action-oriented messages, not continuous PID reading.
+- **Haptics:** reinforce warning/critical transitions.
+
+## Driver modes
+
+Current mode family:
+
+- Essential;
+- Family / Daily;
+- Performance;
+- Off-Road;
+- Diagnostic.
+
+Modes change **priority and interpretation**, never the underlying truth of telemetry.
+
+Off-Road combines ECU telemetry with phone-origin pitch/roll/altitude/heading. Phone sensors are a subordinate sidecar: they must never stop, restart or starve ECU acquisition.
+
+## Live lifecycle
+
+Conceptual state progression:
+
+```text
+CONNECTING
+→ ADAPTER_READY
+→ VEHICLE_READY
+→ WAITING_FOR_FIRST_ECU_SAMPLE
+→ LIVE_ECU
+→ COMPLETED / INTERRUPTED / DEGRADED
+```
+
+Release-1 recording is foreground-only. Backgrounding an ACTIVE session becomes explicit `APP_BACKGROUND` interruption instead of silently claiming recording continued.
+
+Abrupt Android process kill is recovered on the next boot from durable SQLite/telemetry evidence.
+
+## Durable sessions
+
+Live OBD events are assembled into telemetry blocks and persisted in the product database. History exposes completed/interrupted sessions and can reconstruct terminal summaries.
+
+Summary integrity can be:
+
+- COMPLETE;
+- PARTIAL;
+- DEGRADED;
+- CORRUPTED;
+- UNAVAILABLE.
+
+A normal user Stop may end with a shorter final telemetry window. That expected final block does not by itself make the entire completed session PARTIAL.
+
+## Physical evidence today
+
+The physical program currently includes:
+
+### Renault Logan 2014
+
+Observed:
+
+- BLE/ELM/vehicle initialization;
+- real ECU telemetry;
+- RPM/speed/coolant across the physical program;
+- adapter voltage separately;
+- phone-sensor Off-Road observations;
+- explicit `APP_BACKGROUND` interruption;
+- durable completed/interrupted History entries.
+
+Historical defects found through this run included Android/Hermes `TextDecoder` Summary reconstruction and terminal Live UI truth; RC3 implemented fixes.
+
+### Renault Duster 2014
+
+Using the same adapter, RC3 physically observed:
+
+- initialization;
+- waiting → first ECU sample → healthy Live;
+- RPM;
+- vehicle speed;
+- coolant;
+- Essential/Family/Performance mode continuity;
+- successful persisted Session Summary reconstruction.
+
+The Duster exposed two RC3 defects:
+
+- Off-Road could destabilize the ECU/session path;
+- a clean USER_INITIATED Stop could be mislabeled `Session PARTIAL`.
+
+RC4 addresses both and is waiting for the focused physical retest.
+
+## RC4 test artifact
+
+Current frozen RC4 candidate for the Duster retest:
+
+- commit: `4f463a0925cc069b5e835a430132da9e9b9ab092`;
+- PR: #37;
+- Mobile Verify: **SUCCESS**;
+- Android APK PR Build: **SUCCESS**;
+- APK SHA-256: `437181487c0591e3083364accf1e38129af219b1a90227c8612026fbee4ee493`.
+
+CI success does not mean Off-Road physical PASS; that result must be recorded in Q-003 after the vehicle run.
+
+## Development setup
+
+### Mobile app
 
 ```bash
 cd mobile-app
-npm install
-npx expo start
+npm ci
+npm run verify
 ```
 
-### Configurar IP del servidor
+For Android native execution/build use the repository Android/React Native workflow rather than Expo Go for BLE/native functionality.
 
-En `src/services/api.ts` y `src/hooks/useWebSocket.ts`:
-```ts
-const BASE_URL = 'http://TU_IP_LOCAL:8000/api/v1';
+The CI workflows are the preferred reproducibility authority for candidate verification and APK production.
+
+## Documentation architecture
+
+Start here:
+
+[`docs/README.md`](docs/README.md)
+
+AutoPulse knowledge is intentionally separated into:
+
+```text
+docs/
+├─ brainstorming/        # ideas only; non-authoritative
+├─ design/               # accepted system/product invariants
+├─ plan/                 # ordered gates and acceptance criteria
+├─ build/                # implementation / PR / artifact receipts
+├─ test/                 # automated + physical validation ledger
+├─ mining-site/
+│  └─ quarries/          # raw/minimally interpreted field evidence
+├─ golden-dataset/       # normalized approved/candidate evidence
+└─ release/              # compatibility and release contracts
 ```
 
-### Librería Bluetooth
+Important entries:
 
-```bash
-npx expo install react-native-bluetooth-classic
-# Requiere build nativo (no Expo Go):
-npx expo run:android
+- `docs/design/AUTOPULSE_SYSTEM_DESIGN.md`
+- `docs/plan/AUTOPULSE_EXECUTION_PLAN.md`
+- `docs/build/AUTOPULSE_BUILD_LEDGER.md`
+- `docs/build/RC4_ARTIFACT_RECEIPT.md`
+- `docs/test/AUTOPULSE_TEST_LEDGER.md`
+- `docs/mining-site/quarries/Q-001_RENAULT_LOGAN_2014.md`
+- `docs/mining-site/quarries/Q-002_RENAULT_DUSTER_2014.md`
+- `docs/mining-site/quarries/Q-003_RENAULT_DUSTER_2014_RC4_RETEST.md`
+- `docs/golden-dataset/AUTOPULSE_GOLDEN_DATASET_V1.md`
+- `docs/release/AUTOPULSE_LIVE_V1_RELEASE_PLAN.md`
+- `docs/release/COMPATIBILITY_CONTRACT_V1.md`
+- `docs/release/RELEASE_CANDIDATE_RUNBOOK.md`
+
+## Release status
+
+```text
+P0 foundation                         ✅ code closed
+Real Logan ECU acquisition            ✅ physically observed
+Real Duster ECU acquisition           ✅ physically observed
+RC3 Android Summary reconstruction    ✅ physically observed on Duster
+Phone-first cockpit                   ✅ implemented
+Voice/color/haptic direction          ✅ implemented/in validation
+RC4 Off-Road isolation                ✅ code + CI
+RC4 clean Stop Summary semantics      ✅ code + CI
+RC4 Duster physical retest            ⏳ next
+Physical BLE-unplug lifecycle         ⏳ pending
+Abrupt process-kill recovery          ⏳ pending
+Broader adapter/manufacturer matrix   ⏳ pending
+Public v1                             🔒 not yet certified
 ```
 
----
+## Release philosophy
 
-## Estructura del Proyecto
+> Observed ≠ universal. Implemented ≠ physically passed. CI green ≠ release ready. Unknown ≠ PASS.
 
-```
-autoPulse/
-├── backend/
-│   ├── app/
-│   │   ├── main.py               ← FastAPI app entry
-│   │   ├── core/
-│   │   │   ├── config.py         ← Settings (env vars)
-│   │   │   └── security.py       ← JWT / bcrypt
-│   │   ├── db/
-│   │   │   └── database.py       ← MongoDB (Motor async)
-│   │   ├── models/
-│   │   │   ├── telemetry.py      ← Pydantic models
-│   │   │   ├── vehicle.py
-│   │   │   └── user.py
-│   │   ├── services/
-│   │   │   ├── telemetry_service.py  ← CRUD MongoDB
-│   │   │   └── alert_service.py      ← Reglas de alertas
-│   │   ├── ml/
-│   │   │   └── anomaly_detector.py   ← Isolation Forest
-│   │   └── api/routes/
-│   │       ├── auth.py
-│   │       ├── vehicles.py
-│   │       └── telemetry.py      ← WebSocket + ingest
-│   └── requirements.txt
-│
-└── mobile-app/
-    └── src/
-        ├── services/
-        │   ├── api.ts             ← HTTP client
-        │   └── bluetoothOBD.ts   ← ELM327 Bluetooth + parsers
-        ├── hooks/
-        │   ├── useOBDPolling.ts   ← Lee OBD y envía al backend
-        │   └── useWebSocket.ts    ← Recibe datos en tiempo real
-        └── screens/
-            ├── DashboardScreen.tsx  ← Pantalla principal
-            └── BluetoothScreen.tsx  ← Conexión ELM327
-```
-
----
-
-## PIDs OBD2 implementados
-
-| PID | Sensor | Fórmula |
-|-----|--------|---------|
-| 010C | RPM | (A×256+B)/4 |
-| 010D | Velocidad | A km/h |
-| 0105 | Temp motor | A-40 °C |
-| 0104 | Carga motor | A×100/255 % |
-| 0111 | Acelerador | A×100/255 % |
-| 0106 | Fuel trim corto | (A-128)×100/128 % |
-| 0107 | Fuel trim largo | (A-128)×100/128 % |
-| 0110 | MAF | (A×256+B)/100 g/s |
-| 03 | Códigos DTC | Parser incluido |
-
----
-
-## Alertas automáticas
-
-| Sensor | Warning | Critical |
-|--------|---------|----------|
-| Temperatura motor | 95°C | 105°C |
-| RPM | 5500 | 6500 |
-| Voltaje batería | 11.8V | 11.0V |
-| Carga motor | 85% | 95% |
-| DTC | Cualquier código | — |
-
----
-
-## ML — Anomaly Detection
-
-El backend incluye **Isolation Forest** de scikit-learn.
-
-### Cómo entrenar
-
-```bash
-# Después de tener 50+ registros (una semana de uso mínimo):
-POST /api/v1/telemetry/{vehicle_id}/train-model
-```
-
-Cada `/ingest` responde con:
-```json
-{
-  "anomaly": false,
-  "score": -0.42,
-  "message": "✅ Normal"
-}
-```
-
----
-
-## Roadmap
-
-- [x] Fase 1: Backend FastAPI + MongoDB + WebSocket
-- [x] Fase 1: React Native + Bluetooth OBD + Dashboard
-- [x] Fase 1: Alertas automáticas + ML base
-- [ ] Fase 2: Login/Auth completo en app móvil
-- [ ] Fase 2: Gráficos históricos (react-native-chart-kit)
-- [ ] Fase 3: ESP32 como gateway WiFi alternativo
-- [ ] Fase 4: LSTM para predicción de fallas
-- [ ] Fase 5: Kafka + Spark Streaming
+AutoPulse v1 ships only when the declared support envelope is backed by the repository evidence chain.
