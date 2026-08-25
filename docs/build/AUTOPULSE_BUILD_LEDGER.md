@@ -4,360 +4,300 @@
 **Authority:** IMPLEMENTATION RECEIPT
 **Repository:** `Em3rc0d/autoPulse`
 
-This document records major implementation changes tied to observable defects and release gates. It is not a changelog of every commit; it is a traceable engineering ledger for product-critical work.
+This ledger records product-critical implementation changes tied to physical defects, release gates, branches, PRs and CI receipts. It is not a replacement for Git history.
 
-## 1. Baseline architecture before RC stabilization
-
-The mobile application is React Native/TypeScript with Android native integrations where required. The release-1 physical path is:
+## 1. Baseline product path
 
 ```text
-Android app
+Android / React Native
 → BLE transport
 → ELM-compatible adapter behavior
 → OBD request/response
-→ decoder
-→ Live presentation
-→ telemetry event/block persistence
-→ SQLite product history
+→ decoder + source truth
+→ Live cockpit / Driver Intelligence
+→ acquisition events
+→ BINARY_OBD2_V3 telemetry blocks
+→ SQLite product persistence
+→ History
 → reconstructed Session Summary
 ```
 
-Separate side paths include phone sensors for Off-Road and driver-intelligence advisory evaluation.
+Off-Road phone sensors are a separate sidecar path and are never allowed to own the OBD connection lifecycle.
 
 ## 2. P0 / physical acquisition foundation
 
 Implemented before the RC3/RC4 cycle:
 
-- BLE adapter connection and retention into initialization;
-- ELM command/control pipeline;
+- BLE adapter connection retained through initialization;
+- ELM command/control path;
 - real OBD protocol initialization;
 - Mode 01 capability discovery;
-- real telemetry poller;
-- repeated `NO_DATA` operational retirement after preserving the third `NO_DATA` event;
+- real telemetry polling;
+- repeated `NO_DATA` operational retirement after preserving the third result;
 - telemetry event mapping;
-- block assembly/persistence;
+- telemetry block assembly and persistence;
 - durable Live session repository;
-- summary builder;
-- product database bootstrap and local context;
+- Session Summary builder;
+- product database bootstrap/local context;
 - adapter and vehicle capability evidence structures.
 
-Important preserved invariant:
+Invariant: `ATRV` adapter voltage and PID `0142` ECU/control-module voltage are separate signals.
 
-- `ATRV` adapter voltage and Mode 01 `0142` ECU/control-module voltage remain separate.
+## 3. RC2 / physical-truth corrections
 
-## 3. Physical truth correction batch
+Branch lineage included `fix/rc2-physical-truth-20260824`.
 
-Branch history included `fix/rc2-physical-truth-20260824`, merged into the P1 feature stream.
+### ECU Live truth
 
-### 3.1 Real ECU truth gate
+`mobile-app/src/application/live/LiveEcuTruth.ts`
 
-File: `mobile-app/src/application/live/LiveEcuTruth.ts`
+Implemented:
 
-Implemented user-facing state around:
-
-- waiting for first ECU sample;
+- WAITING_FOR_FIRST_ECU_SAMPLE;
 - delayed ECU evidence;
 - live ECU evidence;
-- recording degradation/interruption.
+- recording degradation/interruption presentation.
 
-Key rule:
+A valid ECU-origin OBD reading can unlock Live. Adapter-only AT/ATRV evidence cannot.
 
-- a valid ECU-origin OBD reading unlocks Live;
-- ELM AT commands and adapter voltage do not.
+### Protocol truth
 
-### 3.2 Protocol presentation
+`ObdProtocolPresentation.ts` and real initialization code ensure:
 
-File: `mobile-app/src/application/diagnostics/ObdProtocolPresentation.ts`
+- `A0` remains unresolved automatic-selection evidence initially;
+- protocol evidence can be re-queried after real OBD exchange;
+- user-facing protocol is humanized when justified;
+- internal ECU unknown sentinel values do not leak to UI.
 
-Implemented:
-
-- `A0` treated as unresolved automatic-selection evidence rather than final vehicle protocol;
-- human-readable protocol presentation;
-- internal unknown ECU sentinel suppression.
-
-### 3.3 Real initialization protocol evidence
-
-File: `mobile-app/src/infrastructure/ble/real/RealObdInitialization.ts`
+### Phone-sensor truth
 
 Implemented:
 
-- automatic protocol code remains provisional initially;
-- protocol evidence re-queried after real OBD exchange;
-- only resolved evidence is promoted/persisted as final protocol presentation.
-
-### 3.4 Phone-sensor truth
-
-Files include sensor hooks and `PhoneSensorBridge.tsx`.
-
-Implemented:
-
-- accuracy/timestamps;
+- timestamps/accuracy;
+- phone-relative vs vehicle-relative distinction;
 - vehicle-scoped level calibration;
-- distinction between phone-relative raw orientation and vehicle-relative calibrated pitch/roll;
-- altitude acquisition/unavailable semantics instead of fake `0 m`.
+- honest altitude acquisition/unavailable state;
+- no fake `0 m` when altitude is unresolved.
 
-### 3.5 Driver mode evidence dimensions
+### Driver-mode truth
 
-Mode readiness requires required dimensions to be present and valid. Degraded evidence cannot be promoted to READY simply to keep a mode green.
+Required dimensions must actually be present/valid for READY. Degraded evidence remains PARTIAL rather than being promoted for visual convenience.
 
 ## 4. Lifecycle + History hardening
 
 Branch: `fix/p1-lifecycle-history-recovery-20260824`
-PR: #32 into P1 feature stream
-Squash merge lineage: `7eaa1e0876e3b910ff2375b097aadfe059d0257f`
+PR #32
+Squash lineage: `7eaa1e0876e3b910ff2375b097aadfe059d0257f`
 
-### 4.1 Orphan session recovery
+### Orphan recovery
 
-File: `mobile-app/src/infrastructure/database/product/repositories/live-session.repository.ts`
+`live-session.repository.ts` now reconciles stale CREATED/PREPARING/ACTIVE/STOPPING sessions from durable telemetry facts:
 
-Changed recovery to:
+- block/event/reading counts;
+- last committed sequence;
+- last durable telemetry time;
+- interruption reason `UNEXPECTED_APP_TERMINATION` unless stronger prior evidence exists;
+- no claim that a killed process kept recording until reopen.
 
-- inspect stale CREATED/PREPARING/ACTIVE/STOPPING sessions;
-- reconcile durable block count/event count/reading count;
-- use real `lastCommittedSequence` rather than stale/wrong naming;
-- derive recovery end time from last durable telemetry block when possible;
-- classify orphan as `INTERRUPTED`;
-- record `UNEXPECTED_APP_TERMINATION` unless stronger reason already exists;
-- append recovery event/evidence;
-- never pretend the killed session continued until app reopen.
+### Startup integration
 
-### 4.2 Startup recovery integration
+Database lifecycle runs orphan reconciliation before product DB becomes READY.
 
-File: `mobile-app/src/infrastructure/database/product/lifecycle.ts`
+### History
 
-Recovery executes during product DB initialization before the database is reported READY.
+`HistoryScreen.tsx` replaced the placeholder with durable session history:
 
-This implements the correct process-kill model: reconcile from durable storage on the next process start rather than relying on an impossible guaranteed synchronous kill callback.
-
-### 4.3 Real History screen
-
-File: `mobile-app/src/screens/HistoryScreen.tsx`
-
-Replaced placeholder History with persisted-session UI:
-
-- recent sessions from product SQLite;
-- vehicle alias;
+- vehicle;
 - status;
-- timestamps;
-- duration;
+- timestamp/duration;
 - blocks/readings;
 - termination reason;
 - short session ID;
-- reopen reconstructed Summary for eligible terminal sessions;
-- pull-to-refresh/focus refresh.
+- reconstructed Summary navigation for eligible terminal sessions.
 
-### 4.4 Summary navigation
+### Navigation
 
-`SessionSummaryScreen` Done action now routes to History rather than an invalid/nonexistent stack target.
+Session Summary Done routes to History through the real navigator path.
 
-### 4.5 CI fixes during lifecycle batch
+### Notable stabilization commits
 
-Notable commits:
+- `9b88c6bc8b4fc9f2dd89a58bcb6d0d0629c25045` — orphan recovery update typing;
+- `f1df83e8c8f8d203e962e286aff752db82e42076` — stable History test DB identity;
+- `b8951544176b810841c8e793364e7f87697a735b` — completed summaries return to durable History;
+- `050b51399e0580b5983db17c0a49295c2c9829ed` — interruption surfaced through Live error/terminal boundary.
 
-- `9b88c6bc8b4fc9f2dd89a58bcb6d0d0629c25045` — align orphan recovery update typing;
-- `f1df83e8c8f8d203e962e286aff752db82e42076` — stable mocked product DB identity in History tests;
-- `b8951544176b810841c8e793364e7f87697a735b` — durable completed summaries return to History;
-- `050b51399e0580b5983db17c0a49295c2c9829ed` — surface terminal interruptions through existing Live error boundary.
-
-## 5. P1 integration into main
+## 5. P1 integration
 
 PR #30: `feat(p1): Driver Intelligence + connector-aware runtime RC`
 
-P1 contained:
+P1 combined:
 
-- driver intelligence;
+- Driver Intelligence;
 - connector-aware real runtime;
-- physical truth fixes;
+- physical-truth fixes;
 - lifecycle persistence/history hardening;
 - interruption semantics.
 
-The branch was merged into `main` only after its final P1 RC head passed Mobile Verify and Android APK build.
+It was merged only after the final P1 head passed Mobile Verify and Android APK build.
 
-## 6. RC3 — smartphone cockpit + Android summary portability
+## 6. RC3 — Android reconstruction + mobile cockpit
 
 PR #36
-Final relevant head before merge: `6ac2fac8…`
+Final relevant head: `6ac2fac8…`
 
-RC3 addressed defects exposed by real Logan physical use and the mobile UX review.
+### Hermes-safe persisted Summary reconstruction
 
-### 6.1 Hermes-safe text decoding
-
-Observed physical failure:
+Physical Logan failure:
 
 ```text
 Failed to reconstruct session.
 Property 'TextDecoder' doesn't exist
 ```
 
-Root cause:
+Root cause: the product codec path assumed ambient global `TextDecoder`, available in Node but absent in the tested Android/Hermes runtime.
 
-- `BinaryObd2V3Codec` depended on global `TextDecoder` available in Node/test environments but absent in the tested Android/Hermes runtime.
+RC3 implemented a runtime-safe UTF-8 text encoding/decoding path and regression coverage.
 
-Implemented:
+Physical closure evidence appeared later on the Duster: a real persisted RC3 Session Summary opened successfully.
 
-- runtime-safe UTF-8 text encoding/decoding support/polyfill path;
-- regression coverage including execution without relying on ambient global TextDecoder behavior;
-- preserved Unicode decoding requirements.
+### Terminal Live behavior
 
-Physical result later observed on Duster RC3:
+RC3 changed terminal sessions so that the UI cannot continue pretending to record:
 
-- Session Summary successfully reconstructed, confirming the former runtime crash was closed in the real app.
+- interruption is explicit;
+- timer freezes;
+- active Stop/mode controls are removed/terminalized;
+- Summary/History actions are exposed;
+- interruption uses voice/haptic feedback.
 
-### 6.2 Terminal Live UI
+### Phone-first cockpit
 
-Observed defect:
+RC3 implemented:
 
-- after `APP_BACKGROUND`, persistence correctly terminalized the session but UI could continue to look operational.
+- compact horizontal Driver Mode selector;
+- much less explanatory chrome above telemetry;
+- primary Live values prioritized on a phone-sized viewport;
+- compact Off-Road presentation;
+- trends as supporting information;
+- no large persistent healthy `LIVE · ECU DATA` band;
+- subtle healthy indicator;
+- banners reserved for waiting/degraded/interrupted states.
 
-Implemented:
+Rule encoded in product direction: **healthy is quiet; exceptions are loud**.
 
-- explicit interruption presentation;
-- timer freeze on terminal outcome;
-- active Stop/action controls removed or replaced;
-- Summary/History action path;
-- interruption voice/haptic feedback.
+## 7. Duster RC3 physical defect → RC4
 
-### 6.3 Smartphone-first cockpit
-
-Implemented:
-
-- large Driver Mode cards replaced by compact horizontal selector/chips;
-- reduced repeated explanatory chrome;
-- primary Live telemetry receives more viewport priority;
-- Off-Road information compacted;
-- trend/chart area reduced to supporting role;
-- healthy-state large `LIVE · ECU DATA` banner removed;
-- subtle healthy indicator retained;
-- abnormal/transitional banners remain visible.
-
-Design rule established in code:
-
-> Healthy state is quiet; exceptions are loud.
-
-### 6.4 Voice/haptic direction
-
-RC3 integrated terminal/interruption voice and haptic behavior into the existing alert boundary rather than creating a second conflicting notification system.
-
-## 7. Duster RC3 field defect → RC4
-
-Physical Duster 2014 testing with the same adapter showed:
+Q-002 Duster evidence showed:
 
 - Essential/Family/Performance continued to receive ECU data;
-- entering Off-Road could destabilize the acquisition/session behavior;
-- normal Stop Summary reconstructed successfully;
-- clean user stop could still be labeled `Session PARTIAL`.
+- Off-Road selection could destabilize the ECU/session path;
+- normal Stop reconstructed Summary successfully;
+- clean USER_INITIATED Stop could still be labeled `Session PARTIAL`.
 
-The defect was classified as a cross-subsystem integration problem, not vehicle incompatibility, because the ECU path worked in other modes using the same vehicle and adapter.
+Because the same Duster + adapter worked in the other modes, this was classified as an Off-Road cross-subsystem defect, not basic vehicle incompatibility.
 
 ## 8. RC4 — Off-Road sidecar isolation
 
 Branch: `fix/rc4-offroad-sidecar-isolation-20260824`
 PR #37
-Current final documentation head of code under test: `4f463a0925cc069b5e835a430132da9e9b9ab092`
+Final tested head: `4f463a0925cc069b5e835a430132da9e9b9ab092`
 
-### 8.1 No permission UI during ACTIVE Live
+### No Android permission UI during ACTIVE Live
 
-Before RC4, Off-Road could request Android location permission during an active OBD session.
+Before RC4, entering Off-Road could request location permission while recording.
 
-Risk:
+Risk: Android permission UI can cause lifecycle state changes, and release-1 intentionally terminalizes ACTIVE recording when the app leaves foreground.
 
-- Android permission UI can cause application lifecycle changes;
-- current release policy intentionally interrupts recording when leaving foreground;
-- therefore a mode selection could indirectly terminate the session.
+RC4:
 
-RC4 behavior:
+- checks existing permission only during Live;
+- never launches location permission UI from the Active Off-Road path;
+- missing permission degrades only location/altitude capability;
+- permission setup belongs outside timing-critical Live acquisition.
 
-- Live Off-Road checks existing permission only;
-- it does not launch location permission UI while recording;
-- missing permission degrades only location-derived Off-Road capability;
-- permission can be set before Live/outside timing-critical acquisition.
+### Native phone motion budget
 
-### 8.2 Native phone motion budget
+Rotation-vector delivery was reduced from the prior more aggressive UI-rate path to a lower native cadence.
 
-Changed rotation vector delivery away from the previous more aggressive UI-rate path to a lower-rate native sensor cadence.
+### JS/context throttling
 
-Purpose:
+RC4 adds:
 
-- reduce native→JS event pressure;
-- protect ELM request/response timing.
+- JS-side motion sampling budget;
+- low-rate Driver Intelligence phone-sensor publication (approximately once per second in current design);
+- local Off-Road visuals decoupled from ECU transport ownership.
 
-### 8.3 JS/context throttling
+Invariant: phone-sensor workload/failure must never stop, restart or starve ELM/ECU acquisition.
 
-Implemented:
+### Regression coverage
 
-- additional JS-side motion sampling budget;
-- Driver Intelligence phone-sensor publication capped to a low rate (approximately once per second in current design);
-- local Off-Road visuals remain independent from ECU transport ownership.
+Added coverage for:
 
-Invariant:
+- phone sensor budgets;
+- Active Live never requesting location permission;
+- Off-Road sidecar behavior.
 
-> Phone sensor sidecar failure or load must never stop/restart/starve ECU acquisition.
+## 9. RC4 — clean Stop Summary integrity semantics
 
-### 8.4 Regression tests
-
-Added tests for:
-
-- sensor update budgets;
-- no location permission prompt from the Active Live Off-Road path;
-- sidecar behavior expectations.
-
-Final RC4 Mobile Verify result at documentation time: green.
-
-## 9. RC4 — clean Stop Summary semantics
-
-Duster screenshot exposed:
+Duster physical Summary showed:
 
 ```text
 Session PARTIAL
 Reason: USER_INITIATED
 ```
 
-Code investigation found:
+Investigation found:
 
-- `TelemetryBlockAssembler.flush()` intentionally marks the final flushed time window `isPartial` because Stop commonly occurs before the next full fixed window boundary;
-- `SessionSummaryBuilder` previously downgraded the entire session to PARTIAL whenever `partialBlocksCount > 0`.
+- `TelemetryBlockAssembler.flush()` intentionally closes the final fixed-duration window as a shorter `isPartial` block when Stop occurs between window boundaries;
+- `SessionSummaryBuilder` previously downgraded the whole session whenever any partial block existed.
 
-That made a clean normal Stop look incomplete even when there was no loss/corruption/gap.
+RC4 now allows session integrity `COMPLETE` when all of these are true:
 
-RC4 changed the session-level rule:
-
-- normal `COMPLETED / USER_INITIATED` session;
+- session status is normal completed/user-initiated;
 - no corruption;
 - no unsupported block;
-- no sequence gap;
-- no block-count mismatch;
-- only the expected final short flush block is partial;
+- no sequence gap/overlap;
+- no expected/found block mismatch;
+- only the expected final shorter flush is partial.
 
-→ session integrity may remain `COMPLETE`.
+The final partial block remains visible in detailed evidence; it simply no longer falsely means the entire session is incomplete.
 
-The partial-block detail is still retained. Interrupted sessions and anomalous partial patterns remain PARTIAL.
+Interrupted sessions and anomalous partial patterns remain PARTIAL.
 
-Regression coverage was added to distinguish expected user-stop flush from genuinely partial lifecycle evidence.
+## 10. RC4 final CI and artifact receipt
 
-## 10. Build/CI state at documentation cut
+For head `4f463a0925cc069b5e835a430132da9e9b9ab092`:
 
-For RC4 head `4f463a0925cc069b5e835a430132da9e9b9ab092`:
+- **AutoPulse Mobile Verify:** SUCCESS;
+- **AutoPulse Android APK PR Build:** SUCCESS;
+- Android workflow run ID: `32801577080`;
+- artifact ID: `9546933827`;
+- artifact name: `autopulse-android-internal-apk`;
+- artifact archive digest: `sha256:7aec6c135a972bf4e76b70f4b0ed170ce11fdf581a2a115a2bd75d24edc87015`;
+- extracted APK: `app-release.apk`;
+- APK size: `90,086,045` bytes;
+- APK SHA-256: `437181487c0591e3083364accf1e38129af219b1a90227c8612026fbee4ee493`.
 
-- Mobile Verify: **SUCCESS**;
-- Android APK PR Build: **in progress** at the time this documentation batch began/finalized;
-- RC4 physical Duster retest: **not yet performed**;
-- PR #37: **open** pending final artifact + physical validation policy decision.
+Canonical artifact receipt: `RC4_ARTIFACT_RECEIPT.md`.
 
-Do not reinterpret this ledger as saying RC4 physical PASS until the quarry/test receipt is added.
+RC4 physical Duster retest is still **PENDING**. CI SUCCESS is not physical PASS.
 
-## 11. Implementation invariants for future builds
+PR #37 remains open at this documentation point pending physical confirmation/merge decision.
 
-Future code changes must preserve:
+## 11. Future-build invariants
+
+Future implementation must preserve:
 
 - no fake zero for absent signals;
 - source-aware labels;
 - no adapter-only Live unlock;
 - no internal sentinel leakage;
-- no mode selection mutating connection lifecycle;
+- no Driver Mode selection mutating connection lifecycle;
+- Off-Road phone sensors remain subordinate to ECU acquisition;
 - bounded terminalization/persistence drain;
-- History durability;
+- durable History;
 - boot-time orphan recovery;
 - healthy state visual silence;
 - alert/voice rate limiting;
 - clean final flush not mislabeled as whole-session failure;
-- release promises remain bounded by physical evidence.
+- release claims bounded by physical evidence.
