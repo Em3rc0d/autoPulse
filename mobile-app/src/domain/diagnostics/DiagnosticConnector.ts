@@ -62,6 +62,12 @@ export interface DiagnosticMonitorStatus {
   confirmedDtcCount: number;
 }
 
+export interface DiagnosticFreezeFrameTrigger {
+  frameNumber: number;
+  triggerDtc?: string;
+  sourceEcu?: string;
+}
+
 export interface DiagnosticRequest {
   id: string;
   payload: string;
@@ -79,6 +85,7 @@ export interface DiagnosticResponse {
   sourceEcus: readonly string[];
   diagnosticCodes?: readonly string[];
   monitorStatus?: DiagnosticMonitorStatus;
+  freezeFrameTrigger?: DiagnosticFreezeFrameTrigger;
   latencyMs: number;
   errors: readonly string[];
 }
