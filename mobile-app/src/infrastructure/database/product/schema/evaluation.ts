@@ -45,3 +45,25 @@ export const checkEvidenceItems = sqliteTable('check_evidence_items', {
   liveSessionIdx: index('idx_check_evidence_live_session').on(table.liveSessionId),
   originIdx: index('idx_check_evidence_origin').on(table.origin),
 }));
+
+export const checkFindings = sqliteTable('check_findings', {
+  id: text('id').primaryKey(),
+  evaluationId: text('evaluation_id').notNull().references(() => checkEvaluations.id, { onDelete: 'cascade' }),
+  source: text('source').notNull(),
+  status: text('status').notNull(),
+  severity: text('severity').notNull(),
+  confidence: text('confidence').notNull(),
+  evidenceIdsJson: text('evidence_ids_json').notNull(),
+  systemProposalJson: text('system_proposal_json'),
+  professionalReviewJson: text('professional_review_json'),
+  technicalExplanation: text('technical_explanation'),
+  clientExplanation: text('client_explanation'),
+  suggestedAction: text('suggested_action'),
+  limitations: text('limitations'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, table => ({
+  evaluationIdx: index('idx_check_findings_evaluation').on(table.evaluationId),
+  statusIdx: index('idx_check_findings_status').on(table.status),
+  sourceIdx: index('idx_check_findings_source').on(table.source),
+}));
