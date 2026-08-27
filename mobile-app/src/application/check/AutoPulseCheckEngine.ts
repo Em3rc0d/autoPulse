@@ -112,7 +112,7 @@ export class AutoPulseCheckEngine {
 
     const current = currentCheck.evaluation;
     const allowed = canTransitionEvaluation(current.state, nextState);
-    if (!allowed.ok) return allowed;
+    if (allowed.ok === false) return failure(allowed.error);
 
     const now = this.now();
     const updated: Evaluation = {
@@ -156,7 +156,7 @@ export class AutoPulseCheckEngine {
       sessionStatus: input.sessionStatus,
     });
 
-    if (!promoted.ok) return promoted;
+    if (promoted.ok === false) return failure(promoted.error);
     await this.store.appendEvidence(promoted.value);
     return promoted;
   }
