@@ -12,6 +12,7 @@ import { ReportVersion } from '../../domain/evaluation/models/reportVersion';
 import { VehicleSnapshot } from '../../domain/evaluation/models/vehicleSnapshot';
 import {
   EvaluationState,
+  EvidenceState,
   FindingStatus,
   ReportDraftState,
   ReportVersionState,
@@ -83,7 +84,7 @@ function mergeLimitations(...groups: Array<readonly string[] | undefined>): stri
 }
 
 function protocolFromEvidence(evidence: readonly EvidenceItem[]): string | undefined {
-  const capability = evidence.find(item => item.type === 'OBD_CAPABILITY_DISCOVERY' && item.state === 'COMMITTED');
+  const capability = evidence.find(item => item.type === 'OBD_CAPABILITY_DISCOVERY' && item.state === EvidenceState.COMMITTED);
   const protocol = capability?.metadata?.protocol;
   return typeof protocol === 'string' && protocol.trim() && protocol !== 'UNKNOWN' ? protocol : undefined;
 }
@@ -143,6 +144,14 @@ export class CheckReportFinalizationEngine {
     }
 
     const evidence = await this.evaluations.listEvidence(input.evaluationId);
+    const committedEvidence = evidence.filter(item => item.state === EvidenceState.COMMITTED);
+    if (committedEvidence.length === 0) {
+      return failure(reportError(
+        'CHECK_NO_COMMITTED_EVIDENCE',
+        'At least one committed evidence item is required before an AutoPulse Check report can be signed.',
+      ));
+    }
+
     const findings = await this.findings.listFindings(input.evaluationId);
     const unresolved = findings.filter(item => item.status === FindingStatus.PROPOSED);
     if (unresolved.length > 0) {
@@ -151,11 +160,11 @@ export class CheckReportFinalizationEngine {
       }));
     }
 
-    if (!check.evaluation.coverage) {
-      const coverageResult = await this.assessAndPersistCoverage(input.evaluationId);
-      if (coverageResult.ok === false) return coverageResult;
-      check = coverageResult.value;
-    }
+    // Coverage is intentionally recalculated at signature time so a stale
+    // assessment cannot outlive later evidence changes.
+    const coverageResult = await this.assessAndPersistCoverage(input.evaluationId);
+    if (coverageResult.ok === false) return failure(coverageResult.error);
+    check = coverageResult.value;
 
     const signatureGate = validateSignatureRequirements(check.evaluation, findings, evidence);
     if (signatureGate.ok === false) return failure(signatureGate.error);
