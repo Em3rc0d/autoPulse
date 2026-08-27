@@ -1,3 +1,4 @@
+import { DiagnosticConnector } from '../../domain/diagnostics/DiagnosticConnector';
 import { canTransitionEvaluation } from '../../domain/evaluation/logic/evaluationStateMachine';
 import { Evaluation } from '../../domain/evaluation/models/evaluation';
 import { EvidenceItem } from '../../domain/evaluation/models/evidenceItem';
@@ -19,6 +20,10 @@ import {
   AutoPulseCheckPurpose,
   buildAutoPulseCheckPlan,
 } from './AutoPulseCheckPlan';
+import {
+  CheckDiagnosticCaptureKind,
+  captureCheckDiagnosticEvidence,
+} from './CheckDiagnosticCapture';
 import { promoteLiveTelemetryWindow } from './TelemetryEvidencePromotion';
 
 export interface StoredAutoPulseCheck {
@@ -63,6 +68,12 @@ export interface PromoteLiveEvidenceInput {
   readonly connectionRecoveryCount?: number;
   readonly telemetryGapMs?: number;
   readonly sessionStatus?: string;
+}
+
+export interface CaptureDiagnosticEvidenceInput {
+  readonly evaluationId: EvaluationId;
+  readonly connector: DiagnosticConnector;
+  readonly kind: CheckDiagnosticCaptureKind;
 }
 
 function checkError(code: string, message: string, context?: Record<string, any>): DomainError {
@@ -159,5 +170,30 @@ export class AutoPulseCheckEngine {
     if (promoted.ok === false) return failure(promoted.error);
     await this.store.appendEvidence(promoted.value);
     return promoted;
+  }
+
+  async captureDiagnosticEvidence(
+    input: CaptureDiagnosticEvidenceInput,
+  ): Promise<Result<EvidenceItem, DomainError>> {
+    const currentCheck = await this.store.getEvaluation(input.evaluationId);
+    if (!currentCheck) {
+      return failure(checkError('CHECK_EVALUATION_NOT_FOUND', 'AutoPulse Check evaluation was not found.', {
+        evaluationId: input.evaluationId,
+      }));
+    }
+
+    const evaluation = currentCheck.evaluation;
+    const captured = await captureCheckDiagnosticEvidence(input.connector, {
+      evidenceId: this.ids.nextEvidenceItemId(),
+      evaluationId: evaluation.id,
+      evaluationState: evaluation.state,
+      kind: input.kind,
+      capturedAt: this.now(),
+      createdBy: evaluation.technicianId,
+    });
+
+    if (captured.ok === false) return failure(captured.error);
+    await this.store.appendEvidence(captured.value.evidence);
+    return success(captured.value.evidence);
   }
 }
