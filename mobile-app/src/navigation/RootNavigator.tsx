@@ -4,7 +4,6 @@ import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 
-// Placeholders for new screens
 import GarageScreen from '../screens/garage/GarageScreen';
 import AddVehicleScreen from '../screens/garage/AddVehicleScreen';
 import VehicleDetailScreen from '../screens/garage/VehicleDetailScreen';
@@ -13,6 +12,7 @@ import ConnectObdScreen from '../screens/live/ConnectObdScreen';
 import InitializationScreen from '../screens/live/InitializationScreen';
 import DriverLiveSessionScreen from '../screens/live/DriverLiveSessionScreen';
 import SessionSummaryScreen from '../screens/live/SessionSummaryScreen';
+import CheckLiteScreen from '../screens/check/CheckLiteScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
 
@@ -47,6 +47,7 @@ function LiveStack() {
       <Stack.Screen name="Initialization" component={InitializationScreen} />
       <Stack.Screen name="LiveSession" component={DriverLiveSessionScreen} />
       <Stack.Screen name="SessionSummary" component={SessionSummaryScreen} />
+      <Stack.Screen name="CheckLite" component={CheckLiteScreen} />
     </Stack.Navigator>
   );
 }
@@ -58,7 +59,7 @@ function MainTabs() {
         headerStyle: { backgroundColor: '#000', borderBottomWidth: 0, shadowOpacity: 0 },
         headerTintColor: '#fff',
         tabBarStyle: { backgroundColor: '#111', borderTopWidth: 0 },
-        tabBarActiveTintColor: '#FF6B00', // Using Orange as primary action color
+        tabBarActiveTintColor: '#FF6B00',
         tabBarInactiveTintColor: '#8E8E93',
       }}
     >
