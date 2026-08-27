@@ -5,6 +5,7 @@ CREATE TABLE `check_evaluations` (
   `operator_id` text NOT NULL,
   `state` text NOT NULL,
   `purpose` text NOT NULL,
+  `capabilities_json` text NOT NULL,
   `scope_json` text NOT NULL,
   `limitations` text,
   `symptoms` text,
