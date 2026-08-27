@@ -13,6 +13,7 @@ import {
   AutoPulseCheckPlanStep,
   buildAutoPulseCheckPlan,
 } from '../../application/check/AutoPulseCheckPlan';
+import { canAddEvidence } from '../../domain/evaluation/logic/evidencePolicy';
 import { CaptureContext } from '../../domain/evaluation/models/enums';
 import { EvidenceItem } from '../../domain/evaluation/models/evidenceItem';
 import { createEvaluationId } from '../../domain/shared/identifiers';
@@ -22,6 +23,7 @@ import { useLocalContext } from '../../infrastructure/hooks/useLocalContext';
 import { useProductDb } from '../../infrastructure/hooks/useProductDb';
 
 function evidenceForStep(step: AutoPulseCheckPlanStep, evidence: readonly EvidenceItem[]) {
+  if (step.id === 'CAPABILITY_DISCOVERY') return evidence.find(item => item.type === 'OBD_CAPABILITY_DISCOVERY');
   if (step.id === 'DTC_SCAN') return evidence.find(item => item.type === 'OBD_STORED_DTC_SCAN');
   if (step.id === 'READINESS_SCAN') return evidence.find(item => item.type === 'OBD_MONITOR_STATUS_PID01');
   if (step.id === 'FREEZE_FRAME') return evidence.find(item => item.type === 'OBD_FREEZE_FRAME_TRIGGER');
@@ -46,6 +48,41 @@ function statusForStep(step: AutoPulseCheckPlanStep, evidence: readonly Evidence
   if (step.availability === 'UNKNOWN') return { label: 'UNKNOWN', tone: 'warn' as const };
   if (step.availability === 'CONDITIONAL') return { label: 'IF PRESENT', tone: 'warn' as const };
   return { label: 'PENDING', tone: 'pending' as const };
+}
+
+function evidenceSummary(item: EvidenceItem): string | null {
+  if (item.type === 'OBD_CAPABILITY_DISCOVERY') {
+    const pids = Array.isArray(item.metadata?.supportedPids) ? item.metadata?.supportedPids : [];
+    const protocol = item.metadata?.protocol ?? 'unresolved';
+    return `${pids.length} supported PID${pids.length === 1 ? '' : 's'} · protocol ${protocol}`;
+  }
+
+  if (item.type === 'OBD_STORED_DTC_SCAN') {
+    const codes = Array.isArray(item.metadata?.diagnosticCodes) ? item.metadata?.diagnosticCodes : [];
+    if (codes.length > 0) return `Stored DTCs: ${codes.join(', ')}`;
+    return `Stored DTC service: ${item.metadata?.executionStatus ?? 'UNKNOWN'}`;
+  }
+
+  if (item.type === 'OBD_MONITOR_STATUS_PID01') {
+    const monitor = item.metadata?.monitorStatus as { milOn?: boolean; confirmedDtcCount?: number } | null | undefined;
+    if (monitor) return `MIL ${monitor.milOn ? 'ON' : 'OFF'} · confirmed DTC count ${monitor.confirmedDtcCount ?? '—'} · detailed readiness not decoded`;
+    return `Monitor-status service: ${item.metadata?.executionStatus ?? 'UNKNOWN'}`;
+  }
+
+  if (item.type === 'OBD_FREEZE_FRAME_TRIGGER') {
+    const trigger = item.metadata?.freezeFrameTrigger as { frameNumber?: number; triggerDtc?: string } | null | undefined;
+    if (trigger) return `Frame ${trigger.frameNumber ?? '—'}${trigger.triggerDtc ? ` · trigger ${trigger.triggerDtc}` : ''} · full freeze-frame not claimed`;
+    return item.metadata?.executionStatus === 'NO_DATA'
+      ? 'No freeze-frame trigger was available in this capture.'
+      : `Freeze-frame trigger service: ${item.metadata?.executionStatus ?? 'UNKNOWN'}`;
+  }
+
+  if (item.type === 'LIVE_OBD_TELEMETRY_WINDOW') {
+    const signals = Array.isArray(item.metadata?.signalTypes) ? item.metadata?.signalTypes : [];
+    return `${item.metadata?.captureContext ?? 'UNCLASSIFIED'} · ${signals.length} signals · ${item.metadata?.validEcuSampleCount ?? 0} valid ECU samples`;
+  }
+
+  return null;
 }
 
 export default function CheckEvaluationScreen() {
@@ -112,6 +149,8 @@ export default function CheckEvaluationScreen() {
     );
   }
 
+  const evidenceMutable = canAddEvidence(check.evaluation.state).ok;
+
   return (
     <View style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
@@ -161,24 +200,40 @@ export default function CheckEvaluationScreen() {
           <View style={styles.emptyCard}>
             <Text style={styles.emptyText}>No OBD or Live evidence has been committed to this evaluation yet.</Text>
           </View>
-        ) : evidence.map(item => (
-          <View key={item.id} style={styles.evidenceCard}>
-            <View style={styles.evidenceHeader}>
-              <Text style={styles.evidenceType}>{item.type.replace(/_/g, ' ')}</Text>
-              <Text style={styles.evidenceState}>{item.state}</Text>
+        ) : evidence.map(item => {
+          const summary = evidenceSummary(item);
+          return (
+            <View key={item.id} style={styles.evidenceCard}>
+              <View style={styles.evidenceHeader}>
+                <Text style={styles.evidenceType}>{item.type.replace(/_/g, ' ')}</Text>
+                <Text style={[styles.evidenceState, item.state === 'FAILED' && styles.evidenceStateFailed]}>{item.state}</Text>
+              </View>
+              <Text style={styles.evidenceOrigin}>{item.origin.replace(/_/g, ' ')}</Text>
+              {summary ? <Text style={styles.evidenceSummary}>{summary}</Text> : null}
+              {typeof item.metadata?.telemetryGapMs === 'number' && item.metadata.telemetryGapMs > 0 ? (
+                <Text style={styles.gapText}>Telemetry gap: {item.metadata.telemetryGapMs} ms</Text>
+              ) : null}
             </View>
-            <Text style={styles.evidenceOrigin}>{item.origin.replace(/_/g, ' ')}</Text>
-            {typeof item.metadata?.telemetryGapMs === 'number' && item.metadata.telemetryGapMs > 0 ? (
-              <Text style={styles.gapText}>Telemetry gap: {item.metadata.telemetryGapMs} ms</Text>
-            ) : null}
-          </View>
-        ))}
+          );
+        })}
 
         <View style={styles.connectorCard}>
-          <Text style={styles.connectorTitle}>Electronic capture</Text>
+          <Text style={styles.connectorTitle}>Electronic evidence capture</Text>
           <Text style={styles.connectorText}>
-            The read-only DTC, monitor-status and freeze-frame-trigger executors are implemented. The dedicated Check connector handoff is the next UI slice; Live is not reused as a hidden substitute.
+            Connect a diagnostic adapter to run capability discovery, stored-DTC, PID 01 monitor-status and freeze-frame-trigger reads without creating a Live session or writing to the vehicle.
           </Text>
+          <TouchableOpacity
+            style={[styles.captureButton, !evidenceMutable && styles.captureButtonDisabled]}
+            disabled={!evidenceMutable}
+            onPress={() => navigation.navigate('CheckConnectObd', {
+              evaluationId: check.evaluation.id,
+              vehicleId: check.evaluation.vehicleId,
+            })}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.captureButtonText}>{evidence.length > 0 ? 'Run another diagnostic capture' : 'Connect adapter and capture'}</Text>
+          </TouchableOpacity>
+          {!evidenceMutable ? <Text style={styles.lockedText}>This evaluation state no longer accepts new evidence.</Text> : null}
         </View>
       </ScrollView>
     </View>
@@ -230,9 +285,15 @@ const styles = StyleSheet.create({
   evidenceHeader: { flexDirection: 'row', alignItems: 'center' },
   evidenceType: { color: '#e2e8f0', flex: 1, fontSize: 11, fontWeight: '800' },
   evidenceState: { color: '#84cc16', fontSize: 9, fontWeight: '900' },
+  evidenceStateFailed: { color: '#f87171' },
   evidenceOrigin: { color: '#64748b', fontSize: 9, marginTop: 6 },
+  evidenceSummary: { color: '#aab7c7', fontSize: 10, lineHeight: 16, marginTop: 7 },
   gapText: { color: '#f59e0b', fontSize: 9, marginTop: 6 },
   connectorCard: { marginTop: 22, borderRadius: 16, backgroundColor: '#111a1f', borderWidth: 1, borderColor: '#334155', padding: 15 },
   connectorTitle: { color: '#f8fafc', fontSize: 13, fontWeight: '800' },
   connectorText: { color: '#8492a6', fontSize: 11, lineHeight: 17, marginTop: 6 },
+  captureButton: { minHeight: 52, borderRadius: 14, backgroundColor: '#d9ff3f', alignItems: 'center', justifyContent: 'center', marginTop: 14 },
+  captureButtonDisabled: { opacity: 0.4 },
+  captureButtonText: { color: '#172000', fontSize: 13, fontWeight: '900' },
+  lockedText: { color: '#64748b', fontSize: 9, marginTop: 8, textAlign: 'center' },
 });

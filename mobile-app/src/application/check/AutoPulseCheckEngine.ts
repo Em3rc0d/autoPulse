@@ -1,8 +1,14 @@
 import { DiagnosticConnector } from '../../domain/diagnostics/DiagnosticConnector';
+import { canAddEvidence } from '../../domain/evaluation/logic/evidencePolicy';
 import { canTransitionEvaluation } from '../../domain/evaluation/logic/evaluationStateMachine';
 import { Evaluation } from '../../domain/evaluation/models/evaluation';
 import { EvidenceItem } from '../../domain/evaluation/models/evidenceItem';
-import { CaptureContext, EvaluationState } from '../../domain/evaluation/models/enums';
+import {
+  CaptureContext,
+  EvidenceOrigin,
+  EvidenceState,
+  EvaluationState,
+} from '../../domain/evaluation/models/enums';
 import {
   EvaluationId,
   EvidenceItemId,
@@ -20,6 +26,12 @@ import {
   AutoPulseCheckPurpose,
   buildAutoPulseCheckPlan,
 } from './AutoPulseCheckPlan';
+import {
+  CheckCapabilityDiscoveryObservation,
+  capabilityPatchFromDiagnosticEvidence,
+  capabilityPatchFromDiscovery,
+  mergeCheckCapabilities,
+} from './CheckCapabilityReconciliation';
 import {
   CheckDiagnosticCaptureKind,
   captureCheckDiagnosticEvidence,
@@ -76,6 +88,10 @@ export interface CaptureDiagnosticEvidenceInput {
   readonly evaluationId: EvaluationId;
   readonly connector: DiagnosticConnector;
   readonly kind: CheckDiagnosticCaptureKind;
+}
+
+export interface RecordCapabilityDiscoveryInput extends CheckCapabilityDiscoveryObservation {
+  readonly evaluationId: EvaluationId;
 }
 
 function checkError(code: string, message: string, context?: Record<string, any>): DomainError {
@@ -156,19 +172,11 @@ export class AutoPulseCheckEngine {
     if (!currentCheck) {
       return failure(checkError('CHECK_EVALUATION_NOT_FOUND', 'AutoPulse Check evaluation was not found.', { evaluationId }));
     }
-    if (currentCheck.evaluation.state === EvaluationState.SIGNED || currentCheck.evaluation.state === EvaluationState.DELIVERED) {
-      return failure(checkError(
-        'CHECK_CAPABILITY_SNAPSHOT_IMMUTABLE',
-        'Capability facts cannot be changed after the evaluation is signed.',
-        { evaluationId, state: currentCheck.evaluation.state },
-      ));
-    }
 
-    const capabilities: AutoPulseCheckCapabilityFacts = {
-      ...currentCheck.capabilities,
-      ...patch,
-      availableSignals: patch.availableSignals ?? currentCheck.capabilities.availableSignals,
-    };
+    const permission = canAddEvidence(currentCheck.evaluation.state);
+    if (permission.ok === false) return failure(permission.error);
+
+    const capabilities = mergeCheckCapabilities(currentCheck.capabilities, patch);
     const plan = buildAutoPulseCheckPlan(currentCheck.purpose, capabilities);
     const evaluation: Evaluation = {
       ...currentCheck.evaluation,
@@ -178,6 +186,47 @@ export class AutoPulseCheckEngine {
     const updated = { ...currentCheck, evaluation, capabilities };
     await this.store.saveEvaluation(updated);
     return success(updated);
+  }
+
+  async recordCapabilityDiscovery(
+    input: RecordCapabilityDiscoveryInput,
+  ): Promise<Result<EvidenceItem, DomainError>> {
+    const currentCheck = await this.store.getEvaluation(input.evaluationId);
+    if (!currentCheck) {
+      return failure(checkError('CHECK_EVALUATION_NOT_FOUND', 'AutoPulse Check evaluation was not found.', {
+        evaluationId: input.evaluationId,
+      }));
+    }
+
+    const permission = canAddEvidence(currentCheck.evaluation.state);
+    if (permission.ok === false) return failure(permission.error);
+
+    const evidence: EvidenceItem = {
+      id: this.ids.nextEvidenceItemId(),
+      evaluationId: currentCheck.evaluation.id,
+      origin: EvidenceOrigin.OBD_CAPTURE,
+      type: 'OBD_CAPABILITY_DISCOVERY',
+      state: input.initializationSuccessful ? EvidenceState.COMMITTED : EvidenceState.FAILED,
+      capturedAt: this.now(),
+      createdBy: currentCheck.evaluation.technicianId,
+      metadata: {
+        initializationSuccessful: input.initializationSuccessful,
+        protocol: input.protocol ?? null,
+        supportedPids: [...input.supportedPids],
+        directlyObservedPids: [...(input.directlyObservedPids ?? [])],
+        adapterIdentity: { ...(input.adapterIdentity ?? {}) },
+        failureReason: input.failureReason ?? null,
+        vehicleWritePerformed: false,
+      },
+    };
+
+    await this.store.appendEvidence(evidence);
+    const patch = capabilityPatchFromDiscovery(input);
+    if (Object.keys(patch).length > 0) {
+      const updated = await this.updateCapabilities(input.evaluationId, patch);
+      if (updated.ok === false) return failure(updated.error);
+    }
+    return success(evidence);
   }
 
   async promoteLiveEvidence(
@@ -237,6 +286,13 @@ export class AutoPulseCheckEngine {
 
     if (captured.ok === false) return failure(captured.error);
     await this.store.appendEvidence(captured.value.evidence);
+
+    const patch = capabilityPatchFromDiagnosticEvidence(captured.value.evidence);
+    if (Object.keys(patch).length > 0) {
+      const updated = await this.updateCapabilities(input.evaluationId, patch);
+      if (updated.ok === false) return failure(updated.error);
+    }
+
     return success(captured.value.evidence);
   }
 }
