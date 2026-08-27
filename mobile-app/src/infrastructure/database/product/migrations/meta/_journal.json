@@ -64,6 +64,13 @@
       "when": 1787792400000,
       "tag": "0008_autopulse_check_evaluations",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1787857200000,
+      "tag": "0009_autopulse_check_findings",
+      "breakpoints": true
     }
   ]
 }

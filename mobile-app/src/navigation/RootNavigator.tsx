@@ -17,6 +17,7 @@ import NewCheckScreen from '../screens/check/NewCheckScreen';
 import CheckEvaluationScreen from '../screens/check/CheckEvaluationScreen';
 import CheckConnectObdScreen from '../screens/check/CheckConnectObdScreen';
 import CheckDiagnosticCaptureScreen from '../screens/check/CheckDiagnosticCaptureScreen';
+import CheckFindingsScreen from '../screens/check/CheckFindingsScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
 
@@ -64,6 +65,7 @@ function CheckStack() {
       <Stack.Screen name="CheckEvaluation" component={CheckEvaluationScreen} />
       <Stack.Screen name="CheckConnectObd" component={CheckConnectObdScreen} />
       <Stack.Screen name="CheckDiagnosticCapture" component={CheckDiagnosticCaptureScreen} />
+      <Stack.Screen name="CheckFindings" component={CheckFindingsScreen} />
     </Stack.Navigator>
   );
 }
