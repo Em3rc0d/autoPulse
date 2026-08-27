@@ -86,7 +86,7 @@ function canonicalizeJson(value: unknown, seen: Set<object> = new Set()): string
   }
 
   if (typeof value === 'bigint' || typeof value === 'function' || typeof value === 'symbol') {
-    throw new Error(`REPORT_CANONICALIZATION_UNSUPPORTED_${typeof value.toUpperCase()}`);
+    throw new Error(`REPORT_CANONICALIZATION_UNSUPPORTED_${(typeof value).toUpperCase()}`);
   }
 
   if (Array.isArray(value)) {
