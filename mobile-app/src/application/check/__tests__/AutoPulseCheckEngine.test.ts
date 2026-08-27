@@ -1,4 +1,3 @@
-import { Evaluation } from '../../../domain/evaluation/models/evaluation';
 import { EvidenceItem } from '../../../domain/evaluation/models/evidenceItem';
 import { EvaluationState } from '../../../domain/evaluation/models/enums';
 import {
@@ -10,18 +9,22 @@ import {
   createVehicleId,
 } from '../../../domain/shared/identifiers';
 import { parseUtcIsoTimestamp } from '../../../domain/shared/timestamps';
-import { AutoPulseCheckEngine, AutoPulseCheckStore } from '../AutoPulseCheckEngine';
+import {
+  AutoPulseCheckEngine,
+  AutoPulseCheckStore,
+  StoredAutoPulseCheck,
+} from '../AutoPulseCheckEngine';
 
 class MemoryStore implements AutoPulseCheckStore {
-  evaluations = new Map<string, Evaluation>();
+  evaluations = new Map<string, StoredAutoPulseCheck>();
   evidence: EvidenceItem[] = [];
 
   async getEvaluation(id: any) {
     return this.evaluations.get(id) ?? null;
   }
 
-  async saveEvaluation(evaluation: Evaluation) {
-    this.evaluations.set(evaluation.id, evaluation);
+  async saveEvaluation(check: StoredAutoPulseCheck) {
+    this.evaluations.set(check.evaluation.id, check);
   }
 
   async appendEvidence(evidence: EvidenceItem) {
@@ -65,6 +68,7 @@ describe('AutoPulseCheckEngine', () => {
     expect(created.evaluation.state).toBe(EvaluationState.DRAFT);
     expect(created.evaluation.scope.requestedItems.some(item => item.id === 'DTC_SCAN')).toBe(true);
     expect(created.evaluation.scope.requestedItems.find(item => item.id === 'ROAD_TELEMETRY')?.isMandatory).toBe(true);
+    expect(store.evaluations.get(created.evaluation.id)?.purpose).toBe('PRE_PURCHASE');
   });
 
   it('uses the existing evaluation state machine rather than bypassing it', async () => {
@@ -87,6 +91,7 @@ describe('AutoPulseCheckEngine', () => {
 
     const opened = await engine.transition(created.evaluation.id, EvaluationState.OPEN);
     expect(opened.ok).toBe(true);
+    expect(store.evaluations.get(created.evaluation.id)?.purpose).toBe('PREVENTIVE');
   });
 
   it('promotes a real Live ECU window into the same vehicle evaluation', async () => {
