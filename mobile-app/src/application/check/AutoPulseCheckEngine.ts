@@ -21,9 +21,14 @@ import {
 } from './AutoPulseCheckPlan';
 import { promoteLiveTelemetryWindow } from './TelemetryEvidencePromotion';
 
+export interface StoredAutoPulseCheck {
+  readonly evaluation: Evaluation;
+  readonly purpose: AutoPulseCheckPurpose;
+}
+
 export interface AutoPulseCheckStore {
-  getEvaluation(id: EvaluationId): Promise<Evaluation | null>;
-  saveEvaluation(evaluation: Evaluation): Promise<void>;
+  getEvaluation(id: EvaluationId): Promise<StoredAutoPulseCheck | null>;
+  saveEvaluation(check: StoredAutoPulseCheck): Promise<void>;
   appendEvidence(evidence: EvidenceItem): Promise<void>;
 }
 
@@ -92,7 +97,7 @@ export class AutoPulseCheckEngine {
       createdAt: this.now(),
     };
 
-    await this.store.saveEvaluation(evaluation);
+    await this.store.saveEvaluation({ evaluation, purpose: input.purpose });
     return { evaluation, plan };
   }
 
@@ -100,11 +105,12 @@ export class AutoPulseCheckEngine {
     evaluationId: EvaluationId,
     nextState: EvaluationState,
   ): Promise<Result<Evaluation, DomainError>> {
-    const current = await this.store.getEvaluation(evaluationId);
-    if (!current) {
+    const currentCheck = await this.store.getEvaluation(evaluationId);
+    if (!currentCheck) {
       return failure(checkError('CHECK_EVALUATION_NOT_FOUND', 'AutoPulse Check evaluation was not found.', { evaluationId }));
     }
 
+    const current = currentCheck.evaluation;
     const allowed = canTransitionEvaluation(current.state, nextState);
     if (!allowed.ok) return allowed;
 
@@ -117,20 +123,21 @@ export class AutoPulseCheckEngine {
       cancelledAt: nextState === EvaluationState.CANCELLED ? now : current.cancelledAt,
     };
 
-    await this.store.saveEvaluation(updated);
+    await this.store.saveEvaluation({ ...currentCheck, evaluation: updated });
     return success(updated);
   }
 
   async promoteLiveEvidence(
     input: PromoteLiveEvidenceInput,
   ): Promise<Result<EvidenceItem, DomainError>> {
-    const evaluation = await this.store.getEvaluation(input.evaluationId);
-    if (!evaluation) {
+    const currentCheck = await this.store.getEvaluation(input.evaluationId);
+    if (!currentCheck) {
       return failure(checkError('CHECK_EVALUATION_NOT_FOUND', 'AutoPulse Check evaluation was not found.', {
         evaluationId: input.evaluationId,
       }));
     }
 
+    const evaluation = currentCheck.evaluation;
     const promoted = promoteLiveTelemetryWindow({
       evidenceId: this.ids.nextEvidenceItemId(),
       evaluationId: evaluation.id,
