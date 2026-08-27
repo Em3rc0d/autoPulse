@@ -6,7 +6,7 @@ import {
   CheckReportStore,
   StoredCheckManifest,
 } from '../CheckReportFinalization';
-import { ReportIntegrityHasher } from '../CheckReportIntegrity';
+import { canonicalizeReportPayload, ReportIntegrityHasher } from '../CheckReportIntegrity';
 import { StoredAutoPulseCheck } from '../AutoPulseCheckEngine';
 import { EvidenceItem } from '../../../domain/evaluation/models/evidenceItem';
 import { Finding } from '../../../domain/evaluation/models/finding';
@@ -131,7 +131,32 @@ function createEngine(evaluations: MemoryEvaluationStore, findings: MemoryFindin
   );
 }
 
+describe('Check report integrity', () => {
+  it('canonicalizes object keys deterministically without reordering arrays', () => {
+    const a = canonicalizeReportPayload({ z: 1, a: { y: 2, x: 3 }, list: [3, 2, 1] });
+    const b = canonicalizeReportPayload({ list: [3, 2, 1], a: { x: 3, y: 2 }, z: 1 });
+    expect(a).toBe(b);
+    expect(a).toContain('"list":[3,2,1]');
+  });
+});
+
 describe('CheckReportFinalizationEngine', () => {
+  it('refuses to sign an empty evaluation with zero committed evidence', async () => {
+    const evaluations = new MemoryEvaluationStore();
+    const findings = new MemoryFindingStore();
+    const reports = new MemoryReportStore();
+
+    const result = await createEngine(evaluations, findings, reports).sign({
+      evaluationId: createEvaluationId('eval-1'),
+      vehicleSnapshot: { make: 'Renault', model: 'Logan', year: 2014 },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok === true) return;
+    expect(result.error.code).toBe('CHECK_NO_COMMITTED_EVIDENCE');
+    expect(reports.versions).toHaveLength(0);
+  });
+
   it('signs a limited/partial evidence-bound report without converting NO_DATA into a healthy claim', async () => {
     const evaluations = new MemoryEvaluationStore();
     const findings = new MemoryFindingStore();
