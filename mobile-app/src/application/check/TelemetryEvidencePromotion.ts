@@ -1,6 +1,6 @@
 import { canAddEvidence } from '../../domain/evaluation/logic/evidencePolicy';
 import { EvidenceItem } from '../../domain/evaluation/models/evidenceItem';
-import { EvidenceOrigin, EvidenceState, EvaluationState } from '../../domain/evaluation/models/enums';
+import { CaptureContext, EvidenceOrigin, EvidenceState, EvaluationState } from '../../domain/evaluation/models/enums';
 import { DomainError } from '../../domain/shared/domainError';
 import {
   EvaluationId,
@@ -24,6 +24,7 @@ export interface PromoteLiveTelemetryWindowInput {
   readonly validEcuSampleCount: number;
   readonly totalSampleCount: number;
   readonly signalTypes: readonly string[];
+  readonly captureContext?: CaptureContext;
   readonly connectionRecoveryCount?: number;
   readonly telemetryGapMs?: number;
   readonly sessionStatus?: string;
@@ -91,6 +92,7 @@ export function promoteLiveTelemetryWindow(
     localReference: `live-session:${input.liveSessionId}:${input.startMs}-${input.endMs}`,
     metadata: {
       vehicleId: input.sessionVehicleId,
+      captureContext: input.captureContext ?? null,
       validEcuSampleCount: input.validEcuSampleCount,
       totalSampleCount: input.totalSampleCount,
       signalTypes,
