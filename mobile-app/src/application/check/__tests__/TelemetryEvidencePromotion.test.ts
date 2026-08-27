@@ -30,7 +30,7 @@ describe('TelemetryEvidencePromotion', () => {
   it('promotes only real same-vehicle ECU evidence and preserves gaps/recovery metadata', () => {
     const result = promoteLiveTelemetryWindow(baseInput);
     expect(result.ok).toBe(true);
-    if (!result.ok) return;
+    if (result.ok === false) throw result.error;
 
     expect(result.value.origin).toBe(EvidenceOrigin.LIVE_TELEMETRY_WINDOW);
     expect(result.value.state).toBe(EvidenceState.COMMITTED);
@@ -48,8 +48,9 @@ describe('TelemetryEvidencePromotion', () => {
       sessionVehicleId: createVehicleId('vehicle-2'),
     });
     expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.code).toBe('CHECK_EVIDENCE_VEHICLE_MISMATCH');
+    if (result.ok === false) {
+      expect(result.error.code).toBe('CHECK_EVIDENCE_VEHICLE_MISMATCH');
+    }
   });
 
   it('rejects windows without a valid ECU-origin sample', () => {
@@ -58,8 +59,9 @@ describe('TelemetryEvidencePromotion', () => {
       validEcuSampleCount: 0,
     });
     expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.code).toBe('CHECK_EVIDENCE_NO_ECU_SAMPLES');
+    if (result.ok === false) {
+      expect(result.error.code).toBe('CHECK_EVIDENCE_NO_ECU_SAMPLES');
+    }
   });
 
   it('cannot mutate a signed evaluation with new evidence', () => {
