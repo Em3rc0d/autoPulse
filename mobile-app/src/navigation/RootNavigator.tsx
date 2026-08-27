@@ -4,7 +4,6 @@ import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 
-// Placeholders for new screens
 import GarageScreen from '../screens/garage/GarageScreen';
 import AddVehicleScreen from '../screens/garage/AddVehicleScreen';
 import VehicleDetailScreen from '../screens/garage/VehicleDetailScreen';
@@ -13,6 +12,9 @@ import ConnectObdScreen from '../screens/live/ConnectObdScreen';
 import InitializationScreen from '../screens/live/InitializationScreen';
 import DriverLiveSessionScreen from '../screens/live/DriverLiveSessionScreen';
 import SessionSummaryScreen from '../screens/live/SessionSummaryScreen';
+import CheckHomeScreen from '../screens/check/CheckHomeScreen';
+import NewCheckScreen from '../screens/check/NewCheckScreen';
+import CheckEvaluationScreen from '../screens/check/CheckEvaluationScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
 
@@ -20,10 +22,11 @@ function TabBarIcon({ name, color }: { name: string; color: string }) {
   const iconMap: Record<string, string> = {
     garage: '🚗',
     live: '📈',
+    check: '✓',
     history: '📜',
     settings: '⚙️',
   };
-  return <Text style={{ color, fontSize: 24 }}>{iconMap[name]}</Text>;
+  return <Text style={{ color, fontSize: name === 'check' ? 27 : 24, fontWeight: name === 'check' ? '900' : '400' }}>{iconMap[name]}</Text>;
 }
 
 const Tab = createBottomTabNavigator();
@@ -51,6 +54,16 @@ function LiveStack() {
   );
 }
 
+function CheckStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="CheckHome" component={CheckHomeScreen} />
+      <Stack.Screen name="NewCheck" component={NewCheckScreen} />
+      <Stack.Screen name="CheckEvaluation" component={CheckEvaluationScreen} />
+    </Stack.Navigator>
+  );
+}
+
 function MainTabs() {
   return (
     <Tab.Navigator
@@ -58,8 +71,9 @@ function MainTabs() {
         headerStyle: { backgroundColor: '#000', borderBottomWidth: 0, shadowOpacity: 0 },
         headerTintColor: '#fff',
         tabBarStyle: { backgroundColor: '#111', borderTopWidth: 0 },
-        tabBarActiveTintColor: '#FF6B00', // Using Orange as primary action color
+        tabBarActiveTintColor: '#FF6B00',
         tabBarInactiveTintColor: '#8E8E93',
+        tabBarLabelStyle: { fontSize: 10 },
       }}
     >
       <Tab.Screen
@@ -71,6 +85,11 @@ function MainTabs() {
         name="Live"
         component={LiveStack}
         options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="live" color={color} /> }}
+      />
+      <Tab.Screen
+        name="Check"
+        component={CheckStack}
+        options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="check" color={color} /> }}
       />
       <Tab.Screen
         name="History"
