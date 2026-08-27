@@ -4,7 +4,10 @@ import {
   AutoPulseCheckStore,
   StoredAutoPulseCheck,
 } from '../../../../application/check/AutoPulseCheckEngine';
-import { AutoPulseCheckPurpose } from '../../../../application/check/AutoPulseCheckPlan';
+import {
+  AutoPulseCheckCapabilityFacts,
+  AutoPulseCheckPurpose,
+} from '../../../../application/check/AutoPulseCheckPlan';
 import { Evaluation } from '../../../../domain/evaluation/models/evaluation';
 import { EvidenceItem } from '../../../../domain/evaluation/models/evidenceItem';
 import {
@@ -13,6 +16,7 @@ import {
   EvaluationState,
 } from '../../../../domain/evaluation/models/enums';
 import {
+  EvaluationId,
   createEvaluationId,
   createEvidenceItemId,
   createLiveSessionId,
@@ -36,7 +40,7 @@ function fromMs(value: number | null | undefined) {
 export class CheckEvaluationRepository implements AutoPulseCheckStore {
   constructor(private readonly db: ExpoSQLiteDatabase<typeof schema>) {}
 
-  async getEvaluation(id: ReturnType<typeof createEvaluationId>): Promise<StoredAutoPulseCheck | null> {
+  async getEvaluation(id: EvaluationId): Promise<StoredAutoPulseCheck | null> {
     const row = await this.db.query.checkEvaluations.findFirst({
       where: eq(schema.checkEvaluations.id, id),
     });
@@ -60,11 +64,12 @@ export class CheckEvaluationRepository implements AutoPulseCheckStore {
     return {
       evaluation,
       purpose: row.purpose as AutoPulseCheckPurpose,
+      capabilities: JSON.parse(row.capabilitiesJson) as AutoPulseCheckCapabilityFacts,
     };
   }
 
   async saveEvaluation(check: StoredAutoPulseCheck): Promise<void> {
-    const { evaluation, purpose } = check;
+    const { evaluation, purpose, capabilities } = check;
     const values = {
       id: evaluation.id,
       workspaceId: evaluation.tenantId,
@@ -72,6 +77,7 @@ export class CheckEvaluationRepository implements AutoPulseCheckStore {
       operatorId: evaluation.technicianId,
       state: evaluation.state,
       purpose,
+      capabilitiesJson: JSON.stringify(capabilities),
       scopeJson: JSON.stringify(evaluation.scope),
       limitations: evaluation.limitations ?? null,
       symptoms: evaluation.symptoms ?? null,
@@ -113,6 +119,22 @@ export class CheckEvaluationRepository implements AutoPulseCheckStore {
       createdBy: evidence.createdBy ?? null,
       createdAt: Date.now(),
     } as any);
+  }
+
+  async listRecent(workspaceId: string, limit: number = 30): Promise<StoredAutoPulseCheck[]> {
+    const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    const rows = await this.db.query.checkEvaluations.findMany({
+      where: eq(schema.checkEvaluations.workspaceId, workspaceId),
+      orderBy: [desc(schema.checkEvaluations.createdAt)],
+      limit: boundedLimit,
+    });
+
+    const checks: StoredAutoPulseCheck[] = [];
+    for (const row of rows) {
+      const check = await this.getEvaluation(createEvaluationId(row.id));
+      if (check) checks.push(check);
+    }
+    return checks;
   }
 
   async listForVehicle(workspaceId: string, vehicleId: string): Promise<StoredAutoPulseCheck[]> {
