@@ -21,17 +21,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '20'
           cache: npm
           cache-dependency-path: mobile-app/package-lock.json
 
       - name: Use Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with:
           distribution: temurin
           java-version: '17'
@@ -57,7 +59,7 @@ jobs:
           cat .release/npm-dependency-reachability.txt
 
       - name: Upload dependency audit evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: autopulse-production-dependency-audit
           path: |
@@ -66,7 +68,9 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Enforce zero critical production dependency findings
+      - name: Evaluate critical production dependency gate
+        id: critical_audit
+        continue-on-error: true
         run: npm audit --omit=dev --audit-level=critical
 
       - name: Verify TypeScript and tests
@@ -94,7 +98,21 @@ jobs:
             exit 1
           }
 
-      - name: Verify APK signature
+      - name: Capture effective APK permissions and package metadata
+        working-directory: mobile-app
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          AAPT2="$(find "${ANDROID_HOME}/build-tools" -type f -name aapt2 | sort -V | tail -1)"
+          test -n "$AAPT2"
+          mkdir -p .release
+          "$AAPT2" dump permissions "$APK" | tee .release/apk-effective-permissions.txt
+          "$AAPT2" dump badging "$APK" | tee .release/apk-badging.txt
+          unzip -p "$APK" assets/index.android.bundle | sha256sum | awk '{print $1}' > .release/js-bundle.sha256
+          sha256sum package-lock.json | awk '{print $1}' > .release/package-lock.sha256
+
+      - name: Verify APK signature and classify signer
+        id: apk_signature
         working-directory: mobile-app
         run: |
           set -euo pipefail
@@ -103,6 +121,11 @@ jobs:
           test -n "$APKSIGNER"
           mkdir -p .release
           "$APKSIGNER" verify --verbose --print-certs "$APK" | tee .release/apksigner-verification.txt
+          if grep -qi 'CN=Android Debug' .release/apksigner-verification.txt; then
+            echo 'signing_class=ANDROID_DEBUG' >> "$GITHUB_OUTPUT"
+          else
+            echo 'signing_class=NON_DEBUG' >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Generate immutable artifact receipt
         working-directory: mobile-app
@@ -113,6 +136,8 @@ jobs:
           AP_PR_NUMBER: ${{ github.event.pull_request.number }}
           AP_RUN_ID: ${{ github.run_id }}
           AP_RUN_ATTEMPT: ${{ github.run_attempt }}
+          AP_CRITICAL_AUDIT_OUTCOME: ${{ steps.critical_audit.outcome }}
+          AP_SIGNING_CLASS: ${{ steps.apk_signature.outputs.signing_class }}
         run: |
           set -euo pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
@@ -123,8 +148,12 @@ jobs:
           export AP_NODE_VERSION="$(node --version)"
           export AP_JAVA_VERSION="$(java -version 2>&1 | head -1)"
           export AP_GENERATED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          export AP_PACKAGE_LOCK_SHA256="$(cat .release/package-lock.sha256)"
+          export AP_JS_BUNDLE_SHA256="$(cat .release/js-bundle.sha256)"
           node <<'NODE'
           const fs = require('fs');
+          const criticalProductionAuditPassed = process.env.AP_CRITICAL_AUDIT_OUTCOME === 'success';
+          const signingClass = process.env.AP_SIGNING_CLASS || 'UNKNOWN';
           const receipt = {
             schema: 'autopulse.artifact-receipt/v1',
             generatedAt: process.env.AP_GENERATED_AT,
@@ -137,14 +166,18 @@ jobs:
               checkedOutSha: process.env.AP_CHECKED_OUT_SHA,
               workflowRunId: Number(process.env.AP_RUN_ID),
               workflowRunAttempt: Number(process.env.AP_RUN_ATTEMPT),
+              packageLockSha256: process.env.AP_PACKAGE_LOCK_SHA256,
             },
             build: {
               variant: 'release-internal',
               node: process.env.AP_NODE_VERSION,
               java: process.env.AP_JAVA_VERSION,
               reactNativeBundlePackaged: true,
+              jsBundleSha256: process.env.AP_JS_BUNDLE_SHA256,
               apkSignatureVerified: true,
-              criticalProductionAuditPassed: true,
+              signingClass,
+              criticalProductionAuditPassed,
+              publicReleaseEligible: criticalProductionAuditPassed && signingClass === 'NON_DEBUG',
             },
             artifact: {
               name: 'autopulse-android-internal-apk',
@@ -158,14 +191,31 @@ jobs:
           cat .release/autopulse-apk-receipt.json
 
       - name: Upload APK and provenance receipt
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: autopulse-android-internal-apk
           path: |
             mobile-app/android/app/build/outputs/apk/release/app-release.apk
             mobile-app/.release/autopulse-apk-receipt.json
             mobile-app/.release/apksigner-verification.txt
+            mobile-app/.release/apk-effective-permissions.txt
+            mobile-app/.release/apk-badging.txt
+            mobile-app/.release/js-bundle.sha256
+            mobile-app/.release/package-lock.sha256
             mobile-app/.release/npm-audit-production.json
             mobile-app/.release/npm-dependency-reachability.txt
           if-no-files-found: error
           retention-days: 14
+
+      - name: Enforce V1 security gate after evidence capture
+        if: always()
+        working-directory: mobile-app
+        env:
+          AP_CRITICAL_AUDIT_OUTCOME: ${{ steps.critical_audit.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$AP_CRITICAL_AUDIT_OUTCOME" != "success" ]; then
+            echo 'ERROR: V1 release gate remains blocked by critical production-tree dependency findings.'
+            echo 'Audit and reachability evidence were preserved before this failure.'
+            exit 1
+          fi
