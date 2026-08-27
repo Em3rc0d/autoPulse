@@ -63,13 +63,14 @@ export class CheckReportRepository {
   }
 
   async saveManifest(
+    evaluationId: string,
     manifest: ReportManifest,
     canonicalPayload: string,
     integrityHash: string,
   ): Promise<void> {
     await this.db.insert(schema.checkReportManifests).values({
       id: manifest.id,
-      evaluationId: manifest.findings[0]?.evaluationId ?? manifest.selectedEvidence[0]?.evaluationId,
+      evaluationId,
       manifestJson: JSON.stringify(manifest),
       canonicalPayload,
       integrityHash,
