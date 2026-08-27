@@ -15,7 +15,7 @@ A claim is valid only when its evidence class is explicit:
 | A0 | Design | intended invariant / acceptance rule | implementation or runtime behavior |
 | A1 | Static + unit | types and isolated logic | Android/native/vehicle behavior |
 | A2 | Integration + replay | subsystem behavior against controlled fixtures | physical adapter/ECU behavior |
-| A3 | Artifact | exact APK exists, is structurally valid, signed, bundled, and hash-addressable | physical vehicle behavior |
+| A3 | Artifact | exact APK exists, is structurally valid, bundle-complete, signature-valid, signing-classified and hash-addressable | physical vehicle behavior or production-distribution signing |
 | A4 | Physical | observed behavior on the exact tested tuple | universal compatibility |
 | A5 | Repeated physical | repeatability across multiple runs/tuples | untested vehicles/adapters/phones |
 
@@ -38,36 +38,58 @@ The certification artifact is identified by all of the following:
 - PR base SHA;
 - CI-tested SHA (GitHub PR merge revision when applicable);
 - workflow run ID and attempt;
+- dependency lockfile SHA-256;
 - APK SHA-256;
 - APK size;
-- packaged JavaScript bundle check;
-- APK signature verification result.
+- packaged JavaScript bundle SHA-256;
+- effective APK permissions/package metadata;
+- APK signature verification result;
+- APK signing class.
 
-The APK PR workflow MUST publish `autopulse-apk-receipt.json` with those fields alongside the APK.
+The APK PR workflow MUST publish `autopulse-apk-receipt.json` with those fields alongside the APK and its supporting audit files.
 
 ### Invalidation rule
 
-Physical certification is invalid for a new artifact whenever its APK SHA-256 differs from the physically tested APK. A source change, dependency change, Android build change, workflow/build-input change, or changed PR base may therefore require a new physical artifact gate.
+Physical certification is invalid for a new artifact whenever its APK SHA-256 differs from the physically tested APK. A source change, dependency change, Android build change, workflow/build-input change, signing change, or changed PR base may therefore require a new physical artifact gate.
 
 Documentation-only changes do not retroactively alter evidence, but they also cannot upgrade an unproven runtime claim.
 
-## 4. Automated release gate
+## 4. Automated artifact gate
 
 Required before physical certification:
 
 - TypeScript `tsc --noEmit` PASS;
 - all non-skipped Jest suites PASS;
 - skipped tests explicitly counted;
-- standalone release APK builds;
+- standalone release-internal APK builds;
 - APK ZIP structure verifies;
 - React Native/Expo JS bundle exists inside APK;
+- JavaScript bundle hash is recorded;
 - APK signature verifies;
-- production dependency audit has no unresolved **critical** vulnerability;
+- signing class is recorded;
+- effective APK permissions are extracted from the built APK rather than inferred only from source manifests;
+- dependency audit/reachability evidence is preserved;
 - exact artifact receipt is generated and uploaded.
 
-A warning is not silently converted into PASS. Known warnings must be classified in the release ledger.
+The security gate may remain red while evidence collection continues; a red security gate still blocks release. A warning is never silently converted into PASS.
 
-## 5. Physical safety boundary
+## 5. Internal certification vs public distribution
+
+A physically testable internal artifact and a publicly distributable production artifact are different assurance claims.
+
+An internal `release-internal` APK MAY use the current internal signing lane if its signing class and SHA-256 are explicitly recorded. Physical evidence then applies only to that exact binary.
+
+A public V1 release MUST additionally satisfy all of the following:
+
+- `release` is not signed with `signingConfigs.debug`;
+- signer is not the Android Debug certificate;
+- production signing material is supplied outside the repository through an approved secret/signing mechanism;
+- signature verification succeeds on the final public artifact;
+- public artifact receives a new immutable receipt and, if its APK hash differs from the physically certified binary, the release decision explicitly determines which physical gates must be repeated.
+
+A debug-signed APK can be an A3 internal artifact. It is never evidence of production signing readiness.
+
+## 6. Physical safety boundary
 
 AutoPulse remains read-only relative to the vehicle ECU for V1.
 
@@ -78,7 +100,7 @@ AutoPulse remains read-only relative to the vehicle ECU for V1.
 
 All app interaction for validation must be performed while the vehicle is stationary. If a test requires the vehicle to move, a licensed adult driver must operate the vehicle legally while a separate test operator/passenger handles observation; the driver must not interact with the phone.
 
-## 6. RC5 / Live V1 physical certification cases
+## 7. RC5 / Live V1 physical certification cases
 
 All cases use the **same frozen APK SHA-256** unless a case is explicitly marked automated-only.
 
@@ -151,7 +173,7 @@ This case is primarily automated/replay-driven and may be visually confirmed on 
 
 **PASS:** after abrupt process loss, the next boot reconstructs/reconciles the orphaned session from durable SQLite/telemetry evidence according to the documented recovery policy. The recovered record must not be presented as a clean uninterrupted completion.
 
-## 7. Evidence package required for every physical run
+## 8. Evidence package required for every physical run
 
 Each run receipt must include:
 
@@ -170,7 +192,10 @@ prNumber
 headSha
 baseSha
 ciTestedSha
+packageLockSha256
 apkSha256
+jsBundleSha256
+signingClass
 workflowRunId
 sessionId
 observedProtocol
@@ -182,7 +207,7 @@ evidenceRefs[]
 
 Raw/private captures and sanitized repository evidence are separate objects. Public repository evidence must not expose account identifiers, signed backend URLs, or unrelated private metadata.
 
-## 8. PASS / FAIL / BLOCKED semantics
+## 9. PASS / FAIL / BLOCKED semantics
 
 - **PASS:** all precommitted acceptance criteria were observed and required evidence exists.
 - **FAIL:** execution reached the relevant condition and contradicted at least one acceptance criterion.
@@ -190,7 +215,7 @@ Raw/private captures and sanitized repository evidence are separate objects. Pub
 
 `BLOCKED` is never equivalent to PASS. Missing evidence is never inferred from screenshots or recollection.
 
-## 9. Evidence integrity rules
+## 10. Evidence integrity rules
 
 1. Hash binary artifacts and deduplicate evidence by content hash.
 2. Never count the same screenshot copied across exports as independent observations.
@@ -200,29 +225,43 @@ Raw/private captures and sanitized repository evidence are separate objects. Pub
 6. CI PASS proves only the environment actually executed by CI.
 7. Physical PASS proves only the exact tuple tested.
 8. A report or compatibility claim may cite only evidence at or above the assurance level required by that claim.
+9. The GitHub Actions revision used by a release workflow is itself a supply-chain input and should be pinned to a reviewed commit SHA.
+10. The built APK, not a source manifest or package declaration, is authoritative for the effective permission surface of that artifact.
 
-## 10. Security and supply-chain gate
+## 11. Security and supply-chain gate
 
 Before public V1 release:
 
-- classify all `npm audit` findings as production or development/tooling;
-- zero unresolved critical production findings;
-- review high-severity production findings and either remediate or document an explicit release decision with reachability analysis;
-- resolve or deliberately remove the `kotlin-obd-api` submodule metadata inconsistency;
-- audit the merged release Android manifest and remove permissions not required by the declared V1 capability set;
-- preserve dependency lockfile identity in the artifact provenance chain.
+- classify dependency findings as runtime-shipped, active build-tooling, inactive tooling, or development-only;
+- zero unresolved critical runtime findings;
+- critical findings in active build tooling may not be silently waived: remediation is preferred, and any temporary exception requires a written reachability/threat-model decision, exact package/advisory/version/chain, compensating controls, expiry/review condition, and upgrade target;
+- review high-severity runtime findings and either remediate or document an explicit release decision with reachability analysis;
+- upgrade `drizzle-orm` to a patched line before public release unless a separately approved security decision supersedes this requirement;
+- audit the merged/effective release Android manifest and remove permissions not required by the declared V1 capability set;
+- use non-debug production signing for the public artifact;
+- preserve dependency lockfile identity in the artifact provenance chain;
+- pin release GitHub Actions to reviewed commit SHAs;
+- no orphaned gitlinks/submodule metadata may remain in the V1 release tree.
 
 A green functional test suite does not waive this gate.
 
-## 11. V1 release decision
+## 12. V1 release decision
 
 AutoPulse Live V1 is physically certified only when:
 
-1. the automated/artifact gate is green for one frozen artifact;
+1. the automated/artifact gate is complete for one frozen artifact;
 2. the required physical cases pass on that same APK SHA-256;
 3. failures/blockers are recorded rather than omitted;
 4. History/Summary reconstruct the resulting evidence consistently;
 5. security/release-hardening blockers are either closed or explicitly prevent release;
 6. release documentation states only the compatibility/evidence scope actually observed.
+
+AutoPulse V1 is publicly releasable only when, in addition:
+
+1. the final security gate passes under the documented threat model;
+2. effective permissions have been reviewed;
+3. the final public APK is non-debug signed and signature-verified;
+4. its immutable receipt is archived;
+5. any difference from the physically certified APK is reconciled before making physical claims.
 
 The target is not “certainty about every vehicle.” The target is **no unsupported certainty in AutoPulse itself**.
