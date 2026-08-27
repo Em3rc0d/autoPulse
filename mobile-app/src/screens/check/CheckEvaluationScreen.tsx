@@ -14,7 +14,7 @@ import {
   buildAutoPulseCheckPlan,
 } from '../../application/check/AutoPulseCheckPlan';
 import { canAddEvidence } from '../../domain/evaluation/logic/evidencePolicy';
-import { CaptureContext } from '../../domain/evaluation/models/enums';
+import { CaptureContext, EvaluationState } from '../../domain/evaluation/models/enums';
 import { EvidenceItem } from '../../domain/evaluation/models/evidenceItem';
 import { createEvaluationId } from '../../domain/shared/identifiers';
 import { CheckEvaluationRepository } from '../../infrastructure/database/product/repositories/check-evaluation.repository';
@@ -150,6 +150,7 @@ export default function CheckEvaluationScreen() {
   }
 
   const evidenceMutable = canAddEvidence(check.evaluation.state).ok;
+  const signed = check.evaluation.state === EvaluationState.SIGNED || check.evaluation.state === EvaluationState.DELIVERED;
 
   return (
     <View style={styles.container}>
@@ -248,6 +249,13 @@ export default function CheckEvaluationScreen() {
           >
             <Text style={styles.reviewButtonText}>Review findings</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.reportButton}
+            onPress={() => navigation.navigate('CheckReport', { evaluationId: check.evaluation.id })}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.reportButtonText}>{signed ? 'View signed report & integrity' : 'Open report readiness'}</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>
@@ -315,4 +323,6 @@ const styles = StyleSheet.create({
   reviewText: { color: '#8fa07f', fontSize: 11, lineHeight: 17, marginTop: 6 },
   reviewButton: { minHeight: 52, borderRadius: 14, borderWidth: 1, borderColor: '#84cc16', alignItems: 'center', justifyContent: 'center', marginTop: 14 },
   reviewButtonText: { color: '#bef264', fontSize: 13, fontWeight: '900' },
+  reportButton: { minHeight: 50, borderRadius: 14, borderWidth: 1, borderColor: '#475569', backgroundColor: '#11191e', alignItems: 'center', justifyContent: 'center', marginTop: 9 },
+  reportButtonText: { color: '#cbd5e1', fontSize: 12, fontWeight: '900' },
 });
