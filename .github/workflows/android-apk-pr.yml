@@ -39,7 +39,34 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Audit production dependencies for critical vulnerabilities
+      - name: Capture production dependency audit evidence
+        run: |
+          set -euo pipefail
+          mkdir -p .release
+          npm audit --omit=dev --json > .release/npm-audit-production.json || true
+          {
+            echo '## shell-quote'
+            npm explain shell-quote || true
+            echo
+            echo '## tar'
+            npm explain tar || true
+            echo
+            echo '## drizzle-orm'
+            npm explain drizzle-orm || true
+          } > .release/npm-dependency-reachability.txt 2>&1
+          cat .release/npm-dependency-reachability.txt
+
+      - name: Upload dependency audit evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: autopulse-production-dependency-audit
+          path: |
+            mobile-app/.release/npm-audit-production.json
+            mobile-app/.release/npm-dependency-reachability.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Enforce zero critical production dependency findings
         run: npm audit --omit=dev --audit-level=critical
 
       - name: Verify TypeScript and tests
@@ -117,6 +144,7 @@ jobs:
               java: process.env.AP_JAVA_VERSION,
               reactNativeBundlePackaged: true,
               apkSignatureVerified: true,
+              criticalProductionAuditPassed: true,
             },
             artifact: {
               name: 'autopulse-android-internal-apk',
@@ -137,5 +165,7 @@ jobs:
             mobile-app/android/app/build/outputs/apk/release/app-release.apk
             mobile-app/.release/autopulse-apk-receipt.json
             mobile-app/.release/apksigner-verification.txt
+            mobile-app/.release/npm-audit-production.json
+            mobile-app/.release/npm-dependency-reachability.txt
           if-no-files-found: error
           retention-days: 14
