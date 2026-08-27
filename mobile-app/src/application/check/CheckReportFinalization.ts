@@ -99,6 +99,111 @@ export class CheckReportFinalizationEngine {
     private readonly now: () => UtcIsoTimestamp,
   ) {}
 
+  private async loadStoredReport(
+    check: StoredAutoPulseCheck,
+    version: ReportVersion,
+  ): Promise<Result<SignedCheckReport, DomainError>> {
+    const stored = await this.reports.getManifest(version.manifestId);
+    if (!stored) {
+      return failure(reportError(
+        'CHECK_SIGNED_MANIFEST_MISSING',
+        'Signed report manifest could not be reconstructed.',
+        { evaluationId: check.evaluation.id, manifestId: version.manifestId },
+      ));
+    }
+
+    const payloadMatchesStoredHash = await verifyReportIntegrity(
+      stored.canonicalPayload,
+      stored.integrityHash,
+      this.hasher,
+    );
+    const versionMatchesManifestHash = version.integrityHash.toLowerCase() === stored.integrityHash.toLowerCase();
+
+    return success({
+      evaluation: check,
+      manifest: stored.manifest,
+      version,
+      integrityVerified: payloadMatchesStoredHash && versionMatchesManifestHash,
+    });
+  }
+
+  /**
+   * Repairs only the one legitimate interrupted-signature state:
+   * a durable SIGNED report version exists, while the evaluation is still
+   * READY_FOR_SIGNATURE because the process died before the final state write.
+   * No new manifest/version is created during reconciliation.
+   */
+  async reconcileInterruptedSignature(
+    evaluationId: EvaluationId,
+  ): Promise<Result<SignedCheckReport | null, DomainError>> {
+    let check = await this.evaluations.getEvaluation(evaluationId);
+    if (!check) {
+      return failure(reportError('CHECK_EVALUATION_NOT_FOUND', 'AutoPulse Check evaluation was not found.', { evaluationId }));
+    }
+
+    const version = await this.reports.getLatestVersion(evaluationId);
+    if (!version) return success(null);
+
+    const storedResult = await this.loadStoredReport(check, version);
+    if (storedResult.ok === false) return storedResult;
+    const storedReport = storedResult.value;
+
+    if (check.evaluation.state === EvaluationState.SIGNED || check.evaluation.state === EvaluationState.DELIVERED) {
+      return success(storedReport);
+    }
+
+    if (check.evaluation.state !== EvaluationState.READY_FOR_SIGNATURE) {
+      return failure(reportError(
+        'CHECK_SIGNATURE_STATE_INCONSISTENT',
+        'A signed report version exists while the evaluation is in an incompatible pre-signature state.',
+        { evaluationId, state: check.evaluation.state, reportVersionId: version.id },
+      ));
+    }
+
+    if (version.state !== ReportVersionState.SIGNED) {
+      return failure(reportError(
+        'CHECK_SIGNATURE_RECOVERY_VERSION_INVALID',
+        'Interrupted signature recovery requires a durable SIGNED report version.',
+        { reportVersionId: version.id, versionState: version.state },
+      ));
+    }
+
+    if (!storedReport.integrityVerified) {
+      return failure(reportError(
+        'CHECK_SIGNATURE_RECOVERY_INTEGRITY_FAILED',
+        'The pending signed report failed integrity verification. AutoPulse will not regenerate or advance the evaluation.',
+        { evaluationId, reportVersionId: version.id },
+      ));
+    }
+
+    if (version.signedBy !== check.evaluation.technicianId) {
+      return failure(reportError(
+        'CHECK_SIGNATURE_RECOVERY_SIGNER_MISMATCH',
+        'The durable report signer does not match the evaluation technician.',
+        { evaluationId, reportVersionId: version.id },
+      ));
+    }
+
+    const gate = canTransitionEvaluation(EvaluationState.READY_FOR_SIGNATURE, EvaluationState.SIGNED);
+    if (gate.ok === false) return failure(gate.error);
+
+    check = {
+      ...check,
+      evaluation: {
+        ...check.evaluation,
+        state: EvaluationState.SIGNED,
+        signedAt: version.signedAt,
+      },
+    };
+    await this.evaluations.saveEvaluation(check);
+
+    return success({
+      ...storedReport,
+      evaluation: check,
+      integrityVerified: true,
+    });
+  }
+
   async assessAndPersistCoverage(evaluationId: EvaluationId): Promise<Result<StoredAutoPulseCheck, DomainError>> {
     const check = await this.evaluations.getEvaluation(evaluationId);
     if (!check) return failure(reportError('CHECK_EVALUATION_NOT_FOUND', 'AutoPulse Check evaluation was not found.', { evaluationId }));
@@ -122,18 +227,14 @@ export class CheckReportFinalizationEngine {
   }
 
   async sign(input: SignCheckReportInput): Promise<Result<SignedCheckReport, DomainError>> {
+    // First reconcile a process death that occurred after the immutable version
+    // was committed but before the Evaluation state reached SIGNED.
+    const reconciliation = await this.reconcileInterruptedSignature(input.evaluationId);
+    if (reconciliation.ok === false) return failure(reconciliation.error);
+    if (reconciliation.value) return success(reconciliation.value);
+
     let check = await this.evaluations.getEvaluation(input.evaluationId);
     if (!check) return failure(reportError('CHECK_EVALUATION_NOT_FOUND', 'AutoPulse Check evaluation was not found.', { evaluationId: input.evaluationId }));
-
-    // Idempotent reopen path: once signed, return the immutable stored version.
-    if (check.evaluation.state === EvaluationState.SIGNED || check.evaluation.state === EvaluationState.DELIVERED) {
-      const version = await this.reports.getLatestVersion(input.evaluationId);
-      if (!version) return failure(reportError('CHECK_SIGNED_VERSION_MISSING', 'Evaluation is signed but its immutable report version is missing.'));
-      const stored = await this.reports.getManifest(version.manifestId);
-      if (!stored) return failure(reportError('CHECK_SIGNED_MANIFEST_MISSING', 'Signed report manifest could not be reconstructed.'));
-      const integrityVerified = await verifyReportIntegrity(stored.canonicalPayload, stored.integrityHash, this.hasher);
-      return success({ evaluation: check, manifest: stored.manifest, version, integrityVerified });
-    }
 
     if (check.evaluation.state !== EvaluationState.IN_REVIEW && check.evaluation.state !== EvaluationState.READY_FOR_SIGNATURE) {
       return failure(reportError(
@@ -225,6 +326,8 @@ export class CheckReportFinalizationEngine {
     const integrityHash = await this.hasher.sha256Hex(canonicalPayload);
     await this.reports.saveManifest(input.evaluationId, manifest, canonicalPayload, integrityHash);
 
+    // Once this durable version is written, a crash is recoverable by
+    // reconcileInterruptedSignature() without generating a second version.
     const previousVersion = await this.reports.getLatestVersion(input.evaluationId);
     const signedAt = this.now();
     const version: ReportVersion = {
@@ -261,9 +364,6 @@ export class CheckReportFinalizationEngine {
     if (!check) return failure(reportError('CHECK_EVALUATION_NOT_FOUND', 'AutoPulse Check evaluation was not found.', { evaluationId }));
     const version = await this.reports.getLatestVersion(evaluationId);
     if (!version) return failure(reportError('CHECK_REPORT_VERSION_NOT_FOUND', 'No signed report version exists for this evaluation.'));
-    const stored = await this.reports.getManifest(version.manifestId);
-    if (!stored) return failure(reportError('CHECK_REPORT_MANIFEST_NOT_FOUND', 'The signed report manifest could not be reconstructed.'));
-    const integrityVerified = await verifyReportIntegrity(stored.canonicalPayload, version.integrityHash, this.hasher);
-    return success({ evaluation: check, manifest: stored.manifest, version, integrityVerified });
+    return this.loadStoredReport(check, version);
   }
 }
