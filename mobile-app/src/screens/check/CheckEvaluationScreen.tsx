@@ -235,6 +235,20 @@ export default function CheckEvaluationScreen() {
           </TouchableOpacity>
           {!evidenceMutable ? <Text style={styles.lockedText}>This evaluation state no longer accepts new evidence.</Text> : null}
         </View>
+
+        <View style={styles.reviewCard}>
+          <Text style={styles.reviewTitle}>Findings & professional review</Text>
+          <Text style={styles.reviewText}>
+            AutoPulse can propose evidence-backed findings, but only a professional review can confirm, reject or mark them inconclusive. No proposal is treated as a vehicle-health conclusion.
+          </Text>
+          <TouchableOpacity
+            style={styles.reviewButton}
+            onPress={() => navigation.navigate('CheckFindings', { evaluationId: check.evaluation.id })}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.reviewButtonText}>Review findings</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </View>
   );
@@ -296,4 +310,9 @@ const styles = StyleSheet.create({
   captureButtonDisabled: { opacity: 0.4 },
   captureButtonText: { color: '#172000', fontSize: 13, fontWeight: '900' },
   lockedText: { color: '#64748b', fontSize: 9, marginTop: 8, textAlign: 'center' },
+  reviewCard: { marginTop: 14, borderRadius: 16, backgroundColor: '#121a20', borderWidth: 1, borderColor: '#365314', padding: 15 },
+  reviewTitle: { color: '#f8fafc', fontSize: 13, fontWeight: '800' },
+  reviewText: { color: '#8fa07f', fontSize: 11, lineHeight: 17, marginTop: 6 },
+  reviewButton: { minHeight: 52, borderRadius: 14, borderWidth: 1, borderColor: '#84cc16', alignItems: 'center', justifyContent: 'center', marginTop: 14 },
+  reviewButtonText: { color: '#bef264', fontSize: 13, fontWeight: '900' },
 });
