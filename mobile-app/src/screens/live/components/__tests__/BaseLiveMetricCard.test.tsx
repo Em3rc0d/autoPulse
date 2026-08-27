@@ -5,7 +5,7 @@ import { LiveMetricCard } from '../BaseLiveMetricCard';
 const stats = {
   validReadingCount: 3,
   validMinObserved: 88,
-  validMaxObserved: 92,
+  validMaxObserved: 95,
 };
 
 const profile = {
