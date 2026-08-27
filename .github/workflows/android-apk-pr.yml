@@ -39,6 +39,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Audit production dependencies for critical vulnerabilities
+        run: npm audit --omit=dev --audit-level=critical
+
       - name: Verify TypeScript and tests
         run: npm run verify
 
@@ -51,21 +54,88 @@ jobs:
           NODE_ENV: production
         run: ./gradlew assembleRelease --no-daemon
 
-      - name: Verify React Native bundle is packaged
+      - name: Verify APK structure and React Native bundle
         working-directory: mobile-app
         run: |
+          set -euo pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
           test -f "$APK"
+          unzip -t "$APK" >/dev/null
           unzip -l "$APK" | grep -Eq 'assets/(index\.android\.bundle|expo-root\.js|.*\.bundle)' || {
             echo "ERROR: standalone JS bundle is missing from $APK"
             unzip -l "$APK" | grep 'assets/' | head -200 || true
             exit 1
           }
 
-      - name: Upload APK
+      - name: Verify APK signature
+        working-directory: mobile-app
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          APKSIGNER="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -n "$APKSIGNER"
+          mkdir -p .release
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee .release/apksigner-verification.txt
+
+      - name: Generate immutable artifact receipt
+        working-directory: mobile-app
+        env:
+          AP_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          AP_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          AP_CI_SHA: ${{ github.sha }}
+          AP_PR_NUMBER: ${{ github.event.pull_request.number }}
+          AP_RUN_ID: ${{ github.run_id }}
+          AP_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          mkdir -p .release
+          export AP_APK_SHA256="$(sha256sum "$APK" | awk '{print $1}')"
+          export AP_APK_SIZE_BYTES="$(stat -c '%s' "$APK")"
+          export AP_CHECKED_OUT_SHA="$(git rev-parse HEAD)"
+          export AP_NODE_VERSION="$(node --version)"
+          export AP_JAVA_VERSION="$(java -version 2>&1 | head -1)"
+          export AP_GENERATED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          node <<'NODE'
+          const fs = require('fs');
+          const receipt = {
+            schema: 'autopulse.artifact-receipt/v1',
+            generatedAt: process.env.AP_GENERATED_AT,
+            source: {
+              repository: process.env.GITHUB_REPOSITORY,
+              pullRequest: Number(process.env.AP_PR_NUMBER),
+              headSha: process.env.AP_HEAD_SHA,
+              baseSha: process.env.AP_BASE_SHA,
+              ciTestedSha: process.env.AP_CI_SHA,
+              checkedOutSha: process.env.AP_CHECKED_OUT_SHA,
+              workflowRunId: Number(process.env.AP_RUN_ID),
+              workflowRunAttempt: Number(process.env.AP_RUN_ATTEMPT),
+            },
+            build: {
+              variant: 'release-internal',
+              node: process.env.AP_NODE_VERSION,
+              java: process.env.AP_JAVA_VERSION,
+              reactNativeBundlePackaged: true,
+              apkSignatureVerified: true,
+            },
+            artifact: {
+              name: 'autopulse-android-internal-apk',
+              file: 'app-release.apk',
+              sha256: process.env.AP_APK_SHA256,
+              sizeBytes: Number(process.env.AP_APK_SIZE_BYTES),
+            },
+          };
+          fs.writeFileSync('.release/autopulse-apk-receipt.json', `${JSON.stringify(receipt, null, 2)}\n`);
+          NODE
+          cat .release/autopulse-apk-receipt.json
+
+      - name: Upload APK and provenance receipt
         uses: actions/upload-artifact@v4
         with:
           name: autopulse-android-internal-apk
-          path: mobile-app/android/app/build/outputs/apk/release/app-release.apk
+          path: |
+            mobile-app/android/app/build/outputs/apk/release/app-release.apk
+            mobile-app/.release/autopulse-apk-receipt.json
+            mobile-app/.release/apksigner-verification.txt
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
