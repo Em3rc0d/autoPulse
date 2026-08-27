@@ -37,7 +37,7 @@ export function promoteLiveTelemetryWindow(
   input: PromoteLiveTelemetryWindowInput,
 ): Result<EvidenceItem, DomainError> {
   const evidencePermission = canAddEvidence(input.evaluationState);
-  if (!evidencePermission.ok) return evidencePermission;
+  if (evidencePermission.ok === false) return failure(evidencePermission.error);
 
   if (input.evaluationVehicleId !== input.sessionVehicleId) {
     return failure(promotionError(
