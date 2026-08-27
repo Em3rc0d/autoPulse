@@ -9,6 +9,7 @@ export const checkEvaluations = sqliteTable('check_evaluations', {
   operatorId: text('operator_id').notNull().references(() => operators.id, { onDelete: 'restrict' }),
   state: text('state').notNull(),
   purpose: text('purpose').notNull(),
+  capabilitiesJson: text('capabilities_json').notNull(),
   scopeJson: text('scope_json').notNull(),
   limitations: text('limitations'),
   symptoms: text('symptoms'),
