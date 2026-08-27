@@ -29,6 +29,7 @@ import { promoteLiveTelemetryWindow } from './TelemetryEvidencePromotion';
 export interface StoredAutoPulseCheck {
   readonly evaluation: Evaluation;
   readonly purpose: AutoPulseCheckPurpose;
+  readonly capabilities: AutoPulseCheckCapabilityFacts;
 }
 
 export interface AutoPulseCheckStore {
@@ -108,7 +109,11 @@ export class AutoPulseCheckEngine {
       createdAt: this.now(),
     };
 
-    await this.store.saveEvaluation({ evaluation, purpose: input.purpose });
+    await this.store.saveEvaluation({
+      evaluation,
+      purpose: input.purpose,
+      capabilities: input.capabilities,
+    });
     return { evaluation, plan };
   }
 
