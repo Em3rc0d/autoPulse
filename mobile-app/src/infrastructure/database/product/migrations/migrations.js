@@ -10,6 +10,7 @@ import m0005 from './0005_adapter_behavior_assessment.sql';
 import m0006 from './0006_vehicle_parameter_evidence.sql';
 import m0007 from './0007_raw_vehicle_capability_evidence.sql';
 import m0008 from './0008_autopulse_check_evaluations.sql';
+import m0009 from './0009_autopulse_check_findings.sql';
 
 export default {
   journal,
@@ -23,5 +24,6 @@ export default {
     m0006,
     m0007,
     m0008,
+    m0009,
   }
 };
