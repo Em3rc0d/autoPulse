@@ -90,6 +90,14 @@ describe('AdvisoryStateTracker', () => {
     expect(state.quality).toBe('UNAVAILABLE');
   });
 
+  it('STALE stays neutral and is explicitly labeled', () => {
+    const tracker = new AdvisoryStateTracker(DEMO_PROFILES.ENGINE_COOLANT, clock);
+    const state = tracker.evaluate(92, 'STALE');
+    expect(state.quality).toBe('STALE');
+    expect(state.color).toBe('GRAY');
+    expect(state.badgeText).toBe('STALE');
+  });
+
   it('critical readings do not stay gray after an UNKNOWN state', () => {
     const tracker = new AdvisoryStateTracker(DEMO_PROFILES.ENGINE_COOLANT, clock);
     tracker.evaluate(0, 'UNAVAILABLE');
