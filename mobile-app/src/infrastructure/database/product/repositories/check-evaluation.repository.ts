@@ -10,6 +10,7 @@ import {
 } from '../../../../application/check/AutoPulseCheckPlan';
 import { Evaluation } from '../../../../domain/evaluation/models/evaluation';
 import { EvidenceItem } from '../../../../domain/evaluation/models/evidenceItem';
+import { CoverageAssessment } from '../../../../domain/evaluation/models/coverageAssessment';
 import {
   EvidenceOrigin,
   EvidenceState,
@@ -53,6 +54,7 @@ export class CheckEvaluationRepository implements AutoPulseCheckStore {
       technicianId: createTechnicianId(row.operatorId),
       state: row.state as EvaluationState,
       scope: JSON.parse(row.scopeJson),
+      coverage: row.coverageJson ? JSON.parse(row.coverageJson) as CoverageAssessment : undefined,
       limitations: row.limitations ?? undefined,
       symptoms: row.symptoms ?? undefined,
       createdAt: parseUtcIsoTimestamp(new Date(row.createdAt).toISOString()),
@@ -79,6 +81,7 @@ export class CheckEvaluationRepository implements AutoPulseCheckStore {
       purpose,
       capabilitiesJson: JSON.stringify(capabilities),
       scopeJson: JSON.stringify(evaluation.scope),
+      coverageJson: evaluation.coverage ? JSON.stringify(evaluation.coverage) : null,
       limitations: evaluation.limitations ?? null,
       symptoms: evaluation.symptoms ?? null,
       createdAt: new Date(evaluation.createdAt).getTime(),
