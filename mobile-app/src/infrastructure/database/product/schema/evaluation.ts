@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { index, integer, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
 import { operators, vehicles, workspaces } from './core';
 import { liveSessions } from './live';
 
@@ -11,6 +11,7 @@ export const checkEvaluations = sqliteTable('check_evaluations', {
   purpose: text('purpose').notNull(),
   capabilitiesJson: text('capabilities_json').notNull(),
   scopeJson: text('scope_json').notNull(),
+  coverageJson: text('coverage_json'),
   limitations: text('limitations'),
   symptoms: text('symptoms'),
   createdAt: integer('created_at').notNull(),
@@ -66,4 +67,48 @@ export const checkFindings = sqliteTable('check_findings', {
   evaluationIdx: index('idx_check_findings_evaluation').on(table.evaluationId),
   statusIdx: index('idx_check_findings_status').on(table.status),
   sourceIdx: index('idx_check_findings_source').on(table.source),
+}));
+
+export const checkReportDrafts = sqliteTable('check_report_drafts', {
+  id: text('id').primaryKey(),
+  evaluationId: text('evaluation_id').notNull().references(() => checkEvaluations.id, { onDelete: 'cascade' }),
+  state: text('state').notNull(),
+  visibleFindingIdsJson: text('visible_finding_ids_json').notNull(),
+  selectedEvidenceIdsJson: text('selected_evidence_ids_json').notNull(),
+  customRecommendations: text('custom_recommendations'),
+  draftNotes: text('draft_notes'),
+  createdAt: integer('created_at').notNull(),
+  updatedAt: integer('updated_at').notNull(),
+}, table => ({
+  evaluationIdx: index('idx_check_report_drafts_evaluation').on(table.evaluationId),
+  stateIdx: index('idx_check_report_drafts_state').on(table.state),
+}));
+
+export const checkReportManifests = sqliteTable('check_report_manifests', {
+  id: text('id').primaryKey(),
+  evaluationId: text('evaluation_id').notNull().references(() => checkEvaluations.id, { onDelete: 'restrict' }),
+  manifestJson: text('manifest_json').notNull(),
+  canonicalPayload: text('canonical_payload').notNull(),
+  integrityHash: text('integrity_hash').notNull(),
+  generatedAt: integer('generated_at').notNull(),
+}, table => ({
+  evaluationIdx: index('idx_check_report_manifests_evaluation').on(table.evaluationId),
+}));
+
+export const checkReportVersions = sqliteTable('check_report_versions', {
+  id: text('id').primaryKey(),
+  evaluationId: text('evaluation_id').notNull().references(() => checkEvaluations.id, { onDelete: 'restrict' }),
+  versionNumber: integer('version_number').notNull(),
+  state: text('state').notNull(),
+  manifestId: text('manifest_id').notNull().references(() => checkReportManifests.id, { onDelete: 'restrict' }),
+  integrityHash: text('integrity_hash').notNull(),
+  signedBy: text('signed_by').notNull().references(() => operators.id, { onDelete: 'restrict' }),
+  signedAt: integer('signed_at').notNull(),
+  supersedesVersionId: text('supersedes_version_id'),
+  voidReason: text('void_reason'),
+  createdAt: integer('created_at').notNull(),
+}, table => ({
+  evaluationIdx: index('idx_check_report_versions_evaluation').on(table.evaluationId),
+  stateIdx: index('idx_check_report_versions_state').on(table.state),
+  evaluationVersionUnique: unique('uq_check_report_version_number').on(table.evaluationId, table.versionNumber),
 }));
