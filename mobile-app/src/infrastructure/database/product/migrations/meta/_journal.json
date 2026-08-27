@@ -2,75 +2,16 @@
   "version": "7",
   "dialect": "sqlite",
   "entries": [
-    {
-      "idx": 0,
-      "version": "6",
-      "when": 1784647771665,
-      "tag": "0000_product_foundation",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1784820191161,
-      "tag": "0001_wooden_darwin",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1784820200000,
-      "tag": "0002_add_v3_telemetry_block_metadata",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1787283600000,
-      "tag": "0003_adapter_capability_snapshots",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1787284200000,
-      "tag": "0004_adapter_capability_matched_profile",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1787284800000,
-      "tag": "0005_adapter_behavior_assessment",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1787328000000,
-      "tag": "0006_vehicle_parameter_evidence",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1787328600000,
-      "tag": "0007_raw_vehicle_capability_evidence",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1787792400000,
-      "tag": "0008_autopulse_check_evaluations",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "6",
-      "when": 1787857200000,
-      "tag": "0009_autopulse_check_findings",
-      "breakpoints": true
-    }
+    { "idx": 0, "version": "6", "when": 1784647771665, "tag": "0000_product_foundation", "breakpoints": true },
+    { "idx": 1, "version": "6", "when": 1784820191161, "tag": "0001_wooden_darwin", "breakpoints": true },
+    { "idx": 2, "version": "6", "when": 1784820200000, "tag": "0002_add_v3_telemetry_block_metadata", "breakpoints": true },
+    { "idx": 3, "version": "6", "when": 1787283600000, "tag": "0003_adapter_capability_snapshots", "breakpoints": true },
+    { "idx": 4, "version": "6", "when": 1787284200000, "tag": "0004_adapter_capability_matched_profile", "breakpoints": true },
+    { "idx": 5, "version": "6", "when": 1787284800000, "tag": "0005_adapter_behavior_assessment", "breakpoints": true },
+    { "idx": 6, "version": "6", "when": 1787328000000, "tag": "0006_vehicle_parameter_evidence", "breakpoints": true },
+    { "idx": 7, "version": "6", "when": 1787328600000, "tag": "0007_raw_vehicle_capability_evidence", "breakpoints": true },
+    { "idx": 8, "version": "6", "when": 1787792400000, "tag": "0008_autopulse_check_evaluations", "breakpoints": true },
+    { "idx": 9, "version": "6", "when": 1787857200000, "tag": "0009_autopulse_check_findings", "breakpoints": true },
+    { "idx": 10, "version": "6", "when": 1787859000000, "tag": "0010_autopulse_check_reports", "breakpoints": true }
   ]
 }
