@@ -2,7 +2,7 @@ import { DiagnosticConnector } from '../../domain/diagnostics/DiagnosticConnecto
 import { canTransitionEvaluation } from '../../domain/evaluation/logic/evaluationStateMachine';
 import { Evaluation } from '../../domain/evaluation/models/evaluation';
 import { EvidenceItem } from '../../domain/evaluation/models/evidenceItem';
-import { EvaluationState } from '../../domain/evaluation/models/enums';
+import { CaptureContext, EvaluationState } from '../../domain/evaluation/models/enums';
 import {
   EvaluationId,
   EvidenceItemId,
@@ -66,6 +66,7 @@ export interface PromoteLiveEvidenceInput {
   readonly validEcuSampleCount: number;
   readonly totalSampleCount: number;
   readonly signalTypes: readonly string[];
+  readonly captureContext?: CaptureContext;
   readonly connectionRecoveryCount?: number;
   readonly telemetryGapMs?: number;
   readonly sessionStatus?: string;
@@ -79,6 +80,17 @@ export interface CaptureDiagnosticEvidenceInput {
 
 function checkError(code: string, message: string, context?: Record<string, any>): DomainError {
   return { code, message, context };
+}
+
+function scopeFor(plan: AutoPulseCheckPlan) {
+  return {
+    requestedItems: plan.steps.map(step => ({
+      id: step.id,
+      description: step.title,
+      isMandatory: step.mandatory,
+    })),
+    description: `AutoPulse Check · ${plan.purpose}`,
+  };
 }
 
 export class AutoPulseCheckEngine {
@@ -96,14 +108,7 @@ export class AutoPulseCheckEngine {
       vehicleId: input.vehicleId,
       technicianId: input.technicianId,
       state: EvaluationState.DRAFT,
-      scope: {
-        requestedItems: plan.steps.map(step => ({
-          id: step.id,
-          description: step.title,
-          isMandatory: step.mandatory,
-        })),
-        description: `AutoPulse Check · ${input.purpose}`,
-      },
+      scope: scopeFor(plan),
       limitations: plan.limitations.length > 0 ? plan.limitations.join(' ') : undefined,
       symptoms: input.symptoms,
       createdAt: this.now(),
@@ -143,6 +148,38 @@ export class AutoPulseCheckEngine {
     return success(updated);
   }
 
+  async updateCapabilities(
+    evaluationId: EvaluationId,
+    patch: Partial<AutoPulseCheckCapabilityFacts>,
+  ): Promise<Result<StoredAutoPulseCheck, DomainError>> {
+    const currentCheck = await this.store.getEvaluation(evaluationId);
+    if (!currentCheck) {
+      return failure(checkError('CHECK_EVALUATION_NOT_FOUND', 'AutoPulse Check evaluation was not found.', { evaluationId }));
+    }
+    if (currentCheck.evaluation.state === EvaluationState.SIGNED || currentCheck.evaluation.state === EvaluationState.DELIVERED) {
+      return failure(checkError(
+        'CHECK_CAPABILITY_SNAPSHOT_IMMUTABLE',
+        'Capability facts cannot be changed after the evaluation is signed.',
+        { evaluationId, state: currentCheck.evaluation.state },
+      ));
+    }
+
+    const capabilities: AutoPulseCheckCapabilityFacts = {
+      ...currentCheck.capabilities,
+      ...patch,
+      availableSignals: patch.availableSignals ?? currentCheck.capabilities.availableSignals,
+    };
+    const plan = buildAutoPulseCheckPlan(currentCheck.purpose, capabilities);
+    const evaluation: Evaluation = {
+      ...currentCheck.evaluation,
+      scope: scopeFor(plan),
+      limitations: plan.limitations.length > 0 ? plan.limitations.join(' ') : undefined,
+    };
+    const updated = { ...currentCheck, evaluation, capabilities };
+    await this.store.saveEvaluation(updated);
+    return success(updated);
+  }
+
   async promoteLiveEvidence(
     input: PromoteLiveEvidenceInput,
   ): Promise<Result<EvidenceItem, DomainError>> {
@@ -167,6 +204,7 @@ export class AutoPulseCheckEngine {
       validEcuSampleCount: input.validEcuSampleCount,
       totalSampleCount: input.totalSampleCount,
       signalTypes: input.signalTypes,
+      captureContext: input.captureContext,
       connectionRecoveryCount: input.connectionRecoveryCount,
       telemetryGapMs: input.telemetryGapMs,
       sessionStatus: input.sessionStatus,
