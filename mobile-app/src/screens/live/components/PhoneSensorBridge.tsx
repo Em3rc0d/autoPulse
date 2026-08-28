@@ -1,7 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePhoneDrivingSensors } from '../../../infrastructure/sensors/usePhoneDrivingSensors';
+import {
+  OFF_ROAD_CONTEXT_PUBLISH_INTERVAL_MS,
+  shouldPublishSidecarSample,
+} from '../../../infrastructure/sensors/OffRoadSensorPolicy';
 import { useDriverMode } from './DriverModeContext';
 
 interface Props {
@@ -37,6 +41,7 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
   const sensors = usePhoneDrivingSensors(selectedMode === 'OFF_ROAD');
   const [calibration, setCalibration] = useState<OffRoadCalibration | null>(null);
   const [calibrationLoaded, setCalibrationLoaded] = useState(false);
+  const lastContextPublishAt = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -80,7 +85,16 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
   const altitudeReady = shouldPresentAltitude(sensors.altitude, sensors.altitudeAccuracy);
 
   useEffect(() => {
+    if (selectedMode !== 'OFF_ROAD') return;
+
     const now = Date.now();
+    if (!shouldPublishSidecarSample(
+      lastContextPublishAt.current,
+      now,
+      OFF_ROAD_CONTEXT_PUBLISH_INTERVAL_MS,
+    )) return;
+    lastContextPublishAt.current = now;
+
     const publish = (
       signalId: string,
       value: number | undefined,
@@ -101,8 +115,11 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
       publish('PITCH', calibratedPitch, '°');
       publish('ROLL', calibratedRoll, '°');
     }
+    // Phone sensor evidence is deliberately published at a human-timescale rate.
+    // Local Off-Road visuals may update faster, but ECU/ELM timing always wins.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    selectedMode,
     altitudeReady,
     sensors.altitude,
     sensors.altitudeAccuracy,
@@ -149,7 +166,11 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
       {
         label: 'ALTITUDE',
         value: altitudeReady && sensors.altitude !== undefined ? `${Math.round(sensors.altitude)} m` : '…',
-        meta: altitudeReady && sensors.altitudeAccuracy !== undefined ? `±${Math.round(sensors.altitudeAccuracy)} m` : 'GPS',
+        meta: sensors.locationPermissionRequired
+          ? 'permission required'
+          : altitudeReady && sensors.altitudeAccuracy !== undefined
+            ? `±${Math.round(sensors.altitudeAccuracy)} m`
+            : 'GPS',
       },
       {
         label: 'HEADING',
@@ -157,7 +178,18 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
         meta: 'phone',
       },
     ];
-  }, [altitudeReady, calibration, calibratedPitch, calibratedRoll, sensors.altitude, sensors.altitudeAccuracy, sensors.heading, sensors.pitch, sensors.roll]);
+  }, [
+    altitudeReady,
+    calibration,
+    calibratedPitch,
+    calibratedRoll,
+    sensors.altitude,
+    sensors.altitudeAccuracy,
+    sensors.heading,
+    sensors.locationPermissionRequired,
+    sensors.pitch,
+    sensors.roll,
+  ]);
 
   if (selectedMode !== 'OFF_ROAD') return null;
 
