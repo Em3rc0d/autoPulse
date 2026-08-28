@@ -1,0 +1,94 @@
+name: AutoPulse V1 Permission Ownership Audit
+
+on:
+  push:
+    branches:
+      - chore/v1-permission-surface-cleanup
+    paths:
+      - '.github/workflows/v1-permission-ownership-audit.yml'
+      - 'mobile-app/android/**'
+      - 'mobile-app/package.json'
+      - 'mobile-app/package-lock.json'
+
+permissions:
+  contents: read
+
+jobs:
+  permission-ownership:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile-app
+
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chore/v1-permission-surface-cleanup
+          persist-credentials: false
+
+      - name: Use Node.js 22 LTS
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile-app/package-lock.json
+
+      - name: Use Java 17
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x android/gradlew
+
+      - name: Generate release manifest merge evidence
+        working-directory: mobile-app/android
+        env:
+          NODE_ENV: production
+        run: ./gradlew app:processReleaseMainManifest --no-daemon
+
+      - name: Capture release runtime dependency graph
+        working-directory: mobile-app/android
+        run: ./gradlew app:dependencies --configuration releaseRuntimeClasspath --no-daemon > ../.release/gradle-release-runtime-classpath.txt
+
+      - name: Capture manifest merger blame and permission ownership excerpts
+        working-directory: mobile-app
+        run: |
+          set -euo pipefail
+          mkdir -p .release
+          BLAME="$(find android/app/build -type f \( -iname '*manifest*blame*' -o -iname '*manifest-merger*report*' \) | sort | head -1 || true)"
+          if [ -z "$BLAME" ]; then
+            echo 'ERROR: manifest merger blame/report was not generated'
+            find android/app/build -type f | grep -Ei 'manifest|merger' | sort | head -200 || true
+            exit 1
+          fi
+          cp "$BLAME" .release/manifest-merger-blame.txt
+          {
+            echo '=== permission ownership targets ==='
+            for P in \
+              'android.permission.WAKE_LOCK' \
+              'android.permission.READ_EXTERNAL_STORAGE' \
+              'android.permission.WRITE_EXTERNAL_STORAGE' \
+              'com.google.android.providers.gsf.permission.READ_GSERVICES' \
+              'com.google.android.gms.permission.ACTIVITY_RECOGNITION'; do
+              echo
+              echo "## $P"
+              grep -n -B 8 -A 12 -F "$P" .release/manifest-merger-blame.txt || true
+            done
+          } | tee .release/permission-ownership-excerpts.txt
+
+      - name: Upload ownership evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: autopulse-v1-permission-ownership
+          path: |
+            mobile-app/.release/manifest-merger-blame.txt
+            mobile-app/.release/permission-ownership-excerpts.txt
+            mobile-app/.release/gradle-release-runtime-classpath.txt
+          if-no-files-found: error
+          retention-days: 14
