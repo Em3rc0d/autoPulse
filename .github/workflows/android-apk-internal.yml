@@ -21,17 +21,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: '20'
+          persist-credentials: false
+
+      - name: Use Node.js 22 LTS
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
           cache: npm
           cache-dependency-path: mobile-app/package-lock.json
 
       - name: Use Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with:
           distribution: temurin
           java-version: '17'
@@ -54,18 +56,56 @@ jobs:
       - name: Verify React Native bundle is packaged
         working-directory: mobile-app
         run: |
+          set -euo pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
           test -f "$APK"
+          unzip -t "$APK" >/dev/null
           unzip -l "$APK" | grep -Eq 'assets/(index\.android\.bundle|expo-root\.js|.*\.bundle)' || {
             echo "ERROR: standalone JS bundle is missing from $APK"
-            unzip -l "$APK" | grep 'assets/' | head -200 || true
             exit 1
           }
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: Enforce Android Permission Contract V1
+        working-directory: mobile-app
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          AAPT2="$(find "${ANDROID_HOME}/build-tools" -type f -name aapt2 | sort -V | tail -1)"
+          mkdir -p .release
+          "$AAPT2" dump permissions "$APK" | tee .release/apk-effective-permissions.txt
+          sed -n "s/^uses-permission: name='\([^']*\)'.*/\1/p" .release/apk-effective-permissions.txt | sort -u > .release/apk-permission-names.txt
+          cat > .release/apk-permission-allowed.txt <<'EOF'
+android.permission.ACCESS_COARSE_LOCATION
+android.permission.ACCESS_FINE_LOCATION
+android.permission.ACCESS_NETWORK_STATE
+android.permission.BLUETOOTH
+android.permission.BLUETOOTH_ADMIN
+android.permission.BLUETOOTH_CONNECT
+android.permission.BLUETOOTH_SCAN
+android.permission.FOREGROUND_SERVICE
+android.permission.INTERNET
+android.permission.POST_NOTIFICATIONS
+android.permission.READ_EXTERNAL_STORAGE
+android.permission.VIBRATE
+android.permission.WAKE_LOCK
+android.permission.WRITE_EXTERNAL_STORAGE
+com.em3rc0dth.autopulse.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+EOF
+          sort -u -o .release/apk-permission-allowed.txt .release/apk-permission-allowed.txt
+          comm -23 .release/apk-permission-names.txt .release/apk-permission-allowed.txt > .release/apk-permission-unexpected.txt
+          if [ -s .release/apk-permission-unexpected.txt ]; then
+            echo 'ERROR: unexpected permissions in APK:'
+            cat .release/apk-permission-unexpected.txt
+            exit 1
+          fi
+
+      - name: Upload APK and permission evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: autopulse-android-internal-apk
-          path: mobile-app/android/app/build/outputs/apk/release/app-release.apk
+          path: |
+            mobile-app/android/app/build/outputs/apk/release/app-release.apk
+            mobile-app/.release/apk-effective-permissions.txt
+            mobile-app/.release/apk-permission-names.txt
           if-no-files-found: error
           retention-days: 7
