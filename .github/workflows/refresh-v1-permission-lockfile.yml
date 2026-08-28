@@ -1,0 +1,52 @@
+name: Refresh V1 Permission Lockfile
+
+on:
+  push:
+    branches:
+      - chore/v1-permission-surface-cleanup
+    paths:
+      - 'mobile-app/package.json'
+      - '.github/workflows/refresh-v1-permission-lockfile.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lockfile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile-app
+
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chore/v1-permission-surface-cleanup
+          fetch-depth: 0
+
+      - name: Use Node.js 22 LTS
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile-app/package-lock.json
+
+      - name: Regenerate lockfile only
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Verify deterministic install
+        run: npm ci
+
+      - name: Commit lockfile if changed
+        working-directory: .
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- mobile-app/package-lock.json; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add mobile-app/package-lock.json
+          git commit -m 'chore(android): refresh reconciled permission lockfile'
+          git push origin HEAD:chore/v1-permission-surface-cleanup
