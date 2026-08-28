@@ -12,6 +12,9 @@
   <uses-permission android:name="android.permission.WAKE_LOCK"/>
   <!-- AutoPulse only opens the system media library; no V1 flow captures a photo with the camera. -->
   <uses-permission android:name="android.permission.CAMERA" tools:node="remove"/>
+  <!-- expo-location pulls SmartLocation, whose generic manifest includes activity/geofencing permissions that V1 does not use. -->
+  <uses-permission android:name="com.google.android.providers.gsf.permission.READ_GSERVICES" tools:node="remove"/>
+  <uses-permission android:name="com.google.android.gms.permission.ACTIVITY_RECOGNITION" tools:node="remove"/>
   <queries>
     <intent>
       <action android:name="android.intent.action.VIEW"/>
