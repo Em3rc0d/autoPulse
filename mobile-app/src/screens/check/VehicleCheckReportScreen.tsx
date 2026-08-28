@@ -75,6 +75,7 @@ export default function VehicleCheckReportScreen() {
   }
 
   const { snapshot } = result;
+  const vehicleLabel = snapshot.vehicle.alias ?? (`${snapshot.vehicle.make ?? ''} ${snapshot.vehicle.model ?? ''}`.trim() || snapshot.vehicle.vehicleId);
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -90,7 +91,7 @@ export default function VehicleCheckReportScreen() {
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Vehicle & session</Text>
-          <Text style={styles.primary}>{snapshot.vehicle.alias ?? `${snapshot.vehicle.make ?? ''} ${snapshot.vehicle.model ?? ''}`.trim() || snapshot.vehicle.vehicleId}</Text>
+          <Text style={styles.primary}>{vehicleLabel}</Text>
           <Text style={styles.muted}>Session {snapshot.sessionId.slice(0, 8)}… · {snapshot.acquisition.mode}</Text>
           <View style={styles.row}><Text style={styles.label}>Session integrity</Text><Text style={styles.value}>{snapshot.evidence.sessionIntegrity}</Text></View>
           <View style={styles.row}><Text style={styles.label}>Persisted readings</Text><Text style={styles.value}>{snapshot.evidence.totalReadingsCount}</Text></View>
