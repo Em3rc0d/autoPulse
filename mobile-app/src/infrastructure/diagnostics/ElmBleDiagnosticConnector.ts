@@ -4,6 +4,7 @@ import type {
   DiagnosticConnectorHealth,
   DiagnosticConnectorIdentity,
   DiagnosticExecutionStatus,
+  DiagnosticFreezeFrameTrigger,
   DiagnosticMonitorStatus,
   DiagnosticRequest,
   DiagnosticRequestKind,
@@ -67,7 +68,7 @@ function diagnosticCodesFromFrames(frames: readonly ObdFrame[]): string[] {
 function monitorStatusFromFrames(frames: readonly ObdFrame[]): DiagnosticMonitorStatus | undefined {
   // Standard Mode 01 PID 01: byte A bit 7 is MIL, bits 0-6 are confirmed DTC count.
   // We intentionally expose only those two facts here; detailed readiness monitor
-  // decoding will be added separately rather than guessing unsupported semantics.
+  // decoding is a separate capability so partial support is never overstated.
   const frame = frames.find(item =>
     item.validity === 'VALID' && item.service === '41' && item.pid === '01' && item.payloadBytes.length >= 1
   );
@@ -76,6 +77,27 @@ function monitorStatusFromFrames(frames: readonly ObdFrame[]): DiagnosticMonitor
   return {
     milOn: (a & 0x80) !== 0,
     confirmedDtcCount: a & 0x7f,
+  };
+}
+
+function freezeFrameTriggerFromFrames(frames: readonly ObdFrame[]): DiagnosticFreezeFrameTrigger | undefined {
+  // Mode 02 PID 02, frame 00: the first payload byte identifies the frame number;
+  // the following pair, when non-zero, identifies the DTC that caused storage.
+  // This intentionally does not claim the rest of the freeze-frame PID set was captured.
+  const frame = frames.find(item =>
+    item.validity === 'VALID' && item.service === '42' && item.pid === '02' && item.payloadBytes.length >= 1
+  );
+  if (!frame) return undefined;
+
+  const frameNumber = frame.payloadBytes[0];
+  const triggerDtc = frame.payloadBytes.length >= 3
+    ? decodeDtcPair(frame.payloadBytes[1], frame.payloadBytes[2]) ?? undefined
+    : undefined;
+
+  return {
+    frameNumber,
+    triggerDtc,
+    sourceEcu: frame.sourceAddress ?? undefined,
   };
 }
 
@@ -168,6 +190,7 @@ export class ElmBleDiagnosticConnector implements DiagnosticConnector {
       sourceEcus,
       diagnosticCodes: diagnosticCodesFromFrames(result.obdFrames),
       monitorStatus: monitorStatusFromFrames(result.obdFrames),
+      freezeFrameTrigger: freezeFrameTriggerFromFrames(result.obdFrames),
       latencyMs: result.latencyMs,
       errors: result.errors,
     };

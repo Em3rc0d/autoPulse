@@ -1,0 +1,242 @@
+import { DiagnosticConnector } from '../../domain/diagnostics/DiagnosticConnector';
+import { canTransitionEvaluation } from '../../domain/evaluation/logic/evaluationStateMachine';
+import { Evaluation } from '../../domain/evaluation/models/evaluation';
+import { EvidenceItem } from '../../domain/evaluation/models/evidenceItem';
+import { CaptureContext, EvaluationState } from '../../domain/evaluation/models/enums';
+import {
+  EvaluationId,
+  EvidenceItemId,
+  LiveSessionId,
+  TechnicianId,
+  TenantId,
+  VehicleId,
+} from '../../domain/shared/identifiers';
+import { Result, failure, success } from '../../domain/shared/result';
+import { DomainError } from '../../domain/shared/domainError';
+import { UtcIsoTimestamp } from '../../domain/shared/timestamps';
+import {
+  AutoPulseCheckCapabilityFacts,
+  AutoPulseCheckPlan,
+  AutoPulseCheckPurpose,
+  buildAutoPulseCheckPlan,
+} from './AutoPulseCheckPlan';
+import {
+  CheckDiagnosticCaptureKind,
+  captureCheckDiagnosticEvidence,
+} from './CheckDiagnosticCapture';
+import { promoteLiveTelemetryWindow } from './TelemetryEvidencePromotion';
+
+export interface StoredAutoPulseCheck {
+  readonly evaluation: Evaluation;
+  readonly purpose: AutoPulseCheckPurpose;
+  readonly capabilities: AutoPulseCheckCapabilityFacts;
+}
+
+export interface AutoPulseCheckStore {
+  getEvaluation(id: EvaluationId): Promise<StoredAutoPulseCheck | null>;
+  saveEvaluation(check: StoredAutoPulseCheck): Promise<void>;
+  appendEvidence(evidence: EvidenceItem): Promise<void>;
+}
+
+export interface AutoPulseCheckIdFactory {
+  nextEvaluationId(): EvaluationId;
+  nextEvidenceItemId(): EvidenceItemId;
+}
+
+export interface CreateAutoPulseCheckInput {
+  readonly tenantId: TenantId;
+  readonly vehicleId: VehicleId;
+  readonly technicianId: TechnicianId;
+  readonly purpose: AutoPulseCheckPurpose;
+  readonly capabilities: AutoPulseCheckCapabilityFacts;
+  readonly symptoms?: string;
+}
+
+export interface CreatedAutoPulseCheck {
+  readonly evaluation: Evaluation;
+  readonly plan: AutoPulseCheckPlan;
+}
+
+export interface PromoteLiveEvidenceInput {
+  readonly evaluationId: EvaluationId;
+  readonly sessionVehicleId: VehicleId;
+  readonly liveSessionId: LiveSessionId;
+  readonly startMs: number;
+  readonly endMs: number;
+  readonly validEcuSampleCount: number;
+  readonly totalSampleCount: number;
+  readonly signalTypes: readonly string[];
+  readonly captureContext?: CaptureContext;
+  readonly connectionRecoveryCount?: number;
+  readonly telemetryGapMs?: number;
+  readonly sessionStatus?: string;
+}
+
+export interface CaptureDiagnosticEvidenceInput {
+  readonly evaluationId: EvaluationId;
+  readonly connector: DiagnosticConnector;
+  readonly kind: CheckDiagnosticCaptureKind;
+}
+
+function checkError(code: string, message: string, context?: Record<string, any>): DomainError {
+  return { code, message, context };
+}
+
+function scopeFor(plan: AutoPulseCheckPlan) {
+  return {
+    requestedItems: plan.steps.map(step => ({
+      id: step.id,
+      description: step.title,
+      isMandatory: step.mandatory,
+    })),
+    description: `AutoPulse Check · ${plan.purpose}`,
+  };
+}
+
+export class AutoPulseCheckEngine {
+  constructor(
+    private readonly store: AutoPulseCheckStore,
+    private readonly ids: AutoPulseCheckIdFactory,
+    private readonly now: () => UtcIsoTimestamp,
+  ) {}
+
+  async createDraft(input: CreateAutoPulseCheckInput): Promise<CreatedAutoPulseCheck> {
+    const plan = buildAutoPulseCheckPlan(input.purpose, input.capabilities);
+    const evaluation: Evaluation = {
+      id: this.ids.nextEvaluationId(),
+      tenantId: input.tenantId,
+      vehicleId: input.vehicleId,
+      technicianId: input.technicianId,
+      state: EvaluationState.DRAFT,
+      scope: scopeFor(plan),
+      limitations: plan.limitations.length > 0 ? plan.limitations.join(' ') : undefined,
+      symptoms: input.symptoms,
+      createdAt: this.now(),
+    };
+
+    await this.store.saveEvaluation({
+      evaluation,
+      purpose: input.purpose,
+      capabilities: input.capabilities,
+    });
+    return { evaluation, plan };
+  }
+
+  async transition(
+    evaluationId: EvaluationId,
+    nextState: EvaluationState,
+  ): Promise<Result<Evaluation, DomainError>> {
+    const currentCheck = await this.store.getEvaluation(evaluationId);
+    if (!currentCheck) {
+      return failure(checkError('CHECK_EVALUATION_NOT_FOUND', 'AutoPulse Check evaluation was not found.', { evaluationId }));
+    }
+
+    const current = currentCheck.evaluation;
+    const allowed = canTransitionEvaluation(current.state, nextState);
+    if (allowed.ok === false) return failure(allowed.error);
+
+    const now = this.now();
+    const updated: Evaluation = {
+      ...current,
+      state: nextState,
+      openedAt: nextState === EvaluationState.OPEN ? (current.openedAt ?? now) : current.openedAt,
+      signedAt: nextState === EvaluationState.SIGNED ? now : current.signedAt,
+      cancelledAt: nextState === EvaluationState.CANCELLED ? now : current.cancelledAt,
+    };
+
+    await this.store.saveEvaluation({ ...currentCheck, evaluation: updated });
+    return success(updated);
+  }
+
+  async updateCapabilities(
+    evaluationId: EvaluationId,
+    patch: Partial<AutoPulseCheckCapabilityFacts>,
+  ): Promise<Result<StoredAutoPulseCheck, DomainError>> {
+    const currentCheck = await this.store.getEvaluation(evaluationId);
+    if (!currentCheck) {
+      return failure(checkError('CHECK_EVALUATION_NOT_FOUND', 'AutoPulse Check evaluation was not found.', { evaluationId }));
+    }
+    if (currentCheck.evaluation.state === EvaluationState.SIGNED || currentCheck.evaluation.state === EvaluationState.DELIVERED) {
+      return failure(checkError(
+        'CHECK_CAPABILITY_SNAPSHOT_IMMUTABLE',
+        'Capability facts cannot be changed after the evaluation is signed.',
+        { evaluationId, state: currentCheck.evaluation.state },
+      ));
+    }
+
+    const capabilities: AutoPulseCheckCapabilityFacts = {
+      ...currentCheck.capabilities,
+      ...patch,
+      availableSignals: patch.availableSignals ?? currentCheck.capabilities.availableSignals,
+    };
+    const plan = buildAutoPulseCheckPlan(currentCheck.purpose, capabilities);
+    const evaluation: Evaluation = {
+      ...currentCheck.evaluation,
+      scope: scopeFor(plan),
+      limitations: plan.limitations.length > 0 ? plan.limitations.join(' ') : undefined,
+    };
+    const updated = { ...currentCheck, evaluation, capabilities };
+    await this.store.saveEvaluation(updated);
+    return success(updated);
+  }
+
+  async promoteLiveEvidence(
+    input: PromoteLiveEvidenceInput,
+  ): Promise<Result<EvidenceItem, DomainError>> {
+    const currentCheck = await this.store.getEvaluation(input.evaluationId);
+    if (!currentCheck) {
+      return failure(checkError('CHECK_EVALUATION_NOT_FOUND', 'AutoPulse Check evaluation was not found.', {
+        evaluationId: input.evaluationId,
+      }));
+    }
+
+    const evaluation = currentCheck.evaluation;
+    const promoted = promoteLiveTelemetryWindow({
+      evidenceId: this.ids.nextEvidenceItemId(),
+      evaluationId: evaluation.id,
+      evaluationState: evaluation.state,
+      evaluationVehicleId: evaluation.vehicleId,
+      sessionVehicleId: input.sessionVehicleId,
+      liveSessionId: input.liveSessionId,
+      capturedAt: this.now(),
+      startMs: input.startMs,
+      endMs: input.endMs,
+      validEcuSampleCount: input.validEcuSampleCount,
+      totalSampleCount: input.totalSampleCount,
+      signalTypes: input.signalTypes,
+      captureContext: input.captureContext,
+      connectionRecoveryCount: input.connectionRecoveryCount,
+      telemetryGapMs: input.telemetryGapMs,
+      sessionStatus: input.sessionStatus,
+    });
+
+    if (promoted.ok === false) return failure(promoted.error);
+    await this.store.appendEvidence(promoted.value);
+    return promoted;
+  }
+
+  async captureDiagnosticEvidence(
+    input: CaptureDiagnosticEvidenceInput,
+  ): Promise<Result<EvidenceItem, DomainError>> {
+    const currentCheck = await this.store.getEvaluation(input.evaluationId);
+    if (!currentCheck) {
+      return failure(checkError('CHECK_EVALUATION_NOT_FOUND', 'AutoPulse Check evaluation was not found.', {
+        evaluationId: input.evaluationId,
+      }));
+    }
+
+    const evaluation = currentCheck.evaluation;
+    const captured = await captureCheckDiagnosticEvidence(input.connector, {
+      evidenceId: this.ids.nextEvidenceItemId(),
+      evaluationId: evaluation.id,
+      evaluationState: evaluation.state,
+      kind: input.kind,
+      capturedAt: this.now(),
+      createdBy: evaluation.technicianId,
+    });
+
+    if (captured.ok === false) return failure(captured.error);
+    await this.store.appendEvidence(captured.value.evidence);
+    return success(captured.value.evidence);
+  }
+}

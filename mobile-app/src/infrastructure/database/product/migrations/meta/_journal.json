@@ -57,6 +57,13 @@
       "when": 1787328600000,
       "tag": "0007_raw_vehicle_capability_evidence",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1787792400000,
+      "tag": "0008_autopulse_check_evaluations",
+      "breakpoints": true
     }
   ]
 }
