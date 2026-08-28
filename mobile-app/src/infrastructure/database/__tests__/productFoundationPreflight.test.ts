@@ -10,6 +10,41 @@ import * as schema from '../product/schema';
 // This test suite uses better-sqlite3 to run the exact SQLite constraints locally in Node.
 const TEST_DB_PATH = path.join(__dirname, 'test_autopulse.db');
 
+type ErrorLike = {
+  message?: unknown;
+  cause?: unknown;
+};
+
+async function expectSqliteConstraintFailure(operation: PromiseLike<unknown>, expected: RegExp) {
+  let captured: unknown;
+
+  try {
+    await operation;
+  } catch (error) {
+    captured = error;
+  }
+
+  expect(captured).toBeDefined();
+
+  const messages: string[] = [];
+  const seen = new Set<unknown>();
+  let cursor = captured;
+
+  while (cursor && typeof cursor === 'object' && !seen.has(cursor)) {
+    seen.add(cursor);
+    const current = cursor as ErrorLike;
+    if (typeof current.message === 'string') {
+      messages.push(current.message);
+    }
+    cursor = current.cause;
+  }
+
+  // Drizzle >=0.45 wraps driver errors with query context. The SQLite constraint
+  // remains authoritative in the nested cause, so assert the complete error chain
+  // instead of coupling the test to one library-level wrapper message.
+  expect(messages.join('\nCaused by: ')).toMatch(expected);
+}
+
 describe('APC-04A2: Product Foundation Preflight', () => {
   let client: Client;
   let db: LibSQLDatabase<typeof schema>;
@@ -79,7 +114,7 @@ describe('APC-04A2: Product Foundation Preflight', () => {
     });
 
     it('Rejects a session linking roots from different workspaces (Cross-tenant)', async () => {
-      await expect(
+      await expectSqliteConstraintFailure(
         db.insert(schema.liveSessions).values({
           id: 'SESS_1',
           workspaceId: 'WS_A',
@@ -88,8 +123,9 @@ describe('APC-04A2: Product Foundation Preflight', () => {
           adapterInstanceId: 'ADP_A',
           format: 'BINARY', formatVersion: 'V2', codec: 'NONE',
           status: 'CREATED', chunkDurationMs: 5000, dictionaryVersion: 'v1', createdAt: 1
-        })
-      ).rejects.toThrow(/FOREIGN KEY constraint failed/i);
+        }),
+        /FOREIGN KEY constraint failed/i
+      );
     });
 
     it('Accepts a session with matching roots in the same workspace', async () => {
@@ -109,12 +145,13 @@ describe('APC-04A2: Product Foundation Preflight', () => {
 
   describe('Unique Constraints', () => {
     it('Rejects duplicate platform device id in same workspace', async () => {
-      await expect(
+      await expectSqliteConstraintFailure(
         db.insert(schema.obdAdapterInstances).values({
           id: 'ADP_2', workspaceId: 'WS_A', platformDeviceId: 'MAC_1', // MAC_1 already exists in WS_A
           firstSeen: 1, lastSeen: 1, trustState: 'TRUSTED', createdAt: 1, updatedAt: 1
-        })
-      ).rejects.toThrow(/UNIQUE constraint failed/i);
+        }),
+        /UNIQUE constraint failed/i
+      );
     });
 
     it('Rejects duplicate telemetry blocks for same session and sequence', async () => {
@@ -128,17 +165,19 @@ describe('APC-04A2: Product Foundation Preflight', () => {
 
       await db.insert(schema.telemetryBlocks).values({ id: 'BLK_1', sequenceNumber: 0, ...blockBase });
 
-      await expect(
-        db.insert(schema.telemetryBlocks).values({ id: 'BLK_2', sequenceNumber: 0, ...blockBase })
-      ).rejects.toThrow(/UNIQUE constraint failed/i);
+      await expectSqliteConstraintFailure(
+        db.insert(schema.telemetryBlocks).values({ id: 'BLK_2', sequenceNumber: 0, ...blockBase }),
+        /UNIQUE constraint failed/i
+      );
     });
   });
 
   describe('RESTRICT Policies', () => {
     it('Prevents deleting a workspace that has active sessions/vehicles', async () => {
-      await expect(
-        db.delete(schema.workspaces).where(eq(schema.workspaces.id, 'WS_A'))
-      ).rejects.toThrow(/FOREIGN KEY constraint failed/i);
+      await expectSqliteConstraintFailure(
+        db.delete(schema.workspaces).where(eq(schema.workspaces.id, 'WS_A')),
+        /FOREIGN KEY constraint failed/i
+      );
     });
   });
 
