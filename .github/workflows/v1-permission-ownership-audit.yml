@@ -16,6 +16,7 @@ permissions:
 jobs:
   permission-ownership:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: mobile-app
@@ -43,24 +44,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Make Gradle wrapper executable
-        run: chmod +x android/gradlew
+      - name: Prepare evidence directory and Gradle wrapper
+        run: |
+          mkdir -p .release
+          chmod +x android/gradlew
 
       - name: Generate release manifest merge evidence
         working-directory: mobile-app/android
         env:
           NODE_ENV: production
-        run: ./gradlew app:processReleaseMainManifest --no-daemon
+        run: ./gradlew app:processReleaseMainManifest --no-daemon --console=plain
 
       - name: Capture release runtime dependency graph
         working-directory: mobile-app/android
-        run: ./gradlew app:dependencies --configuration releaseRuntimeClasspath --no-daemon > ../.release/gradle-release-runtime-classpath.txt
+        run: ./gradlew app:dependencies --configuration releaseRuntimeClasspath --no-daemon --console=plain > ../.release/gradle-release-runtime-classpath.txt
 
       - name: Capture manifest merger blame and permission ownership excerpts
         working-directory: mobile-app
         run: |
           set -euo pipefail
-          mkdir -p .release
           BLAME="$(find android/app/build -type f \( -iname '*manifest*blame*' -o -iname '*manifest-merger*report*' \) | sort | head -1 || true)"
           if [ -z "$BLAME" ]; then
             echo 'ERROR: manifest merger blame/report was not generated'
@@ -78,7 +80,7 @@ jobs:
               'com.google.android.gms.permission.ACTIVITY_RECOGNITION'; do
               echo
               echo "## $P"
-              grep -n -B 8 -A 12 -F "$P" .release/manifest-merger-blame.txt || true
+              grep -n -B 10 -A 14 -F "$P" .release/manifest-merger-blame.txt || true
             done
           } | tee .release/permission-ownership-excerpts.txt
 
