@@ -232,9 +232,18 @@ export class SessionSummaryBuilder {
     let integrityState = SessionIntegrityState.COMPLETE;
     const blockCountMismatch = expectedBlocksCount > 0 && foundBlocksCount !== expectedBlocksCount;
 
+    // TelemetryBlockAssembler.flush() deliberately marks the final block partial
+    // because a user can stop between fixed windows. That describes the block's
+    // duration, not a loss of evidence. A clean USER_INITIATED completion is
+    // therefore COMPLETE when its only partial block is that expected final flush.
+    const hasOnlyExpectedUserStopFlush = session.status === 'COMPLETED'
+      && session.stopReason === 'USER_INITIATED'
+      && partialBlocksCount === 1;
+    const hasUnexpectedPartialEvidence = partialBlocksCount > 0 && !hasOnlyExpectedUserStopFlush;
+
     if (corruptedBlocksCount > 0 || unsupportedBlocksCount > 0 || gapsDetectedCount > 0 || blockCountMismatch) {
       integrityState = SessionIntegrityState.DEGRADED;
-    } else if (session.status === 'INTERRUPTED' || partialBlocksCount > 0) {
+    } else if (session.status === 'INTERRUPTED' || hasUnexpectedPartialEvidence) {
       integrityState = SessionIntegrityState.PARTIAL;
     }
 

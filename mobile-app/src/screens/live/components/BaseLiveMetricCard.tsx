@@ -80,15 +80,22 @@ export function LiveMetricCard({ label, value, unit, state, stats, profile, orig
   const accentColor = state.quality !== 'STALE' && state.quality !== 'UNAVAILABLE'
     ? getColor(state.advisory === 'UNKNOWN' ? 'GRAY' : state.color)
     : '#6b7280';
+  const roundedValue = value !== null && value !== undefined
+    ? String(Math.round(value * 10) / 10)
+    : '--';
   let displayValue = '--';
   if (state.quality === 'UNAVAILABLE' || state.quality === 'INVALID') {
     displayValue = 'Unavailable';
+  } else if (state.quality === 'STALE') {
+    // Never present the last observed sample as if it were current telemetry.
+    displayValue = '--';
   } else if (state.quality === 'SUSPECT') {
     displayValue = 'Sospechoso';
   } else if (value !== null && value !== undefined) {
-    displayValue = String(Math.round(value * 10) / 10);
+    displayValue = roundedValue;
   }
 
+  const showPrimaryUnit = !['UNAVAILABLE', 'SUSPECT', 'INVALID', 'STALE'].includes(state.quality);
   const validMin = stats.validMinObserved !== null ? String(Math.round(stats.validMinObserved * 10) / 10) : '--';
   const validMax = stats.validMaxObserved !== null ? String(Math.round(stats.validMaxObserved * 10) / 10) : '--';
 
@@ -112,7 +119,7 @@ export function LiveMetricCard({ label, value, unit, state, stats, profile, orig
       >
         <Text style={[styles.cardLabel, { color: '#9ca3af' }]}>{label}</Text>
         <Text style={[styles.cardValue, { color: accentColor === '#6b7280' ? '#fff' : accentColor }]}>
-          {displayValue} {state.quality !== 'UNAVAILABLE' && state.quality !== 'SUSPECT' && state.quality !== 'INVALID' ? unit : ''}
+          {displayValue} {showPrimaryUnit ? unit : ''}
         </Text>
         {origin && <Text style={styles.originText}>{origin}</Text>}
 
@@ -139,11 +146,26 @@ export function LiveMetricCard({ label, value, unit, state, stats, profile, orig
 
               <Text style={styles.sectionHeader}>ACTUAL</Text>
               <View style={styles.sheetRow}>
-                <Text style={styles.sheetLabel}>Valor actual recibido</Text>
+                <Text style={styles.sheetLabel}>
+                  {state.quality === 'STALE' ? 'Valor actual' : 'Valor actual recibido'}
+                </Text>
                 <Text style={[styles.sheetValue, { color: accentColor }]}>
-                  {displayValue} {state.quality !== 'UNAVAILABLE' && state.quality !== 'SUSPECT' ? unit : ''}
+                  {displayValue} {showPrimaryUnit ? unit : ''}
                 </Text>
               </View>
+              {state.quality === 'STALE' && value !== null && value !== undefined && (
+                <View style={styles.sheetRow}>
+                  <Text style={styles.sheetLabel}>Última lectura recibida</Text>
+                  <Text style={styles.sheetValue}>{roundedValue} {unit}</Text>
+                </View>
+              )}
+              {state.quality === 'STALE' && (
+                <View style={styles.warningBox}>
+                  <Text style={styles.warningText}>
+                    La señal dejó de actualizarse. La última lectura se conserva como evidencia histórica, no como valor actual.
+                  </Text>
+                </View>
+              )}
               {label === 'Engine RPM' && value === 0 && state.quality === 'VALID' && (
                 <View style={styles.sheetRow}>
                   <Text style={styles.sheetLabel}>Estado actual</Text>

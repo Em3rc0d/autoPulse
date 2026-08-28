@@ -19,6 +19,19 @@ describe('LiveEcuTruth', () => {
       .toBe('LIVE_ECU_DATA');
   });
 
+  it('shows bounded connection recovery as amber instead of terminal failure', () => {
+    const state = deriveLiveEcuTruth({
+      hasValidEcuSample: true,
+      elapsedMs: 12_000,
+      sessionError: 'SESSION_RECOVERING:ECU_RESPONSE_LOST',
+    });
+
+    expect(state.state).toBe('CONNECTION_RECOVERING');
+    expect(state.label).toBe('RECONNECTING');
+    expect(state.detail).toContain('ECU RESPONSE LOST');
+    expect(state.tone).toBe('delayed');
+  });
+
   it('lets recording failure override live state', () => {
     expect(deriveLiveEcuTruth({
       hasValidEcuSample: true,
