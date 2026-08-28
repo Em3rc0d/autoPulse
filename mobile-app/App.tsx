@@ -1,3 +1,4 @@
+import './src/runtime/installTextEncodingPolyfill';
 import 'react-native-gesture-handler';
 import './src/infrastructure/runtime/TextEncodingPolyfill';
 import React, { useEffect } from 'react';
