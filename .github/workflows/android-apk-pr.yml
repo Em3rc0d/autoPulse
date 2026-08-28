@@ -83,10 +83,9 @@ jobs:
         working-directory: mobile-app/android
         env:
           NODE_ENV: production
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon --console=plain
 
       - name: Verify APK structure and React Native bundle
-        working-directory: mobile-app
         run: |
           set -euo pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
@@ -99,7 +98,6 @@ jobs:
           }
 
       - name: Capture effective APK permissions and package metadata
-        working-directory: mobile-app
         run: |
           set -euo pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
@@ -110,10 +108,89 @@ jobs:
           "$AAPT2" dump badging "$APK" | tee .release/apk-badging.txt
           unzip -p "$APK" assets/index.android.bundle | sha256sum | awk '{print $1}' > .release/js-bundle.sha256
           sha256sum package-lock.json | awk '{print $1}' > .release/package-lock.sha256
+          sha256sum .release/apk-effective-permissions.txt | awk '{print $1}' > .release/apk-permissions.sha256
+
+      - name: Enforce Android Permission Contract V1
+        id: permission_contract
+        run: |
+          set -euo pipefail
+          ACTUAL=.release/apk-permission-names.txt
+          ALLOWED=.release/apk-permission-allowed.txt
+          REQUIRED=.release/apk-permission-required.txt
+
+          grep -E "^(uses-permission|uses-permission-sdk-23):" .release/apk-effective-permissions.txt \
+            | sed -E "s/.*name='([^']+)'.*/\1/" \
+            | sort -u > "$ACTUAL"
+
+          cat > "$ALLOWED" <<'EOF'
+          android.permission.ACCESS_COARSE_LOCATION
+          android.permission.ACCESS_FINE_LOCATION
+          android.permission.ACCESS_NETWORK_STATE
+          android.permission.BLUETOOTH
+          android.permission.BLUETOOTH_ADMIN
+          android.permission.BLUETOOTH_CONNECT
+          android.permission.BLUETOOTH_SCAN
+          android.permission.FOREGROUND_SERVICE
+          android.permission.INTERNET
+          android.permission.POST_NOTIFICATIONS
+          android.permission.READ_EXTERNAL_STORAGE
+          android.permission.VIBRATE
+          android.permission.WAKE_LOCK
+          android.permission.WRITE_EXTERNAL_STORAGE
+          com.em3rc0dth.autopulse.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+          EOF
+
+          cat > "$REQUIRED" <<'EOF'
+          android.permission.ACCESS_COARSE_LOCATION
+          android.permission.ACCESS_FINE_LOCATION
+          android.permission.BLUETOOTH
+          android.permission.BLUETOOTH_ADMIN
+          android.permission.BLUETOOTH_CONNECT
+          android.permission.BLUETOOTH_SCAN
+          android.permission.FOREGROUND_SERVICE
+          android.permission.INTERNET
+          android.permission.POST_NOTIFICATIONS
+          android.permission.VIBRATE
+          android.permission.WAKE_LOCK
+          EOF
+
+          sort -u -o "$ALLOWED" "$ALLOWED"
+          sort -u -o "$REQUIRED" "$REQUIRED"
+
+          comm -23 "$ACTUAL" "$ALLOWED" > .release/apk-permission-unexpected.txt
+          comm -13 "$ACTUAL" "$REQUIRED" > .release/apk-permission-missing-required.txt
+
+          echo '=== actual permissions ==='
+          cat "$ACTUAL"
+          echo '=== unexpected permissions ==='
+          cat .release/apk-permission-unexpected.txt
+          echo '=== missing required permissions ==='
+          cat .release/apk-permission-missing-required.txt
+
+          test ! -s .release/apk-permission-unexpected.txt || {
+            echo 'ERROR: APK declares permission(s) outside Android Permission Contract V1.'
+            exit 1
+          }
+          test ! -s .release/apk-permission-missing-required.txt || {
+            echo 'ERROR: APK is missing permission(s) required by Android Permission Contract V1.'
+            exit 1
+          }
+
+      - name: Capture Android manifest ownership evidence
+        working-directory: mobile-app/android
+        run: |
+          set -euo pipefail
+          mkdir -p ../.release
+          BLAME="$(find app/build -type f \( -iname '*manifest*blame*' -o -iname '*manifest-merger*report*' \) | sort | head -1 || true)"
+          if [ -n "$BLAME" ]; then
+            cp "$BLAME" ../.release/manifest-merger-blame.txt
+          else
+            echo 'Manifest merger blame/report not found after assembleRelease.' > ../.release/manifest-merger-blame.txt
+          fi
+          ./gradlew app:dependencies --configuration releaseRuntimeClasspath --no-daemon --console=plain > ../.release/gradle-release-runtime-classpath.txt
 
       - name: Verify APK signature and classify signer
         id: apk_signature
-        working-directory: mobile-app
         run: |
           set -euo pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
@@ -128,7 +205,6 @@ jobs:
           fi
 
       - name: Generate immutable artifact receipt
-        working-directory: mobile-app
         env:
           AP_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           AP_BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -137,6 +213,7 @@ jobs:
           AP_RUN_ID: ${{ github.run_id }}
           AP_RUN_ATTEMPT: ${{ github.run_attempt }}
           AP_CRITICAL_AUDIT_OUTCOME: ${{ steps.critical_audit.outcome }}
+          AP_PERMISSION_CONTRACT_OUTCOME: ${{ steps.permission_contract.outcome }}
           AP_SIGNING_CLASS: ${{ steps.apk_signature.outputs.signing_class }}
         run: |
           set -euo pipefail
@@ -150,9 +227,11 @@ jobs:
           export AP_GENERATED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
           export AP_PACKAGE_LOCK_SHA256="$(cat .release/package-lock.sha256)"
           export AP_JS_BUNDLE_SHA256="$(cat .release/js-bundle.sha256)"
+          export AP_PERMISSIONS_SHA256="$(cat .release/apk-permissions.sha256)"
           node <<'NODE'
           const fs = require('fs');
           const criticalProductionAuditPassed = process.env.AP_CRITICAL_AUDIT_OUTCOME === 'success';
+          const permissionContractPassed = process.env.AP_PERMISSION_CONTRACT_OUTCOME === 'success';
           const signingClass = process.env.AP_SIGNING_CLASS || 'UNKNOWN';
           const receipt = {
             schema: 'autopulse.artifact-receipt/v1',
@@ -174,10 +253,12 @@ jobs:
               java: process.env.AP_JAVA_VERSION,
               reactNativeBundlePackaged: true,
               jsBundleSha256: process.env.AP_JS_BUNDLE_SHA256,
+              apkPermissionsSha256: process.env.AP_PERMISSIONS_SHA256,
+              permissionContractPassed,
               apkSignatureVerified: true,
               signingClass,
               criticalProductionAuditPassed,
-              publicReleaseEligible: criticalProductionAuditPassed && signingClass === 'NON_DEBUG',
+              publicReleaseEligible: criticalProductionAuditPassed && permissionContractPassed && signingClass === 'NON_DEBUG',
             },
             artifact: {
               name: 'autopulse-android-internal-apk',
@@ -199,9 +280,17 @@ jobs:
             mobile-app/.release/autopulse-apk-receipt.json
             mobile-app/.release/apksigner-verification.txt
             mobile-app/.release/apk-effective-permissions.txt
+            mobile-app/.release/apk-permission-names.txt
+            mobile-app/.release/apk-permission-allowed.txt
+            mobile-app/.release/apk-permission-required.txt
+            mobile-app/.release/apk-permission-unexpected.txt
+            mobile-app/.release/apk-permission-missing-required.txt
+            mobile-app/.release/manifest-merger-blame.txt
+            mobile-app/.release/gradle-release-runtime-classpath.txt
             mobile-app/.release/apk-badging.txt
             mobile-app/.release/js-bundle.sha256
             mobile-app/.release/package-lock.sha256
+            mobile-app/.release/apk-permissions.sha256
             mobile-app/.release/npm-audit-production.json
             mobile-app/.release/npm-dependency-reachability.txt
           if-no-files-found: error
@@ -209,7 +298,6 @@ jobs:
 
       - name: Enforce V1 security gate after evidence capture
         if: always()
-        working-directory: mobile-app
         env:
           AP_CRITICAL_AUDIT_OUTCOME: ${{ steps.critical_audit.outcome }}
         run: |
