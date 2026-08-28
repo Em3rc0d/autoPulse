@@ -1,0 +1,50 @@
+name: Inspect Expo Crypto Contract
+
+on:
+  push:
+    branches:
+      - feat/v1-product-closure
+    paths:
+      - '.github/workflows/v1-expo-crypto-contract.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: feat/v1-product-closure
+          persist-credentials: false
+      - name: Use Node.js 22 LTS
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile-app/package-lock.json
+      - name: Install exact dependencies
+        working-directory: mobile-app
+        run: npm ci
+      - name: Print expo-crypto package and TypeScript contract
+        working-directory: mobile-app
+        run: |
+          set -euo pipefail
+          node -p "require('./node_modules/expo-crypto/package.json').version"
+          echo '--- package.json types ---'
+          node -p "JSON.stringify({main: require('./node_modules/expo-crypto/package.json').main, types: require('./node_modules/expo-crypto/package.json').types}, null, 2)"
+          echo '--- build/index.d.ts ---'
+          cat node_modules/expo-crypto/build/index.d.ts || true
+          echo '--- build/Crypto.d.ts ---'
+          cat node_modules/expo-crypto/build/Crypto.d.ts || true
+          echo '--- runtime exports ---'
+          node - <<'NODE'
+          try {
+            const mod = require('./node_modules/expo-crypto/build/Crypto.js');
+            console.log(Object.keys(mod).sort());
+          } catch (error) {
+            console.log('runtime inspection unavailable in Node:', String(error));
+          }
+          NODE
