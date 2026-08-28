@@ -80,14 +80,26 @@ export function LiveMetricCard({ label, value, unit, state, stats, profile, orig
   const accentColor = state.quality !== 'STALE' && state.quality !== 'UNAVAILABLE'
     ? getColor(state.advisory === 'UNKNOWN' ? 'GRAY' : state.color)
     : '#6b7280';
+  const formattedObservedValue = value !== null && value !== undefined
+    ? String(Math.round(value * 10) / 10)
+    : '--';
+  const isStale = state.quality === 'STALE';
   let displayValue = '--';
   if (state.quality === 'UNAVAILABLE' || state.quality === 'INVALID') {
     displayValue = 'Unavailable';
   } else if (state.quality === 'SUSPECT') {
     displayValue = 'Sospechoso';
+  } else if (isStale) {
+    // A stale sample is historical evidence, not a current reading.
+    displayValue = '--';
   } else if (value !== null && value !== undefined) {
-    displayValue = String(Math.round(value * 10) / 10);
+    displayValue = formattedObservedValue;
   }
+
+  const showCurrentUnit = state.quality !== 'UNAVAILABLE'
+    && state.quality !== 'SUSPECT'
+    && state.quality !== 'INVALID'
+    && state.quality !== 'STALE';
 
   const validMin = stats.validMinObserved !== null ? String(Math.round(stats.validMinObserved * 10) / 10) : '--';
   const validMax = stats.validMaxObserved !== null ? String(Math.round(stats.validMaxObserved * 10) / 10) : '--';
@@ -111,8 +123,8 @@ export function LiveMetricCard({ label, value, unit, state, stats, profile, orig
         activeOpacity={0.7}
       >
         <Text style={[styles.cardLabel, { color: '#9ca3af' }]}>{label}</Text>
-        <Text style={[styles.cardValue, { color: accentColor === '#6b7280' ? '#fff' : accentColor }]}>
-          {displayValue} {state.quality !== 'UNAVAILABLE' && state.quality !== 'SUSPECT' && state.quality !== 'INVALID' ? unit : ''}
+        <Text testID={testID ? `${testID}-value` : undefined} style={[styles.cardValue, { color: accentColor === '#6b7280' ? '#fff' : accentColor }]}>
+          {displayValue} {showCurrentUnit ? unit : ''}
         </Text>
         {origin && <Text style={styles.originText}>{origin}</Text>}
 
@@ -137,13 +149,21 @@ export function LiveMetricCard({ label, value, unit, state, stats, profile, orig
             </View>
             <ScrollView style={styles.sheetContent}>
 
-              <Text style={styles.sectionHeader}>ACTUAL</Text>
+              <Text style={styles.sectionHeader}>{isStale ? 'LAST OBSERVED' : 'ACTUAL'}</Text>
               <View style={styles.sheetRow}>
-                <Text style={styles.sheetLabel}>Valor actual recibido</Text>
+                <Text style={styles.sheetLabel}>{isStale ? 'Última lectura recibida' : 'Valor actual recibido'}</Text>
                 <Text style={[styles.sheetValue, { color: accentColor }]}>
-                  {displayValue} {state.quality !== 'UNAVAILABLE' && state.quality !== 'SUSPECT' ? unit : ''}
+                  {isStale
+                    ? `${formattedObservedValue}${value !== null && value !== undefined ? ` ${unit}` : ''}`
+                    : `${displayValue}${showCurrentUnit ? ` ${unit}` : ''}`}
                 </Text>
               </View>
+              {isStale && (
+                <View style={styles.sheetRow}>
+                  <Text style={styles.sheetLabel}>Estado de frescura</Text>
+                  <Text style={styles.sheetValue}>Lectura desactualizada</Text>
+                </View>
+              )}
               {label === 'Engine RPM' && value === 0 && state.quality === 'VALID' && (
                 <View style={styles.sheetRow}>
                   <Text style={styles.sheetLabel}>Estado actual</Text>

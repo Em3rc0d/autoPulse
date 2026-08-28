@@ -1,6 +1,5 @@
 import { SignalSessionStatsTracker, SignalQualityEvaluator, AdvisoryStateTracker } from '../AdvisoryStateTracker';
 import { DEMO_PROFILES } from '../SignalProfiles';
-import { DataQuality, SignalAdvisoryProfile } from '../SignalAdvisory';
 
 describe('SignalQualityEvaluator', () => {
   it('identifies STALE when timeout passed', () => {
@@ -88,6 +87,14 @@ describe('AdvisoryStateTracker', () => {
     const state = tracker.evaluate(0, 'UNAVAILABLE');
     expect(state.color).toBe('GRAY');
     expect(state.quality).toBe('UNAVAILABLE');
+  });
+
+  it('STALE is gray and explicitly labeled so an old value cannot look current', () => {
+    const tracker = new AdvisoryStateTracker(DEMO_PROFILES.ENGINE_RPM, clock);
+    const state = tracker.evaluate(2500, 'STALE');
+    expect(state.color).toBe('GRAY');
+    expect(state.quality).toBe('STALE');
+    expect(state.badgeText).toBe('STALE');
   });
 
   it('critical readings do not stay gray after an UNKNOWN state', () => {
