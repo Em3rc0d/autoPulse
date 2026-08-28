@@ -1,6 +1,6 @@
 import { and, desc, eq } from 'drizzle-orm';
 import type { ExpoSQLiteDatabase } from 'drizzle-orm/expo-sqlite';
-import type { StoredVehicleCheckReport } from '../../../application/check/VehicleCheckReport';
+import type { StoredVehicleCheckReport } from '../../../../application/check/VehicleCheckReport';
 import * as schema from '../schema';
 import { vehicleCheckReports } from '../schema/checks';
 
