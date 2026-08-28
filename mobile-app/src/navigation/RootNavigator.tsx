@@ -4,7 +4,6 @@ import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createStackNavigator } from '@react-navigation/stack';
 
-// Placeholders for new screens
 import GarageScreen from '../screens/garage/GarageScreen';
 import AddVehicleScreen from '../screens/garage/AddVehicleScreen';
 import VehicleDetailScreen from '../screens/garage/VehicleDetailScreen';
@@ -14,12 +13,15 @@ import InitializationScreen from '../screens/live/InitializationScreen';
 import DriverLiveSessionScreen from '../screens/live/DriverLiveSessionScreen';
 import SessionSummaryScreen from '../screens/live/SessionSummaryScreen';
 import HistoryScreen from '../screens/HistoryScreen';
+import CheckScreen from '../screens/check/CheckScreen';
+import VehicleCheckReportScreen from '../screens/check/VehicleCheckReportScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
 
 function TabBarIcon({ name, color }: { name: string; color: string }) {
   const iconMap: Record<string, string> = {
     garage: '🚗',
     live: '📈',
+    check: '✓',
     history: '📜',
     settings: '⚙️',
   };
@@ -51,6 +53,15 @@ function LiveStack() {
   );
 }
 
+function CheckStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="CheckHome" component={CheckScreen} />
+      <Stack.Screen name="VehicleCheckReport" component={VehicleCheckReportScreen} />
+    </Stack.Navigator>
+  );
+}
+
 function MainTabs() {
   return (
     <Tab.Navigator
@@ -58,37 +69,20 @@ function MainTabs() {
         headerStyle: { backgroundColor: '#000', borderBottomWidth: 0, shadowOpacity: 0 },
         headerTintColor: '#fff',
         tabBarStyle: { backgroundColor: '#111', borderTopWidth: 0 },
-        tabBarActiveTintColor: '#FF6B00', // Using Orange as primary action color
+        tabBarActiveTintColor: '#FF6B00',
         tabBarInactiveTintColor: '#8E8E93',
       }}
     >
-      <Tab.Screen
-        name="Garage"
-        component={GarageStack}
-        options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="garage" color={color} /> }}
-      />
-      <Tab.Screen
-        name="Live"
-        component={LiveStack}
-        options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="live" color={color} /> }}
-      />
-      <Tab.Screen
-        name="History"
-        component={HistoryScreen}
-        options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="history" color={color} /> }}
-      />
-      <Tab.Screen
-        name="Settings"
-        component={SettingsScreen}
-        options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="settings" color={color} /> }}
-      />
+      <Tab.Screen name="Garage" component={GarageStack} options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="garage" color={color} /> }} />
+      <Tab.Screen name="Live" component={LiveStack} options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="live" color={color} /> }} />
+      <Tab.Screen name="Check" component={CheckStack} options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="check" color={color} /> }} />
+      <Tab.Screen name="History" component={HistoryScreen} options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="history" color={color} /> }} />
+      <Tab.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="settings" color={color} /> }} />
     </Tab.Navigator>
   );
 }
 
 export function NavigationRoot() {
-  // Release 1 is local-first and has no cloud/account dependency. Product
-  // access must not fail because an unrelated backend is unavailable.
   return (
     <NavigationContainer theme={DarkTheme}>
       <MainTabs />
