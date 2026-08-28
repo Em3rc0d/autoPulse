@@ -6,24 +6,30 @@ This file is part of the release contract. The effective manifest of the built A
 
 - `android.permission.BLUETOOTH` / `BLUETOOTH_ADMIN` on legacy Android versions.
 - `android.permission.BLUETOOTH_CONNECT` and `BLUETOOTH_SCAN` for the validated BLE adapter lane.
-- foreground coarse/fine location only for the Off-Road phone-sensor sidecar and Android BLE compatibility where required. AutoPulse must not open a new permission dialog while an active Live ECU session is running.
+- foreground coarse/fine location for the Off-Road phone-sensor sidecar and Android BLE compatibility where required. AutoPulse must not open a new location permission dialog while an active Live ECU session is running.
+- `android.permission.POST_NOTIFICATIONS` because the current Live screen starts a visible Android foreground service while the session is active. This is a local session notification, not push messaging.
+- `android.permission.FOREGROUND_SERVICE` for that active Live-session service. V1 remains foreground-only at the product/session-policy level; this permission does not upgrade AutoPulse into background recording.
+- `android.permission.WAKE_LOCK` for foreground-session/keep-awake behavior.
 - `android.permission.INTERNET` as platform/network capability; Live V1 remains local-first and does not treat cloud connectivity as a recording dependency.
 - `android.permission.VIBRATE` for haptic driver advisories.
-- non-dangerous platform bookkeeping permissions may remain only when their owning dependency is part of the shipped V1 runtime and their purpose is documented by the effective-manifest review.
+- media-library access needed by Garage document-photo attachment and the current Mechanic Chat image attachment flow. Legacy storage permissions may remain only where the supported Android version actually requires them and must be reviewed from the built APK.
 
 ## Not required by current V1 product behavior
 
 The following must not be present merely because an unused native dependency contributes them:
 
-- `android.permission.CAMERA`;
-- legacy `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE`;
-- `android.permission.FOREGROUND_SERVICE` (V1 does not claim background recording);
-- `android.permission.RECEIVE_BOOT_COMPLETED`;
-- `android.permission.POST_NOTIFICATIONS` unless a real V1 notification feature is implemented and tested;
-- FCM/C2DM receive permission when push messaging is not a V1 capability;
-- launcher badge vendor permissions when notifications/badges are not a V1 capability.
+- `android.permission.CAMERA`: current image flows open the media library; they do not capture a photo from the camera, so the app manifest explicitly removes this merged permission.
+- `android.permission.RECEIVE_BOOT_COMPLETED`: V1 does not restart acquisition on boot.
+- FCM/C2DM receive permission: push messaging is not a current V1 capability.
+- launcher badge vendor permissions: push/local badge management is not a current V1 capability.
 
-`WAKE_LOCK` and `ACTIVITY_RECOGNITION` require explicit dependency ownership and a V1 use case before they may be accepted.
+`ACTIVITY_RECOGNITION` requires explicit dependency ownership and a V1 use case before it may be accepted. Legacy `READ_EXTERNAL_STORAGE` / `WRITE_EXTERNAL_STORAGE` remain under review because the current media-library flows support older Android versions; they must not be removed solely for cosmetic manifest reduction without compatibility evidence.
+
+## Dependency ownership
+
+- `@supersami/rn-foreground-service` is a runtime dependency because `LiveSessionScreen` starts/stops it directly.
+- `expo-image-picker` is a runtime dependency because Garage and Mechanic Chat open the system media library.
+- `expo-notifications` is not required: AutoPulse requests `POST_NOTIFICATIONS` directly for the Live foreground-service notification and does not currently use Expo push/local-notification APIs.
 
 ## Runtime-prompt rule
 
