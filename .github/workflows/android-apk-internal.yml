@@ -1,9 +1,9 @@
-name: AutoPulse Android APK Internal
+name: AutoPulse Android APK Main Candidate
 
 on:
   push:
     branches:
-      - build/apk-chatgpt-20260821
+      - main
     paths:
       - 'mobile-app/**'
       - '.github/workflows/android-apk-internal.yml'
@@ -21,23 +21,57 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          node-version: '20'
+          persist-credentials: false
+
+      - name: Use Node.js 22 LTS
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
           cache: npm
           cache-dependency-path: mobile-app/package-lock.json
 
       - name: Use Java 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Capture production dependency audit evidence
+        run: |
+          set -euo pipefail
+          mkdir -p .release
+          npm audit --omit=dev --json > .release/npm-audit-production.json || true
+          {
+            echo '## shell-quote'
+            npm explain shell-quote || true
+            echo
+            echo '## tar'
+            npm explain tar || true
+            echo
+            echo '## drizzle-orm'
+            npm explain drizzle-orm || true
+          } > .release/npm-dependency-reachability.txt 2>&1
+          cat .release/npm-dependency-reachability.txt
+
+      - name: Upload dependency audit evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: autopulse-production-dependency-audit
+          path: |
+            mobile-app/.release/npm-audit-production.json
+            mobile-app/.release/npm-dependency-reachability.txt
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Evaluate critical production dependency gate
+        id: critical_audit
+        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=critical
 
       - name: Verify TypeScript and tests
         run: npm run verify
@@ -49,23 +83,228 @@ jobs:
         working-directory: mobile-app/android
         env:
           NODE_ENV: production
-        run: ./gradlew assembleRelease --no-daemon
+        run: ./gradlew assembleRelease --no-daemon --console=plain
 
-      - name: Verify React Native bundle is packaged
-        working-directory: mobile-app
+      - name: Verify APK structure and React Native bundle
         run: |
+          set -euo pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
           test -f "$APK"
+          unzip -t "$APK" >/dev/null
           unzip -l "$APK" | grep -Eq 'assets/(index\.android\.bundle|expo-root\.js|.*\.bundle)' || {
             echo "ERROR: standalone JS bundle is missing from $APK"
             unzip -l "$APK" | grep 'assets/' | head -200 || true
             exit 1
           }
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: Capture effective APK permissions and package metadata
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          AAPT2="$(find "${ANDROID_HOME}/build-tools" -type f -name aapt2 | sort -V | tail -1)"
+          test -n "$AAPT2"
+          mkdir -p .release
+          "$AAPT2" dump permissions "$APK" | tee .release/apk-effective-permissions.txt
+          "$AAPT2" dump badging "$APK" | tee .release/apk-badging.txt
+          unzip -p "$APK" assets/index.android.bundle | sha256sum | awk '{print $1}' > .release/js-bundle.sha256
+          sha256sum package-lock.json | awk '{print $1}' > .release/package-lock.sha256
+          sha256sum .release/apk-effective-permissions.txt | awk '{print $1}' > .release/apk-permissions.sha256
+
+      - name: Enforce Android Permission Contract V1
+        id: permission_contract
+        run: |
+          set -euo pipefail
+          ACTUAL=.release/apk-permission-names.txt
+          ALLOWED=.release/apk-permission-allowed.txt
+          REQUIRED=.release/apk-permission-required.txt
+
+          grep -E "^(uses-permission|uses-permission-sdk-23):" .release/apk-effective-permissions.txt \
+            | sed -E "s/.*name='([^']+)'.*/\1/" \
+            | sort -u > "$ACTUAL"
+
+          cat > "$ALLOWED" <<'EOF'
+          android.permission.ACCESS_COARSE_LOCATION
+          android.permission.ACCESS_FINE_LOCATION
+          android.permission.ACCESS_NETWORK_STATE
+          android.permission.BLUETOOTH
+          android.permission.BLUETOOTH_ADMIN
+          android.permission.BLUETOOTH_CONNECT
+          android.permission.BLUETOOTH_SCAN
+          android.permission.FOREGROUND_SERVICE
+          android.permission.INTERNET
+          android.permission.POST_NOTIFICATIONS
+          android.permission.READ_EXTERNAL_STORAGE
+          android.permission.VIBRATE
+          android.permission.WAKE_LOCK
+          android.permission.WRITE_EXTERNAL_STORAGE
+          com.em3rc0dth.autopulse.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
+          EOF
+
+          cat > "$REQUIRED" <<'EOF'
+          android.permission.ACCESS_COARSE_LOCATION
+          android.permission.ACCESS_FINE_LOCATION
+          android.permission.BLUETOOTH
+          android.permission.BLUETOOTH_ADMIN
+          android.permission.BLUETOOTH_CONNECT
+          android.permission.BLUETOOTH_SCAN
+          android.permission.FOREGROUND_SERVICE
+          android.permission.INTERNET
+          android.permission.POST_NOTIFICATIONS
+          android.permission.VIBRATE
+          android.permission.WAKE_LOCK
+          EOF
+
+          sort -u -o "$ALLOWED" "$ALLOWED"
+          sort -u -o "$REQUIRED" "$REQUIRED"
+
+          comm -23 "$ACTUAL" "$ALLOWED" > .release/apk-permission-unexpected.txt
+          comm -13 "$ACTUAL" "$REQUIRED" > .release/apk-permission-missing-required.txt
+
+          echo '=== actual permissions ==='
+          cat "$ACTUAL"
+          echo '=== unexpected permissions ==='
+          cat .release/apk-permission-unexpected.txt
+          echo '=== missing required permissions ==='
+          cat .release/apk-permission-missing-required.txt
+
+          test ! -s .release/apk-permission-unexpected.txt || {
+            echo 'ERROR: APK declares permission(s) outside Android Permission Contract V1.'
+            exit 1
+          }
+          test ! -s .release/apk-permission-missing-required.txt || {
+            echo 'ERROR: APK is missing permission(s) required by Android Permission Contract V1.'
+            exit 1
+          }
+
+      - name: Capture Android manifest ownership evidence
+        working-directory: mobile-app/android
+        run: |
+          set -euo pipefail
+          mkdir -p ../.release
+          BLAME="$(find app/build -type f \( -iname '*manifest*blame*' -o -iname '*manifest-merger*report*' \) | sort | head -1 || true)"
+          if [ -n "$BLAME" ]; then
+            cp "$BLAME" ../.release/manifest-merger-blame.txt
+          else
+            echo 'Manifest merger blame/report not found after assembleRelease.' > ../.release/manifest-merger-blame.txt
+          fi
+          ./gradlew app:dependencies --configuration releaseRuntimeClasspath --no-daemon --console=plain > ../.release/gradle-release-runtime-classpath.txt
+
+      - name: Verify APK signature and classify signer
+        id: apk_signature
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          APKSIGNER="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          test -n "$APKSIGNER"
+          mkdir -p .release
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee .release/apksigner-verification.txt
+          if grep -qi 'CN=Android Debug' .release/apksigner-verification.txt; then
+            echo 'signing_class=ANDROID_DEBUG' >> "$GITHUB_OUTPUT"
+          else
+            echo 'signing_class=NON_DEBUG' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate immutable artifact receipt
+        env:
+          AP_HEAD_SHA: ${{ github.sha }}
+          AP_BASE_SHA: ${{ github.event.before }}
+          AP_CI_SHA: ${{ github.sha }}
+          AP_RUN_ID: ${{ github.run_id }}
+          AP_RUN_ATTEMPT: ${{ github.run_attempt }}
+          AP_CRITICAL_AUDIT_OUTCOME: ${{ steps.critical_audit.outcome }}
+          AP_PERMISSION_CONTRACT_OUTCOME: ${{ steps.permission_contract.outcome }}
+          AP_SIGNING_CLASS: ${{ steps.apk_signature.outputs.signing_class }}
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          mkdir -p .release
+          export AP_APK_SHA256="$(sha256sum "$APK" | awk '{print $1}')"
+          export AP_APK_SIZE_BYTES="$(stat -c '%s' "$APK")"
+          export AP_CHECKED_OUT_SHA="$(git rev-parse HEAD)"
+          export AP_NODE_VERSION="$(node --version)"
+          export AP_JAVA_VERSION="$(java -version 2>&1 | head -1)"
+          export AP_GENERATED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          export AP_PACKAGE_LOCK_SHA256="$(cat .release/package-lock.sha256)"
+          export AP_JS_BUNDLE_SHA256="$(cat .release/js-bundle.sha256)"
+          export AP_PERMISSIONS_SHA256="$(cat .release/apk-permissions.sha256)"
+          node <<'NODE'
+          const fs = require('fs');
+          const criticalProductionAuditPassed = process.env.AP_CRITICAL_AUDIT_OUTCOME === 'success';
+          const permissionContractPassed = process.env.AP_PERMISSION_CONTRACT_OUTCOME === 'success';
+          const signingClass = process.env.AP_SIGNING_CLASS || 'UNKNOWN';
+          const receipt = {
+            schema: 'autopulse.artifact-receipt/v1',
+            generatedAt: process.env.AP_GENERATED_AT,
+            source: {
+              repository: process.env.GITHUB_REPOSITORY,
+              event: process.env.GITHUB_EVENT_NAME,
+              branch: process.env.GITHUB_REF_NAME,
+              pullRequest: null,
+              headSha: process.env.AP_HEAD_SHA,
+              baseSha: process.env.AP_BASE_SHA || null,
+              ciTestedSha: process.env.AP_CI_SHA,
+              checkedOutSha: process.env.AP_CHECKED_OUT_SHA,
+              workflowRunId: Number(process.env.AP_RUN_ID),
+              workflowRunAttempt: Number(process.env.AP_RUN_ATTEMPT),
+              packageLockSha256: process.env.AP_PACKAGE_LOCK_SHA256,
+            },
+            build: {
+              variant: 'release-internal',
+              node: process.env.AP_NODE_VERSION,
+              java: process.env.AP_JAVA_VERSION,
+              reactNativeBundlePackaged: true,
+              jsBundleSha256: process.env.AP_JS_BUNDLE_SHA256,
+              apkPermissionsSha256: process.env.AP_PERMISSIONS_SHA256,
+              permissionContractPassed,
+              apkSignatureVerified: true,
+              signingClass,
+              criticalProductionAuditPassed,
+              publicReleaseEligible: criticalProductionAuditPassed && permissionContractPassed && signingClass === 'NON_DEBUG',
+            },
+            artifact: {
+              name: 'autopulse-android-main-candidate',
+              file: 'app-release.apk',
+              sha256: process.env.AP_APK_SHA256,
+              sizeBytes: Number(process.env.AP_APK_SIZE_BYTES),
+            },
+          };
+          fs.writeFileSync('.release/autopulse-apk-receipt.json', `${JSON.stringify(receipt, null, 2)}\n`);
+          NODE
+          cat .release/autopulse-apk-receipt.json
+
+      - name: Upload APK and provenance receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: autopulse-android-internal-apk
-          path: mobile-app/android/app/build/outputs/apk/release/app-release.apk
+          name: autopulse-android-main-candidate
+          path: |
+            mobile-app/android/app/build/outputs/apk/release/app-release.apk
+            mobile-app/.release/autopulse-apk-receipt.json
+            mobile-app/.release/apksigner-verification.txt
+            mobile-app/.release/apk-effective-permissions.txt
+            mobile-app/.release/apk-permission-names.txt
+            mobile-app/.release/apk-permission-allowed.txt
+            mobile-app/.release/apk-permission-required.txt
+            mobile-app/.release/apk-permission-unexpected.txt
+            mobile-app/.release/apk-permission-missing-required.txt
+            mobile-app/.release/manifest-merger-blame.txt
+            mobile-app/.release/gradle-release-runtime-classpath.txt
+            mobile-app/.release/apk-badging.txt
+            mobile-app/.release/js-bundle.sha256
+            mobile-app/.release/package-lock.sha256
+            mobile-app/.release/apk-permissions.sha256
+            mobile-app/.release/npm-audit-production.json
+            mobile-app/.release/npm-dependency-reachability.txt
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
+
+      - name: Enforce V1 security gate after evidence capture
+        if: always()
+        env:
+          AP_CRITICAL_AUDIT_OUTCOME: ${{ steps.critical_audit.outcome }}
+        run: |
+          set -euo pipefail
+          if [ "$AP_CRITICAL_AUDIT_OUTCOME" != "success" ]; then
+            echo 'ERROR: V1 release gate remains blocked by critical production-tree dependency findings.'
+            echo 'Audit and reachability evidence were preserved before this failure.'
+            exit 1
+          fi

@@ -153,6 +153,57 @@ describe('SessionSummaryBuilder', () => {
     expect(result.integrityState).toBe(SessionIntegrityState.PARTIAL);
   });
 
+  it('keeps a clean USER_INITIATED completion COMPLETE when only the final flush block is partial', async () => {
+    mockLiveSessionRepository.getSessionById.mockResolvedValue({
+      id: 's-1',
+      workspaceId: 'ws-1',
+      vehicleId: 'v-1',
+      adapterInstanceId: 'BLE-1',
+      status: 'COMPLETED',
+      stopReason: 'USER_INITIATED',
+      startedAt: 1000,
+      endedAt: 9000,
+      totalBlocks: 2
+    });
+
+    mockTelemetryBlockRepository.getAllBlocksForSession.mockResolvedValue([
+      { status: 'VALID', block: { windowIndex: 0, firstEventSequence: 1, lastEventSequence: 2, isPartial: false } },
+      { status: 'VALID', block: { windowIndex: 1, firstEventSequence: 3, lastEventSequence: 4, isPartial: true } }
+    ]);
+    mockCodec.decode.mockReturnValue({ events: [] });
+
+    const result = await builder.build('ws-1', 's-1');
+
+    expect(result.partialBlocksCount).toBe(1);
+    expect(result.terminationReason).toBe('USER_INITIATED');
+    expect(result.integrityState).toBe(SessionIntegrityState.COMPLETE);
+  });
+
+  it('does not hide multiple partial blocks behind USER_INITIATED completion semantics', async () => {
+    mockLiveSessionRepository.getSessionById.mockResolvedValue({
+      id: 's-1',
+      workspaceId: 'ws-1',
+      vehicleId: 'v-1',
+      adapterInstanceId: 'BLE-1',
+      status: 'COMPLETED',
+      stopReason: 'USER_INITIATED',
+      startedAt: 1000,
+      endedAt: 9000,
+      totalBlocks: 2
+    });
+
+    mockTelemetryBlockRepository.getAllBlocksForSession.mockResolvedValue([
+      { status: 'VALID', block: { windowIndex: 0, firstEventSequence: 1, lastEventSequence: 2, isPartial: true } },
+      { status: 'VALID', block: { windowIndex: 1, firstEventSequence: 3, lastEventSequence: 4, isPartial: true } }
+    ]);
+    mockCodec.decode.mockReturnValue({ events: [] });
+
+    const result = await builder.build('ws-1', 's-1');
+
+    expect(result.partialBlocksCount).toBe(2);
+    expect(result.integrityState).toBe(SessionIntegrityState.PARTIAL);
+  });
+
   it('aborts the build process when abortSignal is triggered', async () => {
     mockLiveSessionRepository.getSessionById.mockResolvedValue({ id: 's-1', workspaceId: 'ws-1' });
     mockTelemetryBlockRepository.getAllBlocksForSession.mockResolvedValue([

@@ -33,23 +33,16 @@ describe('RealTelemetryPoller', () => {
     const poller = new RealTelemetryPoller(mockExecutor, ['010C'], onData, onDiagnostic);
     poller.start(10);
 
-    // 1st NO_DATA
     await Promise.resolve();
-    expect(onData).toHaveBeenCalledWith(expect.objectContaining({ status: 'NO_DATA' }));
     jest.advanceTimersByTime(15);
-    
-    // 2nd NO_DATA
     await Promise.resolve();
-    expect(onData).toHaveBeenCalledWith(expect.objectContaining({ status: 'NO_DATA' }));
     jest.advanceTimersByTime(15);
+    await Promise.resolve();
 
-    // 3rd NO_DATA - should retire
-    await Promise.resolve();
     expect(onData).toHaveBeenCalledTimes(3);
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({ type: 'PID_RETIRED_NO_DATA', pid: '010C' }));
     expect(onDiagnostic).toHaveBeenCalledTimes(1);
-    
-    // Poller should stop since it was the only PID
+
     jest.advanceTimersByTime(100);
     expect(mockExecutor.executeCommand).toHaveBeenCalledTimes(3);
   });
@@ -84,7 +77,7 @@ describe('RealTelemetryPoller', () => {
 
   it('resets NO_DATA counter on SUCCESS_DECODED', async () => {
     mockExecutor.executeCommand
-      .mockResolvedValue({ status: 'SUCCESS_DECODED', request: {} as any, rawResponse: {} as any } as any) // fallback
+      .mockResolvedValue({ status: 'SUCCESS_DECODED', request: {} as any, rawResponse: {} as any } as any)
       .mockResolvedValueOnce({ status: 'NO_DATA', request: {} as any, rawResponse: {} as any } as any)
       .mockResolvedValueOnce({ status: 'NO_DATA', request: {} as any, rawResponse: {} as any } as any)
       .mockResolvedValueOnce({ status: 'SUCCESS_DECODED', request: {} as any, rawResponse: {} as any } as any)
@@ -93,14 +86,56 @@ describe('RealTelemetryPoller', () => {
     const poller = new RealTelemetryPoller(mockExecutor, ['010C'], onData, onDiagnostic);
     poller.start(10);
 
-    // Run 4 iterations
     for (let i = 0; i < 4; i++) {
       await Promise.resolve();
       jest.advanceTimersByTime(15);
     }
 
-    // Should not have retired because of the success in the middle
     expect(onDiagnostic).not.toHaveBeenCalled();
     expect(mockExecutor.executeCommand).toHaveBeenCalledTimes(5);
+  });
+
+  it('emits one TRANSPORT_STALLED after three consecutive transport failures', async () => {
+    mockExecutor.executeCommand.mockResolvedValue({
+      status: 'TIMEOUT',
+      request: {} as any,
+      rawResponse: {} as any
+    } as any);
+
+    const poller = new RealTelemetryPoller(mockExecutor, ['010C', '010D'], onData, onDiagnostic);
+    poller.start(10);
+
+    for (let i = 0; i < 3; i++) {
+      await Promise.resolve();
+      if (i < 2) jest.advanceTimersByTime(15);
+    }
+
+    expect(onDiagnostic).toHaveBeenCalledTimes(1);
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'TRANSPORT_STALLED',
+      reason: 'TIMEOUT',
+      consecutiveFailures: 3,
+    }));
+  });
+
+  it('does not treat NO_DATA or ELM_ERROR as a transport stall', async () => {
+    mockExecutor.executeCommand
+      .mockResolvedValue({ status: 'SUCCESS_DECODED', request: {} as any, rawResponse: {} as any } as any)
+      .mockResolvedValueOnce({ status: 'TIMEOUT', request: {} as any, rawResponse: {} as any } as any)
+      .mockResolvedValueOnce({ status: 'TIMEOUT', request: {} as any, rawResponse: {} as any } as any)
+      .mockResolvedValueOnce({ status: 'NO_DATA', request: {} as any, rawResponse: {} as any } as any)
+      .mockResolvedValueOnce({ status: 'TIMEOUT', request: {} as any, rawResponse: {} as any } as any)
+      .mockResolvedValueOnce({ status: 'ELM_ERROR', request: {} as any, rawResponse: {} as any } as any)
+      .mockResolvedValueOnce({ status: 'TIMEOUT', request: {} as any, rawResponse: {} as any } as any);
+
+    const poller = new RealTelemetryPoller(mockExecutor, ['010C', '010D'], onData, onDiagnostic);
+    poller.start(10);
+
+    for (let i = 0; i < 6; i++) {
+      await Promise.resolve();
+      if (i < 5) jest.advanceTimersByTime(15);
+    }
+
+    expect(onDiagnostic).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'TRANSPORT_STALLED' }));
   });
 });

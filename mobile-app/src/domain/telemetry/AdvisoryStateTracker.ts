@@ -126,6 +126,7 @@ export class AdvisoryStateTracker {
     let badgeText = '';
 
     if (quality === 'UNAVAILABLE' || quality === 'INVALID') badgeText = 'NO DATA';
+    else if (quality === 'STALE') badgeText = 'STALE';
     else if (quality === 'SUSPECT') badgeText = 'SUSPECT';
     else if (quality === 'DEGRADED') badgeText = 'DEGRADED';
     else if (this.profile.calibrationStatus === 'OEM_CALIBRATED') badgeText = 'OEM';

@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react';
 import { NativeEventEmitter, NativeModules, Platform } from 'react-native';
 import * as Location from 'expo-location';
+import {
+  OFF_ROAD_MOTION_UI_MIN_INTERVAL_MS,
+  shouldPublishSidecarSample,
+} from './OffRoadSensorPolicy';
 
 export interface PhoneDrivingSensors {
   altitude?: number;
@@ -12,6 +16,7 @@ export interface PhoneDrivingSensors {
   locationObservedAt?: number;
   motionObservedAt?: number;
   locationAvailable: boolean;
+  locationPermissionRequired: boolean;
   motionAvailable: boolean;
 }
 
@@ -27,6 +32,7 @@ const motionModule = NativeModules.AutoPulseMotion;
 export function usePhoneDrivingSensors(enabled: boolean): PhoneDrivingSensors {
   const [state, setState] = useState<PhoneDrivingSensors>({
     locationAvailable: false,
+    locationPermissionRequired: false,
     motionAvailable: false,
   });
 
@@ -35,11 +41,16 @@ export function usePhoneDrivingSensors(enabled: boolean): PhoneDrivingSensors {
     let cancelled = false;
     let locationSubscription: Location.LocationSubscription | undefined;
     let motionSubscription: { remove(): void } | undefined;
+    let lastMotionPublishedAt = 0;
 
     const start = async () => {
+      // Never open a system permission dialog while a real Live session is active.
+      // Android can surface that dialog as an app lifecycle transition, and release-1
+      // intentionally terminates foreground-only recording when the app backgrounds.
       try {
-        const permission = await Location.requestForegroundPermissionsAsync();
+        const permission = await Location.getForegroundPermissionsAsync();
         if (permission.granted && !cancelled) {
+          setState(current => ({ ...current, locationPermissionRequired: false }));
           locationSubscription = await Location.watchPositionAsync(
             {
               accuracy: Location.Accuracy.Balanced,
@@ -56,12 +67,25 @@ export function usePhoneDrivingSensors(enabled: boolean): PhoneDrivingSensors {
                 heading: location.coords.heading ?? current.heading,
                 locationObservedAt: location.timestamp,
                 locationAvailable: true,
+                locationPermissionRequired: false,
               }));
             },
           );
+        } else if (!cancelled) {
+          setState(current => ({
+            ...current,
+            locationAvailable: false,
+            locationPermissionRequired: true,
+          }));
         }
       } catch (error) {
         console.warn('[PhoneDrivingSensors] Location unavailable:', error);
+        if (!cancelled) {
+          setState(current => ({
+            ...current,
+            locationAvailable: false,
+          }));
+        }
       }
 
       if (Platform.OS === 'android' && motionModule) {
@@ -69,12 +93,20 @@ export function usePhoneDrivingSensors(enabled: boolean): PhoneDrivingSensors {
           const emitter = new NativeEventEmitter(motionModule);
           motionSubscription = emitter.addListener('AutoPulseMotion', (event: MotionEvent) => {
             if (cancelled) return;
+            const observedAt = Number.isFinite(event.timestamp) ? event.timestamp : Date.now();
+            if (!shouldPublishSidecarSample(
+              lastMotionPublishedAt,
+              observedAt,
+              OFF_ROAD_MOTION_UI_MIN_INTERVAL_MS,
+            )) return;
+            lastMotionPublishedAt = observedAt;
+
             setState(current => ({
               ...current,
               pitch: event.pitch,
               roll: event.roll,
               heading: Number.isFinite(event.heading) ? event.heading : current.heading,
-              motionObservedAt: event.timestamp || Date.now(),
+              motionObservedAt: observedAt,
               motionAvailable: true,
             }));
           });
@@ -93,7 +125,7 @@ export function usePhoneDrivingSensors(enabled: boolean): PhoneDrivingSensors {
       try {
         motionModule?.stop?.();
       } catch {
-        // no-op: sensor cleanup must never affect Live teardown
+        // no-op: phone sensor cleanup must never affect Live teardown
       }
     };
   }, [enabled]);

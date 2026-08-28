@@ -31,7 +31,10 @@ class AutoPulseMotionModule(
   @ReactMethod
   fun start() {
     if (listening || rotationSensor == null) return
-    listening = sensorManager.registerListener(this, rotationSensor, SensorManager.SENSOR_DELAY_UI)
+    // Off-Road orientation is glance telemetry, not an IMU recorder. Keep the
+    // bridge intentionally slow so phone sensors can never compete with ELM/OBD
+    // command timing on the React Native JS thread.
+    listening = sensorManager.registerListener(this, rotationSensor, SensorManager.SENSOR_DELAY_NORMAL)
   }
 
   @ReactMethod
