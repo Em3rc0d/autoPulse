@@ -1,5 +1,5 @@
-import { CryptoDigestAlgorithm, digestStringAsync } from 'expo-crypto';
 import type { VehicleCheckSnapshot } from './VehicleCheckReport';
+import { sha256HexUtf8 } from './VehicleCheckSha256';
 
 function assertCanonicalValue(value: unknown, path: string): void {
   if (typeof value === 'number' && !Number.isFinite(value)) {
@@ -36,7 +36,7 @@ export function canonicalizeVehicleCheckSnapshot(snapshot: VehicleCheckSnapshot)
 }
 
 export async function sha256VehicleCheckCanonicalJson(canonicalJson: string): Promise<string> {
-  return digestStringAsync(CryptoDigestAlgorithm.SHA256, canonicalJson);
+  return sha256HexUtf8(canonicalJson);
 }
 
 export async function sealVehicleCheckSnapshot(snapshot: VehicleCheckSnapshot): Promise<{
