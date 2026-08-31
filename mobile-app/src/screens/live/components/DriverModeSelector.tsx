@@ -1,5 +1,5 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   DRIVING_MODE_ORDER,
   DRIVING_MODE_PRESENTATION,
@@ -14,6 +14,7 @@ interface Props {
   availableSignals: readonly AvailableSignal[];
   onSelectMode: (mode: DrivingMode) => void;
   disabled?: boolean;
+  compact?: boolean;
 }
 
 const coverageColor = (coverage: DecisionDimensionCoverage) => {
@@ -44,10 +45,33 @@ const modeState = (
   return 'ADAPTIVE';
 };
 
-export function DriverModeSelector({ selectedMode, availableSignals, onSelectMode, disabled = false }: Props) {
+export function DriverModeSelector({ selectedMode, availableSignals, onSelectMode, disabled = false, compact = false }: Props) {
   const presentation = DRIVING_MODE_PRESENTATION[selectedMode];
   const dimensions = visibleDimensionsForMode(selectedMode, availableSignals);
   const state = modeState(selectedMode, availableSignals);
+
+  if (compact) {
+    return (
+      <View style={styles.compactRow}>
+        <Text style={styles.compactEyebrow}>MODE</Text>
+        <TouchableOpacity
+          style={styles.compactButton}
+          onPress={() => {
+            if (disabled) return;
+            const index = DRIVING_MODE_ORDER.indexOf(selectedMode);
+            onSelectMode(DRIVING_MODE_ORDER[(index + 1) % DRIVING_MODE_ORDER.length]);
+          }}
+          disabled={disabled}
+          testID="driver-mode-compact-selector"
+        >
+          <Text style={styles.compactIcon}>{presentation.icon}</Text>
+          <Text style={styles.compactLabel}>{presentation.shortLabel}</Text>
+          <Text style={styles.compactChevron}>›</Text>
+        </TouchableOpacity>
+        {state ? <Text style={[styles.compactState, { color: state === 'READY' ? '#4ade80' : '#f59e0b' }]}>{state}</Text> : null}
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -66,7 +90,7 @@ export function DriverModeSelector({ selectedMode, availableSignals, onSelectMod
         ) : null}
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.row}>
+      <View style={styles.modeGrid}>
         {DRIVING_MODE_ORDER.map(mode => {
           const item = DRIVING_MODE_PRESENTATION[mode];
           const active = mode === selectedMode;
@@ -80,85 +104,79 @@ export function DriverModeSelector({ selectedMode, availableSignals, onSelectMod
               disabled={disabled}
             >
               <Text style={[styles.modeIcon, active && styles.modeTextActive]}>{item.icon}</Text>
-              <Text numberOfLines={1} style={[styles.modeLabel, active && styles.modeTextActive]}>{item.shortLabel}</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.modeLabel, active && styles.modeTextActive]}>{item.shortLabel}</Text>
             </TouchableOpacity>
           );
         })}
-      </ScrollView>
+      </View>
 
       {dimensions.length > 0 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dimensionStrip}>
+        <View style={styles.dimensionGrid}>
           {dimensions.map(dimension => (
             <View key={dimension.id} style={styles.dimensionChip} testID={`decision-dimension-${dimension.id.toLowerCase()}`}>
               <View style={[styles.dimensionDot, { backgroundColor: coverageColor(dimension.coverage) }]} />
-              <Text style={styles.dimensionLabel}>{dimension.label}</Text>
+              <Text numberOfLines={1} style={styles.dimensionLabel}>{dimension.label}</Text>
               <Text style={[styles.dimensionState, { color: coverageColor(dimension.coverage) }]}>
                 {dimension.coverage === 'COVERED' ? 'READY' : 'PARTIAL'}
               </Text>
             </View>
           ))}
-        </ScrollView>
+        </View>
       ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { paddingBottom: 8 },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 7,
-  },
+  container: { paddingBottom: 6 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 7 },
   modeIdentity: { flexDirection: 'row', alignItems: 'baseline', gap: 8 },
-  eyebrow: {
-    color: '#64748b',
-    fontSize: 9,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: 1.2,
-  },
-  activeMode: {
-    color: '#f8fafc',
-    fontSize: 13,
-    fontFamily: 'Inter_700Bold',
-  },
-  row: { paddingRight: 12, gap: 7 },
+  eyebrow: { color: '#64748b', fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 1.2 },
+  activeMode: { color: '#f8fafc', fontSize: 13, fontFamily: 'Inter_700Bold' },
+  modeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   modeButton: {
-    minWidth: 72,
-    height: 48,
+    flexGrow: 1,
+    flexBasis: '30%',
+    height: 39,
     backgroundColor: '#172026',
     borderColor: '#2a3439',
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 9,
+    borderRadius: 10,
+    paddingHorizontal: 7,
+    flexDirection: 'row',
+    gap: 5,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modeButtonActive: {
-    backgroundColor: '#d7ff4f',
-    borderColor: '#d7ff4f',
-  },
+  modeButtonActive: { backgroundColor: '#d7ff4f', borderColor: '#d7ff4f' },
   modeButtonDisabled: { opacity: 0.45 },
-  modeIcon: { color: '#94a3b8', fontSize: 14, lineHeight: 16 },
-  modeLabel: { color: '#e5e7eb', fontSize: 10, fontFamily: 'Inter_700Bold', marginTop: 2 },
+  modeIcon: { color: '#94a3b8', fontSize: 12 },
+  modeLabel: { color: '#e5e7eb', fontSize: 9, fontFamily: 'Inter_700Bold', maxWidth: 74 },
   modeTextActive: { color: '#0e1417' },
   statePill: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 },
   statePillReady: { backgroundColor: '#14532d' },
   statePillAdaptive: { backgroundColor: '#78350f' },
   stateText: { color: '#fff', fontSize: 8, fontFamily: 'Inter_700Bold', letterSpacing: 0.6 },
-  dimensionStrip: { paddingTop: 7, paddingRight: 12, gap: 6 },
+  dimensionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, paddingTop: 7 },
   dimensionChip: {
-    height: 27,
+    maxWidth: '49%',
+    minHeight: 25,
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 999,
     borderWidth: 1,
     borderColor: '#263239',
     backgroundColor: '#11191d',
-    paddingHorizontal: 8,
+    paddingHorizontal: 7,
   },
-  dimensionDot: { width: 6, height: 6, borderRadius: 3, marginRight: 6 },
-  dimensionLabel: { color: '#cbd5e1', fontSize: 9, fontFamily: 'Inter_600SemiBold' },
-  dimensionState: { marginLeft: 5, fontSize: 8, fontFamily: 'SpaceMono_700Bold', letterSpacing: 0.3 },
+  dimensionDot: { width: 5, height: 5, borderRadius: 3, marginRight: 5 },
+  dimensionLabel: { color: '#cbd5e1', fontSize: 8, fontFamily: 'Inter_600SemiBold', flexShrink: 1 },
+  dimensionState: { marginLeft: 4, fontSize: 7, fontFamily: 'SpaceMono_700Bold', letterSpacing: 0.2 },
+  compactRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 8 },
+  compactEyebrow: { color: '#64748b', fontSize: 8, fontFamily: 'Inter_700Bold', letterSpacing: 1 },
+  compactButton: { flex: 1, height: 34, flexDirection: 'row', alignItems: 'center', borderRadius: 10, borderWidth: 1, borderColor: '#2a3439', backgroundColor: '#151d21', paddingHorizontal: 10 },
+  compactIcon: { color: '#d7ff4f', marginRight: 7 },
+  compactLabel: { color: '#f8fafc', fontSize: 11, fontFamily: 'Inter_700Bold', flex: 1 },
+  compactChevron: { color: '#64748b', fontSize: 18 },
+  compactState: { fontSize: 8, fontFamily: 'SpaceMono_700Bold' },
 });
