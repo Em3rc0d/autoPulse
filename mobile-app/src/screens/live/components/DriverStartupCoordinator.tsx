@@ -63,17 +63,14 @@ export function DriverStartupCoordinator({ diagnosticScanComplete, advisories }:
 
   if (briefed || assessment.phase === 'READY') return null;
 
-  // This is a transient status, not an UNKNOWN vehicle metric. It tells the
-  // driver why the final briefing has not happened yet without inventing health.
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>
-        {maturity.kind === 'COLD' ? 'COLD-START OBSERVATION' : 'STARTUP OBSERVATION'}
+      <View style={styles.dot} />
+      <Text numberOfLines={1} style={styles.title}>
+        {maturity.kind === 'COLD' ? 'COLD START' : 'STARTUP'}
       </Text>
-      <Text style={styles.message}>
-        {maturity.kind === 'COLD'
-          ? 'AutoPulse is observing engine warm-up.'
-          : 'AutoPulse is collecting stable engine evidence.'}
+      <Text numberOfLines={1} style={styles.message}>
+        {maturity.kind === 'COLD' ? 'Observing warm-up' : 'Collecting stable evidence'}
       </Text>
     </View>
   );
@@ -81,24 +78,18 @@ export function DriverStartupCoordinator({ diagnosticScanComplete, advisories }:
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    borderRadius: 10,
+    minHeight: 30,
+    marginHorizontal: 12,
+    marginTop: 5,
+    borderRadius: 9,
     borderWidth: 1,
     borderColor: '#334155',
     backgroundColor: '#11191d',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  title: {
-    color: '#94a3b8',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  message: {
-    color: '#cbd5e1',
-    fontSize: 12,
-    marginTop: 2,
-  },
+  dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#60a5fa', marginRight: 6 },
+  title: { color: '#94a3b8', fontSize: 8, fontWeight: '800', letterSpacing: 0.7, marginRight: 7 },
+  message: { color: '#64748b', fontSize: 9, flex: 1 },
 });
