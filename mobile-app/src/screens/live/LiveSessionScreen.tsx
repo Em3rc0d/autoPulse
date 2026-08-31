@@ -37,16 +37,18 @@ import {
   commandResultContainsValidEcuSample,
   deriveLiveEcuTruth,
 } from '../../application/live/LiveEcuTruth';
-import { speakDriverMessage } from '../../infrastructure/voice/AndroidDriverVoice';
+import { speakDriverAlert } from '../../infrastructure/voice/AndroidDriverVoice';
 
 const screenWidth = Dimensions.get('window').width;
+const DRIVING_SPEED_THRESHOLD_KMH = 5;
 
 interface Props {
   supplement?: React.ReactNode;
   onTerminalStateChange?: (outcome: LiveSessionTerminalOutcome | null) => void;
+  onDrivingStateChange?: (isDriving: boolean) => void;
 }
 
-export default function LiveSessionScreen({ supplement, onTerminalStateChange }: Props = {}) {
+export default function LiveSessionScreen({ supplement, onTerminalStateChange, onDrivingStateChange }: Props = {}) {
   useKeepAwake();
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
@@ -72,6 +74,30 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
   const productDb = useProductDb();
   const { context: localContext } = useLocalContext();
   const isStopping = React.useRef(false);
+  const lastCoolantCue = React.useRef<string | null>(null);
+
+  const isDriving = !terminalOutcome
+    && typeof speedTracker.value === 'number'
+    && speedTracker.advisoryState.quality === 'VALID'
+    && speedTracker.value >= DRIVING_SPEED_THRESHOLD_KMH;
+
+  useEffect(() => {
+    onDrivingStateChange?.(isDriving);
+    return () => onDrivingStateChange?.(false);
+  }, [isDriving, onDrivingStateChange]);
+
+  useEffect(() => {
+    const advisory = coolantTracker.advisoryState.advisory;
+    if (advisory === lastCoolantCue.current) return;
+    lastCoolantCue.current = advisory;
+
+    if (advisory === 'CRITICAL') {
+      Vibration.vibrate([0, 160, 80, 160]);
+      void speakDriverAlert('ENGINE_HOT');
+    } else if (advisory === 'ELEVATED') {
+      void speakDriverAlert('TEMP_RISING');
+    }
+  }, [coolantTracker.advisoryState.advisory]);
 
   const publishTerminalOutcome = (outcome: LiveSessionTerminalOutcome) => {
     setTerminalOutcome(outcome);
@@ -81,12 +107,7 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
       const reason = outcome.reason ?? 'UNKNOWN';
       setSessionError(`SESSION_INTERRUPTED:${reason}`);
       Vibration.vibrate([0, 120, 80, 120]);
-      const spokenReason = reason === 'APP_BACKGROUND'
-        ? 'because the app left the foreground'
-        : reason === 'DEVICE_DISCONNECTED'
-          ? 'because the diagnostic adapter disconnected'
-          : 'unexpectedly';
-      void speakDriverMessage(`AutoPulse session stopped ${spokenReason}. Saved vehicle data is available in History.`);
+      void speakDriverAlert('SESSION_STOPPED');
     }
   };
 
@@ -308,19 +329,26 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
     || adapterMode !== 'REAL_BLE'
     || liveTruth.state !== 'LIVE_ECU_DATA';
 
+  const coolantStatus = coolantTracker.advisoryState.advisory;
+  const glance = coolantStatus === 'CRITICAL'
+    ? { mark: '!', action: 'STOP', condition: 'ENGINE HOT', color: '#ef4444' }
+    : coolantStatus === 'ELEVATED'
+      ? { mark: '▲', action: 'CAUTION', condition: 'TEMP RISING', color: '#f97316' }
+      : { mark: '●', action: 'LIVE', condition: 'MONITORING', color: '#10b981' };
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerCopy}>
-          <Text style={styles.vehicleAlias}>{vehicleLoading ? 'Vehicle' : vehicle?.alias ?? 'Vehicle'}</Text>
-          <Text style={styles.subtitle}>{vehicle ? `${vehicle.make} ${vehicle.model} · ${vehicle.year}` : 'Live telemetry'}</Text>
+          <Text numberOfLines={1} style={styles.vehicleAlias}>{vehicleLoading ? 'Vehicle' : vehicle?.alias ?? 'Vehicle'}</Text>
+          {!isDriving ? <Text numberOfLines={1} style={styles.subtitle}>{vehicle ? `${vehicle.make} ${vehicle.model} · ${vehicle.year}` : 'Live telemetry'}</Text> : null}
         </View>
         <View style={styles.headerActions}>
           {adapterMode === 'REAL_BLE' && firstEcuSampleAt && liveTruth.state === 'LIVE_ECU_DATA' && !terminalOutcome ? (
             <View style={styles.liveDot} />
           ) : null}
           <Text style={[styles.timerText, terminalOutcome && styles.timerTextTerminal]}>{formatTime(secondsElapsed)}</Text>
-          {adapterMode === 'REAL_BLE' && AppConfig.INTERNAL_TOOLS_ENABLED && !terminalOutcome ? (
+          {adapterMode === 'REAL_BLE' && AppConfig.INTERNAL_TOOLS_ENABLED && !terminalOutcome && !isDriving ? (
             <TouchableOpacity style={styles.diagButton} onPress={() => setShowDiagnostics(true)}>
               <Text style={styles.diagButtonText}>LOGS</Text>
             </TouchableOpacity>
@@ -348,52 +376,76 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
         </View>
       ) : null}
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        <View style={styles.grid}>
-          <LiveMetricCard label="Engine RPM" value={rpmTracker.value} unit="rpm" state={rpmTracker.advisoryState} stats={rpmTracker.stats} profile={DEMO_PROFILES.ENGINE_RPM} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-engine-rpm" />
-          <LiveMetricCard label="Vehicle Speed" value={speedTracker.value} unit="km/h" state={speedTracker.advisoryState} stats={speedTracker.stats} profile={DEMO_PROFILES.VEHICLE_SPEED} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-vehicle-speed" />
-          <LiveMetricCard label="Engine Coolant" value={coolantTracker.value} unit="°C" state={coolantTracker.advisoryState} stats={coolantTracker.stats} profile={DEMO_PROFILES.ENGINE_COOLANT} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-engine-coolant" />
-          <LiveMetricCard label="ECU Voltage" value={ecuVoltageTracker.value} unit="V" state={ecuVoltageTracker.advisoryState} stats={ecuVoltageTracker.stats} profile={DEMO_PROFILES.CONTROL_VOLTAGE} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-ecu-voltage" />
-          <LiveMetricCard label="Adapter Voltage" value={adapterVoltageTracker.value} unit="V" state={adapterVoltageTracker.advisoryState} stats={adapterVoltageTracker.stats} profile={DEMO_PROFILES.CONTROL_VOLTAGE} origin={adapterMode === 'REAL_BLE' ? 'Adapter measurement' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-adapter-voltage" />
-        </View>
-
-        {supplement}
-
-        <View style={styles.chartContainer}>
-          <Text style={styles.chartTitle}>RPM TREND</Text>
-          {dataPoints.length > 0 ? (
-            <LineChart
-              data={{ labels: [], datasets: [{ data: dataPoints }] }}
-              width={screenWidth - 32}
-              height={118}
-              chartConfig={{
-                backgroundColor: '#11191d',
-                backgroundGradientFrom: '#11191d',
-                backgroundGradientTo: '#11191d',
-                decimalPlaces: 0,
-                color: (opacity = 1) => `rgba(74, 222, 128, ${opacity})`,
-                labelColor: (opacity = 1) => `rgba(148, 163, 184, ${opacity})`,
-                style: { borderRadius: 14 },
-                propsForDots: { r: '2', strokeWidth: '1', stroke: '#4ade80' },
-              }}
-              bezier
-              withInnerLines={false}
-              withOuterLines={false}
-              style={styles.chart}
-            />
-          ) : (
-            <View style={styles.chartPlaceholder}>
-              <Text style={styles.chartPlaceholderText}>
-                {waitingForFirstEcuSample
-                  ? liveTruth.state === 'ECU_DATA_DELAYED'
-                    ? 'ECU data delayed · still retrying'
-                    : 'Waiting for first ECU sample…'
-                  : 'Waiting for RPM data…'}
-              </Text>
+      {isDriving ? (
+        <View style={styles.drivingContainer} testID="driving-glance-mode">
+          <View style={[styles.glancePanel, { borderColor: glance.color }]}>
+            <View style={styles.glanceStatusRow}>
+              <Text style={[styles.glanceMark, { color: glance.color }]}>{glance.mark}</Text>
+              <Text style={[styles.glanceAction, { color: glance.color }]}>{glance.action}</Text>
             </View>
-          )}
+            <Text style={styles.glanceCondition}>{glance.condition}</Text>
+            <View style={styles.glanceMetrics}>
+              <View style={styles.glanceMetric}>
+                <Text style={styles.glanceValue}>{typeof coolantTracker.value === 'number' ? Math.round(coolantTracker.value) : '--'}</Text>
+                <Text style={styles.glanceUnit}>°C COOLANT</Text>
+              </View>
+              <View style={styles.glanceDivider} />
+              <View style={styles.glanceMetric}>
+                <Text style={styles.glanceValue}>{typeof speedTracker.value === 'number' ? Math.round(speedTracker.value) : '--'}</Text>
+                <Text style={styles.glanceUnit}>KM/H</Text>
+              </View>
+            </View>
+          </View>
+          <Text style={styles.roadCue}>EYES ON ROAD · VOICE ALERTS ACTIVE</Text>
         </View>
-      </ScrollView>
+      ) : (
+        <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
+          <View style={styles.grid}>
+            <LiveMetricCard label="Engine RPM" value={rpmTracker.value} unit="rpm" state={rpmTracker.advisoryState} stats={rpmTracker.stats} profile={DEMO_PROFILES.ENGINE_RPM} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-engine-rpm" />
+            <LiveMetricCard label="Vehicle Speed" value={speedTracker.value} unit="km/h" state={speedTracker.advisoryState} stats={speedTracker.stats} profile={DEMO_PROFILES.VEHICLE_SPEED} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-vehicle-speed" />
+            <LiveMetricCard label="Engine Coolant" value={coolantTracker.value} unit="°C" state={coolantTracker.advisoryState} stats={coolantTracker.stats} profile={DEMO_PROFILES.ENGINE_COOLANT} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-engine-coolant" />
+            <LiveMetricCard label="ECU Voltage" value={ecuVoltageTracker.value} unit="V" state={ecuVoltageTracker.advisoryState} stats={ecuVoltageTracker.stats} profile={DEMO_PROFILES.CONTROL_VOLTAGE} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-ecu-voltage" />
+            <LiveMetricCard label="Adapter Voltage" value={adapterVoltageTracker.value} unit="V" state={adapterVoltageTracker.advisoryState} stats={adapterVoltageTracker.stats} profile={DEMO_PROFILES.CONTROL_VOLTAGE} origin={adapterMode === 'REAL_BLE' ? 'Adapter measurement' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-adapter-voltage" />
+          </View>
+
+          {supplement}
+
+          <View style={styles.chartContainer}>
+            <Text style={styles.chartTitle}>RPM TREND</Text>
+            {dataPoints.length > 0 ? (
+              <LineChart
+                data={{ labels: [], datasets: [{ data: dataPoints }] }}
+                width={screenWidth - 24}
+                height={96}
+                chartConfig={{
+                  backgroundColor: '#11191d',
+                  backgroundGradientFrom: '#11191d',
+                  backgroundGradientTo: '#11191d',
+                  decimalPlaces: 0,
+                  color: (opacity = 1) => `rgba(74, 222, 128, ${opacity})`,
+                  labelColor: (opacity = 1) => `rgba(148, 163, 184, ${opacity})`,
+                  style: { borderRadius: 12 },
+                  propsForDots: { r: '2', strokeWidth: '1', stroke: '#4ade80' },
+                }}
+                bezier
+                withInnerLines={false}
+                withOuterLines={false}
+                style={styles.chart}
+              />
+            ) : (
+              <View style={styles.chartPlaceholder}>
+                <Text style={styles.chartPlaceholderText}>
+                  {waitingForFirstEcuSample
+                    ? liveTruth.state === 'ECU_DATA_DELAYED'
+                      ? 'ECU data delayed · still retrying'
+                      : 'Waiting for first ECU sample…'
+                    : 'Waiting for RPM data…'}
+                </Text>
+              </View>
+            )}
+          </View>
+        </ScrollView>
+      )}
 
       <View style={styles.footer}>
         {terminalOutcome ? (
@@ -408,7 +460,7 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
         ) : (
           <TouchableOpacity style={styles.stopButton} onPress={handleStop}>
             <View style={styles.stopIcon} />
-            <Text style={styles.stopButtonText}>Stop Session</Text>
+            <Text style={styles.stopButtonText}>Stop</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -423,49 +475,59 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b1114' },
   header: {
-    minHeight: 62,
+    minHeight: 50,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     backgroundColor: '#151d21',
   },
-  headerCopy: { flex: 1, paddingRight: 12 },
-  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  vehicleAlias: { color: '#fff', fontSize: 19, fontFamily: 'Inter_700Bold' },
-  subtitle: { color: '#94a3b8', fontSize: 11, fontFamily: 'Inter_400Regular', marginTop: 2 },
-  timerText: { color: '#f8fafc', fontFamily: 'SpaceMono_700Bold', fontSize: 16 },
+  headerCopy: { flex: 1, paddingRight: 10 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  vehicleAlias: { color: '#fff', fontSize: 17, fontFamily: 'Inter_700Bold' },
+  subtitle: { color: '#94a3b8', fontSize: 10, fontFamily: 'Inter_400Regular', marginTop: 1 },
+  timerText: { color: '#f8fafc', fontFamily: 'SpaceMono_700Bold', fontSize: 14 },
   timerTextTerminal: { color: '#94a3b8' },
-  diagButton: { backgroundColor: '#263239', paddingHorizontal: 7, paddingVertical: 5, borderRadius: 7 },
-  diagButtonText: { color: '#94a3b8', fontSize: 8, fontFamily: 'Inter_700Bold' },
-  statusBand: { minHeight: 30, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
-  statusBandText: { color: '#071014', fontSize: 10, fontFamily: 'Inter_700Bold', letterSpacing: 1.1, textAlign: 'center' },
-  statusDetailContainer: { backgroundColor: '#11191d', paddingHorizontal: 16, paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: '#263239' },
-  statusDetailText: { color: '#94a3b8', fontSize: 10, lineHeight: 14, fontFamily: 'Inter_400Regular', textAlign: 'center' },
-  liveHintRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 6, backgroundColor: '#0f171a' },
+  diagButton: { backgroundColor: '#263239', paddingHorizontal: 6, paddingVertical: 4, borderRadius: 7 },
+  diagButtonText: { color: '#94a3b8', fontSize: 7, fontFamily: 'Inter_700Bold' },
+  statusBand: { minHeight: 26, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+  statusBandText: { color: '#071014', fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 1, textAlign: 'center' },
+  statusDetailContainer: { backgroundColor: '#11191d', paddingHorizontal: 14, paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#263239' },
+  statusDetailText: { color: '#94a3b8', fontSize: 9, lineHeight: 13, fontFamily: 'Inter_400Regular', textAlign: 'center' },
   liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#10b981' },
-  liveHintText: { color: '#64748b', fontSize: 9, fontFamily: 'Inter_500Medium' },
-  terminalNotice: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#171517', borderBottomWidth: 1, borderBottomColor: '#3f2528' },
+  terminalNotice: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#171517', borderBottomWidth: 1, borderBottomColor: '#3f2528' },
   terminalCopy: { flex: 1 },
-  terminalTitle: { color: '#f8fafc', fontSize: 12, fontFamily: 'Inter_700Bold' },
-  terminalText: { color: '#cbd5e1', fontSize: 10, lineHeight: 14, marginTop: 2 },
-  terminalDot: { width: 9, height: 9, borderRadius: 5, backgroundColor: '#ef4444', marginLeft: 12 },
-  content: { flex: 1, paddingHorizontal: 16, paddingTop: 10 },
-  contentContainer: { paddingBottom: 12 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 4 },
-  chartContainer: { backgroundColor: '#11191d', paddingHorizontal: 0, paddingTop: 10, paddingBottom: 4, borderRadius: 14, borderWidth: 1, borderColor: '#263239', overflow: 'hidden', marginTop: 8 },
-  chartTitle: { color: '#64748b', fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 1, marginLeft: 12, marginBottom: 2 },
-  chart: { marginVertical: 0, borderRadius: 14 },
-  chartPlaceholder: { height: 100, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20 },
-  chartPlaceholderText: { color: '#64748b', fontSize: 11, fontFamily: 'Inter_500Medium', textAlign: 'center' },
-  footer: { paddingHorizontal: 16, paddingVertical: 9, backgroundColor: '#151d21', borderTopWidth: 1, borderTopColor: '#263239' },
-  stopButton: { minHeight: 50, backgroundColor: '#ef4444', borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 9 },
-  stopIcon: { width: 12, height: 12, borderRadius: 3, backgroundColor: '#fff' },
-  stopButtonText: { color: '#fff', fontSize: 15, fontFamily: 'Inter_700Bold' },
-  terminalActions: { flexDirection: 'row', gap: 9 },
-  summaryButton: { flex: 1, minHeight: 50, borderRadius: 14, backgroundColor: '#3b82f6', alignItems: 'center', justifyContent: 'center' },
-  summaryButtonText: { color: '#fff', fontSize: 14, fontFamily: 'Inter_700Bold' },
-  historyButton: { minWidth: 104, minHeight: 50, borderRadius: 14, borderWidth: 1, borderColor: '#475569', alignItems: 'center', justifyContent: 'center' },
-  historyButtonText: { color: '#e2e8f0', fontSize: 13, fontFamily: 'Inter_700Bold' },
+  terminalTitle: { color: '#f8fafc', fontSize: 11, fontFamily: 'Inter_700Bold' },
+  terminalText: { color: '#cbd5e1', fontSize: 9, lineHeight: 13, marginTop: 2 },
+  terminalDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ef4444', marginLeft: 10 },
+  content: { flex: 1, paddingHorizontal: 12, paddingTop: 8 },
+  contentContainer: { paddingBottom: 8 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', marginBottom: 2 },
+  chartContainer: { backgroundColor: '#11191d', paddingHorizontal: 0, paddingTop: 8, paddingBottom: 2, borderRadius: 12, borderWidth: 1, borderColor: '#263239', overflow: 'hidden', marginTop: 6 },
+  chartTitle: { color: '#64748b', fontSize: 8, fontFamily: 'Inter_700Bold', letterSpacing: 0.9, marginLeft: 10, marginBottom: 1 },
+  chart: { marginVertical: 0, borderRadius: 12 },
+  chartPlaceholder: { height: 78, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 18 },
+  chartPlaceholderText: { color: '#64748b', fontSize: 10, fontFamily: 'Inter_500Medium', textAlign: 'center' },
+  drivingContainer: { flex: 1, justifyContent: 'center', paddingHorizontal: 18, paddingBottom: 8 },
+  glancePanel: { borderRadius: 22, borderWidth: 2, backgroundColor: '#10171b', paddingHorizontal: 20, paddingVertical: 22 },
+  glanceStatusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  glanceMark: { fontSize: 25, fontFamily: 'Inter_700Bold', marginRight: 9 },
+  glanceAction: { fontSize: 25, fontFamily: 'Inter_700Bold', letterSpacing: 1.2 },
+  glanceCondition: { color: '#f8fafc', fontSize: 30, lineHeight: 36, textAlign: 'center', fontFamily: 'Inter_700Bold', marginTop: 4 },
+  glanceMetrics: { flexDirection: 'row', alignItems: 'center', marginTop: 20 },
+  glanceMetric: { flex: 1, alignItems: 'center' },
+  glanceValue: { color: '#f8fafc', fontSize: 32, fontFamily: 'SpaceMono_700Bold' },
+  glanceUnit: { color: '#94a3b8', fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 1, marginTop: 2 },
+  glanceDivider: { width: 1, height: 44, backgroundColor: '#334155' },
+  roadCue: { color: '#64748b', fontSize: 9, fontFamily: 'Inter_700Bold', letterSpacing: 1.1, textAlign: 'center', marginTop: 12 },
+  footer: { paddingHorizontal: 12, paddingVertical: 6, backgroundColor: '#151d21', borderTopWidth: 1, borderTopColor: '#263239' },
+  stopButton: { minHeight: 44, backgroundColor: '#b91c1c', borderRadius: 12, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8 },
+  stopIcon: { width: 10, height: 10, borderRadius: 2, backgroundColor: '#fff' },
+  stopButtonText: { color: '#fff', fontSize: 13, fontFamily: 'Inter_700Bold' },
+  terminalActions: { flexDirection: 'row', gap: 8 },
+  summaryButton: { flex: 1, minHeight: 44, borderRadius: 12, backgroundColor: '#3b82f6', alignItems: 'center', justifyContent: 'center' },
+  summaryButtonText: { color: '#fff', fontSize: 13, fontFamily: 'Inter_700Bold' },
+  historyButton: { minWidth: 96, minHeight: 44, borderRadius: 12, borderWidth: 1, borderColor: '#475569', alignItems: 'center', justifyContent: 'center' },
+  historyButtonText: { color: '#e2e8f0', fontSize: 12, fontFamily: 'Inter_700Bold' },
 });
