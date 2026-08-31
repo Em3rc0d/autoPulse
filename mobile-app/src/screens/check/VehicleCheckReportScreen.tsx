@@ -8,6 +8,7 @@ import { useVehicle } from '../../infrastructure/hooks/useVehicle';
 import { loadSessionCompatibilitySnapshot } from '../../application/diagnostics/CompatibilityPersistence';
 import { VehicleCheckReportRepository } from '../../infrastructure/database/product/repositories/vehicle-check-report.repository';
 import { VehicleCheckReportService, type VehicleCheckReportResult } from '../../application/check/VehicleCheckReportService';
+import { vehicleCheckEvidencePresentation } from '../../application/check/VehicleCheckEvidenceSemantics';
 import type { VehicleCheckSignalObservation } from '../../application/check/VehicleCheckReport';
 
 function stateTone(state: VehicleCheckSignalObservation['state']): string {
@@ -89,6 +90,11 @@ export default function VehicleCheckReportScreen() {
           <Text style={styles.bannerText}>Integrity seal {result.verified ? 'verified' : 'not verified'} · this is not a mechanical PASS/FAIL verdict.</Text>
         </View>
 
+        <View style={styles.legend}>
+          <Text style={styles.legendTitle}>EVIDENCE SEMANTICS</Text>
+          <Text style={styles.legendText}>OBSERVED = persisted data · UNAVAILABLE = queried/no usable data · NOT OBSERVED = no claim · INVALID = attempted but rejected.</Text>
+        </View>
+
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Vehicle & session</Text>
           <Text style={styles.primary}>{vehicleLabel}</Text>
@@ -101,21 +107,24 @@ export default function VehicleCheckReportScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Bounded V1 coverage</Text>
           <Text style={styles.coverage}>{snapshot.coverage.observedPercent}% observed</Text>
-          <Text style={styles.muted}>{snapshot.coverage.observedSignals}/{snapshot.coverage.targetSignals} target signals · {snapshot.coverage.probedNoDataSignals} probed/no-data · {snapshot.coverage.notEvaluatedSignals} not evaluated</Text>
+          <Text style={styles.muted}>{snapshot.coverage.observedSignals}/{snapshot.coverage.targetSignals} target signals · {snapshot.coverage.probedNoDataSignals} unavailable after probe · {snapshot.coverage.notEvaluatedSignals} not observed</Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Observed signals</Text>
-          {snapshot.signals.map(signal => (
-            <View key={signal.key} style={styles.signal}>
-              <View style={styles.signalHead}>
-                <View style={{ flex: 1 }}><Text style={styles.signalName}>{signal.label}</Text><Text style={styles.origin}>{signal.source === 'ECU' ? 'ECU evidence' : 'Adapter measurement'}</Text></View>
-                <Text style={[styles.signalState, { color: stateTone(signal.state) }]}>{signal.state}</Text>
+          <Text style={styles.cardTitle}>Signal evidence</Text>
+          {snapshot.signals.map(signal => {
+            const evidence = vehicleCheckEvidencePresentation(signal);
+            return (
+              <View key={signal.key} style={styles.signal}>
+                <View style={styles.signalHead}>
+                  <View style={{ flex: 1 }}><Text style={styles.signalName}>{signal.label}</Text><Text style={styles.origin}>{signal.source === 'ECU' ? 'ECU evidence' : 'Adapter measurement'}</Text></View>
+                  <Text style={[styles.signalState, { color: stateTone(signal.state) }]}>{evidence.label}</Text>
+                </View>
+                {signal.state === 'OBSERVED' ? <Text style={styles.stats}>min {fmt(signal.min)} · avg {fmt(signal.avg)} · max {fmt(signal.max)} {signal.unit}</Text> : <Text style={styles.evidenceDetail}>{evidence.detail}</Text>}
+                <Text style={styles.counts}>valid {signal.validReadingsCount} · no-data {signal.noDataCount} · invalid {signal.invalidCount}</Text>
               </View>
-              {signal.state === 'OBSERVED' ? <Text style={styles.stats}>min {fmt(signal.min)} · avg {fmt(signal.avg)} · max {fmt(signal.max)} {signal.unit}</Text> : null}
-              <Text style={styles.counts}>valid {signal.validReadingsCount} · no-data {signal.noDataCount} · invalid {signal.invalidCount}</Text>
-            </View>
-          ))}
+            );
+          })}
         </View>
 
         <View style={styles.card}>
@@ -149,32 +158,36 @@ const styles = StyleSheet.create({
   errorTitle: { color: '#fca5a5', fontSize: 20, fontWeight: '900' },
   backButton: { marginTop: 20, paddingHorizontal: 20, paddingVertical: 10, borderWidth: 1, borderColor: '#475569', borderRadius: 999 },
   backText: { color: '#fff', fontWeight: '800' },
-  header: { paddingTop: 54, paddingHorizontal: 20, paddingBottom: 16, backgroundColor: '#10171b', borderBottomWidth: 1, borderBottomColor: '#263139' },
-  backLink: { color: '#60a5fa', fontSize: 12, fontWeight: '800' },
-  title: { color: '#f8fafc', fontSize: 24, fontWeight: '900', marginTop: 8 },
-  subtitle: { color: '#64748b', fontSize: 11, marginTop: 4 },
-  content: { padding: 16, paddingBottom: 44 },
-  banner: { borderRadius: 14, borderWidth: 1, padding: 15, marginBottom: 12 },
+  header: { paddingTop: 50, paddingHorizontal: 18, paddingBottom: 13, backgroundColor: '#10171b', borderBottomWidth: 1, borderBottomColor: '#263139' },
+  backLink: { color: '#60a5fa', fontSize: 11, fontWeight: '800' },
+  title: { color: '#f8fafc', fontSize: 22, fontWeight: '900', marginTop: 6 },
+  subtitle: { color: '#64748b', fontSize: 10, marginTop: 3 },
+  content: { padding: 14, paddingBottom: 38 },
+  banner: { borderRadius: 13, borderWidth: 1, padding: 13, marginBottom: 10 },
   bannerReady: { backgroundColor: '#0c2317', borderColor: '#166534' },
   bannerLimited: { backgroundColor: '#281d08', borderColor: '#854d0e' },
-  bannerTitle: { color: '#f8fafc', fontSize: 13, fontWeight: '900', letterSpacing: 1 },
-  bannerText: { color: '#cbd5e1', fontSize: 11, lineHeight: 17, marginTop: 5 },
-  card: { backgroundColor: '#121b20', borderRadius: 16, borderWidth: 1, borderColor: '#2a363d', padding: 16, marginBottom: 12 },
-  cardTitle: { color: '#f8fafc', fontSize: 15, fontWeight: '900', marginBottom: 11 },
-  primary: { color: '#fff', fontSize: 18, fontWeight: '800' },
-  muted: { color: '#64748b', fontSize: 11, lineHeight: 17, marginTop: 4 },
-  row: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 8, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#263139' },
-  label: { color: '#94a3b8', flex: 1, fontSize: 12 },
-  value: { color: '#e2e8f0', fontSize: 12, fontWeight: '800', textAlign: 'right' },
-  coverage: { color: '#4ade80', fontSize: 30, fontWeight: '900' },
-  signal: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2a363d' },
+  bannerTitle: { color: '#f8fafc', fontSize: 12, fontWeight: '900', letterSpacing: 0.8 },
+  bannerText: { color: '#cbd5e1', fontSize: 10, lineHeight: 15, marginTop: 4 },
+  legend: { backgroundColor: '#10171b', borderWidth: 1, borderColor: '#263139', borderRadius: 12, padding: 11, marginBottom: 10 },
+  legendTitle: { color: '#60a5fa', fontSize: 8, fontWeight: '900', letterSpacing: 1.1 },
+  legendText: { color: '#94a3b8', fontSize: 9, lineHeight: 14, marginTop: 4 },
+  card: { backgroundColor: '#121b20', borderRadius: 14, borderWidth: 1, borderColor: '#2a363d', padding: 14, marginBottom: 10 },
+  cardTitle: { color: '#f8fafc', fontSize: 14, fontWeight: '900', marginBottom: 9 },
+  primary: { color: '#fff', fontSize: 17, fontWeight: '800' },
+  muted: { color: '#64748b', fontSize: 10, lineHeight: 15, marginTop: 3 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingVertical: 7, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#263139' },
+  label: { color: '#94a3b8', flex: 1, fontSize: 11 },
+  value: { color: '#e2e8f0', fontSize: 11, fontWeight: '800', textAlign: 'right' },
+  coverage: { color: '#4ade80', fontSize: 28, fontWeight: '900' },
+  signal: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#2a363d' },
   signalHead: { flexDirection: 'row', alignItems: 'flex-start', gap: 12 },
-  signalName: { color: '#f1f5f9', fontSize: 13, fontWeight: '800' },
-  origin: { color: '#64748b', fontSize: 10, marginTop: 2 },
-  signalState: { fontSize: 10, fontWeight: '900' },
-  stats: { color: '#cbd5e1', fontSize: 12, marginTop: 9 },
-  counts: { color: '#64748b', fontSize: 10, marginTop: 5 },
-  limitation: { color: '#cbd5e1', fontSize: 12, lineHeight: 18, marginBottom: 8 },
-  hashLabel: { color: '#64748b', fontSize: 10, fontWeight: '900', letterSpacing: 1.4 },
-  hash: { color: '#93c5fd', fontSize: 10, lineHeight: 16, marginTop: 6, marginBottom: 8 },
+  signalName: { color: '#f1f5f9', fontSize: 12, fontWeight: '800' },
+  origin: { color: '#64748b', fontSize: 9, marginTop: 2 },
+  signalState: { fontSize: 9, fontWeight: '900' },
+  stats: { color: '#cbd5e1', fontSize: 11, marginTop: 7 },
+  evidenceDetail: { color: '#94a3b8', fontSize: 10, lineHeight: 14, marginTop: 7 },
+  counts: { color: '#64748b', fontSize: 9, marginTop: 4 },
+  limitation: { color: '#cbd5e1', fontSize: 11, lineHeight: 17, marginBottom: 7 },
+  hashLabel: { color: '#64748b', fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
+  hash: { color: '#93c5fd', fontSize: 9, lineHeight: 15, marginTop: 5, marginBottom: 7 },
 });

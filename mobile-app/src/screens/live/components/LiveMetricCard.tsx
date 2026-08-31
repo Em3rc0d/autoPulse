@@ -55,13 +55,15 @@ export function LiveMetricCard(props: Props) {
         unit: props.unit,
         quality: driverQuality,
         origin: signalId === 'ADAPTER_VOLTAGE' ? 'DEVICE_SENSOR' : 'ECU_DIRECT',
+        advisory: props.state.advisory,
+        calibration: props.state.calibration,
         observedAt: Date.now(),
       });
     }
     // Deliberately keyed to real observation changes rather than the context
     // object, whose identity changes when observations are published.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signalId, props.value, props.unit, driverQuality]);
+  }, [signalId, props.value, props.unit, driverQuality, props.state.advisory, props.state.calibration]);
 
   if (!driverMode || !signalId) {
     return <BaseLiveMetricCard {...props} />;
