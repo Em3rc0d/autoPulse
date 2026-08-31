@@ -1,4 +1,4 @@
-import type { VoiceLanguage } from '../../application/settings/DriverPreferences';
+export type VoiceLanguage = 'en-US' | 'es-ES';
 
 export type DriverAlertSeverity = 'S0_NORMAL' | 'S1_ADVISORY' | 'S2_ATTENTION' | 'S3_CRITICAL';
 
