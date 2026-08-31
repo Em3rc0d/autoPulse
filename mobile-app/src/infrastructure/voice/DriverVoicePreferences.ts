@@ -1,4 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   DEFAULT_DRIVER_VOICE_LANGUAGE,
   type DriverVoiceLanguage,
@@ -19,8 +18,17 @@ export function isDriverVoiceLanguage(value: unknown): value is DriverVoiceLangu
   return value === 'en-US' || value === 'es-ES';
 }
 
+async function getAsyncStorage() {
+  // Keep native storage out of module initialization. This makes the voice
+  // adapter safe to import in non-native runtimes while still persisting the
+  // preference on device.
+  const module = await import('@react-native-async-storage/async-storage');
+  return module.default;
+}
+
 export async function loadDriverVoiceLanguage(): Promise<DriverVoiceLanguage> {
   try {
+    const AsyncStorage = await getAsyncStorage();
     const stored = await AsyncStorage.getItem(DRIVER_VOICE_LANGUAGE_KEY);
     return isDriverVoiceLanguage(stored) ? stored : DEFAULT_DRIVER_VOICE_LANGUAGE;
   } catch (error) {
@@ -31,6 +39,7 @@ export async function loadDriverVoiceLanguage(): Promise<DriverVoiceLanguage> {
 
 export async function saveDriverVoiceLanguage(language: DriverVoiceLanguage): Promise<void> {
   try {
+    const AsyncStorage = await getAsyncStorage();
     await AsyncStorage.setItem(DRIVER_VOICE_LANGUAGE_KEY, language);
   } catch (error) {
     console.warn('[DriverVoicePreferences] Write degraded:', error);
