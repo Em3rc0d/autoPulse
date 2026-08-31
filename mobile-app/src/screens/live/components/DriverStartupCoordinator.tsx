@@ -1,14 +1,16 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import {
-  buildStartupBriefing,
-  createDriverVoiceMemory,
-  decideStartupVoiceWhenReady,
-  markStartupSpoken,
   resolveColdStartMaturity,
   resolveStartupAssessment,
   type DriverAdvisory,
 } from '../../../domain/driver-intelligence';
+import { driverAlertPhrase } from '../../../domain/driver-intelligence/DriverAlertLexicon';
+import {
+  DEFAULT_DRIVER_PREFERENCES,
+  loadDriverPreferences,
+  type DriverPreferences,
+} from '../../../application/settings/DriverPreferences';
 import { speakDriverMessage } from '../../../infrastructure/voice/AndroidDriverVoice';
 import { useDriverMode } from './DriverModeContext';
 
@@ -19,9 +21,18 @@ interface Props {
 
 export function DriverStartupCoordinator({ diagnosticScanComplete, advisories }: Props) {
   const { observations } = useDriverMode();
-  const voiceMemory = useRef(createDriverVoiceMemory());
   const [briefed, setBriefed] = useState(false);
   const [nowMs, setNowMs] = useState(Date.now());
+  const [preferences, setPreferences] = useState<DriverPreferences>(DEFAULT_DRIVER_PREFERENCES);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    void loadDriverPreferences()
+      .then(next => { if (mounted) setPreferences(next); })
+      .finally(() => { if (mounted) setPreferencesLoaded(true); });
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     if (briefed) return;
@@ -49,17 +60,17 @@ export function DriverStartupCoordinator({ diagnosticScanComplete, advisories }:
   }), [diagnosticScanComplete, maturity.complete, advisories, observations.ENGINE_RPM?.firstObservedAt, observations.ENGINE_COOLANT?.firstObservedAt, nowMs]);
 
   useEffect(() => {
-    if (briefed || !assessment.canBrief || assessment.scanInProgress) return;
-    const briefing = buildStartupBriefing(advisories);
-    const decision = decideStartupVoiceWhenReady(briefing, voiceMemory.current, assessment);
-    if (!decision.shouldSpeak || !decision.message) return;
-
-    speakDriverMessage(decision.message).then(spoken => {
-      if (!spoken) return;
-      voiceMemory.current = markStartupSpoken(voiceMemory.current);
+    if (briefed || !preferencesLoaded || !assessment.canBrief || assessment.scanInProgress) return;
+    if (!preferences.voiceAlertsEnabled) {
       setBriefed(true);
+      return;
+    }
+
+    const message = driverAlertPhrase('AUTOPULSE_READY', preferences.voiceLanguage);
+    void speakDriverMessage(message, preferences.voiceLanguage).then(spoken => {
+      if (spoken) setBriefed(true);
     });
-  }, [briefed, assessment, advisories]);
+  }, [briefed, assessment.canBrief, assessment.scanInProgress, preferences, preferencesLoaded]);
 
   if (briefed || assessment.phase === 'READY') return null;
 
