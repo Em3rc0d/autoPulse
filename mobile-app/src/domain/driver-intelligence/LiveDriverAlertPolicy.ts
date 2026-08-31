@@ -1,11 +1,17 @@
 import type { SignalAdvisoryState } from '../telemetry/SignalAdvisory';
-import type { DriverPreferences } from '../../application/settings/DriverPreferences';
 import {
   DRIVER_ALERT_LEXICON,
   type DriverAlertDefinition,
   type DriverAlertKey,
   type DriverAlertSeverity,
 } from './DriverAlertLexicon';
+
+export interface DriverVoicePreferenceSnapshot {
+  voiceAlertsEnabled: boolean;
+  criticalAlertsEnabled: boolean;
+  attentionAlertsEnabled: boolean;
+  advisoryAlertsEnabled: boolean;
+}
 
 export interface LiveDriverAlertMemory {
   lastKey?: DriverAlertKey;
@@ -23,7 +29,7 @@ const severityRank: Record<DriverAlertSeverity, number> = {
 };
 
 export function selectCoolantDriverAlert(
-  state: SignalAdvisoryState,
+  state: Pick<SignalAdvisoryState, 'quality' | 'advisory'>,
   hasValue: boolean,
 ): DriverAlertDefinition | null {
   if (!hasValue || state.quality !== 'VALID') return null;
@@ -34,7 +40,7 @@ export function selectCoolantDriverAlert(
 
 export function alertEnabledByPreferences(
   alert: DriverAlertDefinition,
-  preferences: DriverPreferences,
+  preferences: DriverVoicePreferenceSnapshot,
 ): boolean {
   if (!preferences.voiceAlertsEnabled) return false;
   if (alert.severity === 'S3_CRITICAL') return preferences.criticalAlertsEnabled;
@@ -45,7 +51,7 @@ export function alertEnabledByPreferences(
 
 export function shouldSpeakLiveAlert(
   alert: DriverAlertDefinition,
-  preferences: DriverPreferences,
+  preferences: DriverVoicePreferenceSnapshot,
   memory: LiveDriverAlertMemory,
   nowMs: number,
 ): boolean {
