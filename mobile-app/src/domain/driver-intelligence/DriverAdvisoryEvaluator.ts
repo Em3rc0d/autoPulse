@@ -25,6 +25,7 @@ export function evaluateDriverAdvisories(input: DriverIntelligenceInput): Driver
       title: 'CHECK ENGINE',
       shortMessage: 'Engine warning light reported by ECU',
       voiceMessage: 'The engine warning light is on. AutoPulse did not read a confirmed diagnostic code yet.',
+      voiceKey: 'CHECK_ENGINE',
       confidence: 'HIGH',
       evidence: [{ kind: 'SYSTEM', reference: 'MIL', observedValue: true }],
       startedAt: input.nowMs,
@@ -56,6 +57,7 @@ export function evaluateDriverAdvisories(input: DriverIntelligenceInput): Driver
       voiceMessage: dtc.description
         ? `${dtc.description}. Diagnostic code ${dtc.code}.`
         : `Diagnostic code ${dtc.code} is ${dtc.status.toLowerCase()}.`,
+      voiceKey: dtc.status === 'CONFIRMED' ? 'CHECK_ENGINE' : undefined,
       confidence: 'HIGH',
       evidence: [{ kind: 'DTC', reference: dtc.code, observedValue: dtc.status }],
       startedAt: input.nowMs,
