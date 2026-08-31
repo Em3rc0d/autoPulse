@@ -1,3 +1,5 @@
+import type { DriverAlertKey } from './DriverAlertLexicon';
+
 export type DrivingMode =
   | 'ESSENTIAL'
   | 'FAMILY'
@@ -60,6 +62,7 @@ export interface DriverAdvisory {
   title: string;
   shortMessage: string;
   voiceMessage?: string;
+  voiceKey?: DriverAlertKey;
   confidence: DriverAdvisoryConfidence;
   evidence: AdvisoryEvidence[];
   startedAt: number;

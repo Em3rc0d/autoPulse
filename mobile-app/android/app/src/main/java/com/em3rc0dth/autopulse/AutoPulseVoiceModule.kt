@@ -16,7 +16,12 @@ class AutoPulseVoiceModule(
   private var ready = false
   private var initializationFailed = false
   private var pendingText: String? = null
+  private var pendingLanguageTag: String = DEFAULT_LANGUAGE_TAG
   private var pendingPromise: Promise? = null
+
+  companion object {
+    private const val DEFAULT_LANGUAGE_TAG = "en-US"
+  }
 
   init {
     reactContext.addLifecycleEventListener(this)
@@ -30,22 +35,38 @@ class AutoPulseVoiceModule(
     initializationFailed = !ready
 
     if (ready) {
-      tts?.language = Locale.getDefault()
+      setLanguage(DEFAULT_LANGUAGE_TAG)
       val text = pendingText
+      val languageTag = pendingLanguageTag
       val promise = pendingPromise
       pendingText = null
+      pendingLanguageTag = DEFAULT_LANGUAGE_TAG
       pendingPromise = null
       if (!text.isNullOrBlank() && promise != null) {
-        speakNow(text, promise)
+        speakNow(text, languageTag, promise)
       }
     } else {
       pendingPromise?.resolve(false)
       pendingText = null
+      pendingLanguageTag = DEFAULT_LANGUAGE_TAG
       pendingPromise = null
     }
   }
 
-  private fun speakNow(text: String, promise: Promise) {
+  private fun setLanguage(languageTag: String): Boolean {
+    val engine = tts ?: return false
+    val locale = Locale.forLanguageTag(languageTag.ifBlank { DEFAULT_LANGUAGE_TAG })
+    val availability = engine.isLanguageAvailable(locale)
+    if (availability < TextToSpeech.LANG_AVAILABLE) return false
+    return engine.setLanguage(locale) >= TextToSpeech.LANG_AVAILABLE
+  }
+
+  private fun speakNow(text: String, languageTag: String, promise: Promise) {
+    if (!setLanguage(languageTag)) {
+      promise.resolve(false)
+      return
+    }
+
     val result = tts?.speak(
       text,
       TextToSpeech.QUEUE_FLUSH,
@@ -56,7 +77,7 @@ class AutoPulseVoiceModule(
   }
 
   @ReactMethod
-  fun speak(text: String, promise: Promise) {
+  fun speak(text: String, languageTag: String, promise: Promise) {
     if (text.isBlank() || initializationFailed) {
       promise.resolve(false)
       return
@@ -68,17 +89,19 @@ class AutoPulseVoiceModule(
       // dropping the first important advisory.
       pendingPromise?.resolve(false)
       pendingText = text
+      pendingLanguageTag = languageTag.ifBlank { DEFAULT_LANGUAGE_TAG }
       pendingPromise = promise
       return
     }
 
-    speakNow(text, promise)
+    speakNow(text, languageTag, promise)
   }
 
   @ReactMethod
   fun stop(promise: Promise) {
     pendingPromise?.resolve(false)
     pendingText = null
+    pendingLanguageTag = DEFAULT_LANGUAGE_TAG
     pendingPromise = null
     tts?.stop()
     promise.resolve(true)
@@ -90,6 +113,7 @@ class AutoPulseVoiceModule(
   override fun onHostDestroy() {
     pendingPromise?.resolve(false)
     pendingText = null
+    pendingLanguageTag = DEFAULT_LANGUAGE_TAG
     pendingPromise = null
     tts?.stop()
     tts?.shutdown()

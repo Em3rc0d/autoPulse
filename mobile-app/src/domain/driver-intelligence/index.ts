@@ -10,3 +10,4 @@ export * from './StartupBriefing';
 export * from './StartupAssessment';
 export * from './DrivingModePresentation';
 export * from './DriverVoicePolicy';
+export * from './DriverAlertLexicon';

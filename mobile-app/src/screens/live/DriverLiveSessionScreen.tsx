@@ -10,7 +10,7 @@ import { DriverStartupCoordinator } from './components/DriverStartupCoordinator'
 import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
 import { RealObdController } from '../../infrastructure/ble/real/RealObdController';
 import { ElmBleDiagnosticConnector } from '../../infrastructure/diagnostics/ElmBleDiagnosticConnector';
-import { speakDriverMessage } from '../../infrastructure/voice/AndroidDriverVoice';
+import { speakDriverAlert, speakDriverMessage } from '../../infrastructure/voice/AndroidDriverVoice';
 import { characterizeRuntimeCompatibility } from '../../application/diagnostics/RuntimeCompatibilityCharacterization';
 import { runtimeCompatibilityStore } from '../../application/diagnostics/RuntimeCompatibilityStore';
 import { persistCompatibilitySnapshot } from '../../application/diagnostics/CompatibilityPersistence';
@@ -51,16 +51,18 @@ function DriverLiveSessionContent({
   vehicleId?: string;
 }) {
   const [terminalOutcome, setTerminalOutcome] = useState<LiveSessionTerminalOutcome | null>(null);
+  const [isDriving, setIsDriving] = useState(false);
 
   return (
     <View style={styles.container}>
-      {!terminalOutcome ? <DriverModePanel disabled={false} /> : null}
-      {!terminalOutcome ? <DriverStartupCoordinator diagnosticScanComplete advisories={advisories} /> : null}
-      {!terminalOutcome ? <DriverContextualIntelligence /> : null}
+      {!terminalOutcome && !isDriving ? <DriverModePanel disabled={false} /> : null}
+      {!terminalOutcome && !isDriving ? <DriverStartupCoordinator diagnosticScanComplete advisories={advisories} /> : null}
+      {!terminalOutcome && !isDriving ? <DriverContextualIntelligence /> : null}
       <View style={styles.liveContainer}>
         <LiveSessionScreen
-          supplement={!terminalOutcome ? <PhoneSensorBridge vehicleId={vehicleId} /> : null}
+          supplement={!terminalOutcome && !isDriving ? <PhoneSensorBridge vehicleId={vehicleId} /> : null}
           onTerminalStateChange={setTerminalOutcome}
+          onDrivingStateChange={setIsDriving}
         />
       </View>
     </View>
@@ -135,7 +137,9 @@ export default function DriverLiveSessionScreen() {
           for (const advisory of nextAdvisories) {
             const decision = decideAdvisoryVoice(advisory, voiceMemory.current, Date.now());
             if (!decision.shouldSpeak || !decision.message) continue;
-            const spoken = await speakDriverMessage(decision.message);
+            const spoken = advisory.voiceKey
+              ? await speakDriverAlert(advisory.voiceKey)
+              : await speakDriverMessage(decision.message);
             if (spoken) voiceMemory.current = markAdvisorySpoken(voiceMemory.current, advisory.id, Date.now());
           }
         }
@@ -174,19 +178,22 @@ export default function DriverLiveSessionScreen() {
   }
 
   const visibleAdvisory = advisories[0];
+  const advisoryCritical = visibleAdvisory?.severity === 'CRITICAL';
+  const advisoryWarning = visibleAdvisory?.severity === 'WARNING';
+
   return (
     <View style={styles.container}>
       {visibleAdvisory ? (
         <View style={[
           styles.advisoryBanner,
-          visibleAdvisory.severity === 'WARNING' || visibleAdvisory.severity === 'CRITICAL'
-            ? styles.advisoryBannerWarning : styles.advisoryBannerNotice,
+          advisoryCritical
+            ? styles.advisoryBannerCritical
+            : advisoryWarning
+              ? styles.advisoryBannerWarning
+              : styles.advisoryBannerNotice,
         ]}>
-          <View style={styles.advisoryIndicator} />
-          <Text numberOfLines={1} style={styles.advisoryLine}>
-            <Text style={styles.advisoryTitle}>{visibleAdvisory.title} · </Text>
-            {visibleAdvisory.shortMessage}
-          </Text>
+          <Text style={styles.advisoryMark}>{advisoryCritical ? '!' : advisoryWarning ? '▲' : '●'}</Text>
+          <Text numberOfLines={1} style={styles.advisoryTitle}>{visibleAdvisory.title}</Text>
         </View>
       ) : null}
       <DriverModeProvider supportedPids={supportedPids}>
@@ -198,24 +205,24 @@ export default function DriverLiveSessionScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0b1114' },
-  modePanel: { backgroundColor: '#0b1114', paddingHorizontal: 16, paddingTop: 8 },
+  modePanel: { backgroundColor: '#0b1114', paddingHorizontal: 12, paddingTop: 6 },
   liveContainer: { flex: 1 },
   characterizationContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 28, backgroundColor: '#0b1114' },
   characterizationTitle: { marginTop: 16, fontSize: 20, fontWeight: '700', color: '#f8fafc' },
   characterizationText: { marginTop: 6, textAlign: 'center', fontSize: 12, lineHeight: 18, color: '#94a3b8' },
   advisoryBanner: {
-    minHeight: 42,
+    minHeight: 36,
     marginHorizontal: 12,
-    marginTop: 7,
-    borderRadius: 12,
+    marginTop: 6,
+    borderRadius: 10,
     borderWidth: 1,
-    paddingHorizontal: 11,
+    paddingHorizontal: 10,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  advisoryBannerWarning: { backgroundColor: 'rgba(239, 68, 68, 0.12)', borderColor: 'rgba(239, 68, 68, 0.55)' },
-  advisoryBannerNotice: { backgroundColor: 'rgba(245, 158, 11, 0.10)', borderColor: 'rgba(245, 158, 11, 0.45)' },
-  advisoryIndicator: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#f59e0b', marginRight: 8 },
-  advisoryLine: { flex: 1, color: '#e2e8f0', fontSize: 11, fontWeight: '600' },
-  advisoryTitle: { color: '#f8fafc', fontWeight: '800' },
+  advisoryBannerCritical: { backgroundColor: 'rgba(239, 68, 68, 0.18)', borderColor: '#ef4444' },
+  advisoryBannerWarning: { backgroundColor: 'rgba(249, 115, 22, 0.14)', borderColor: '#f97316' },
+  advisoryBannerNotice: { backgroundColor: 'rgba(245, 158, 11, 0.10)', borderColor: 'rgba(245, 158, 11, 0.55)' },
+  advisoryMark: { width: 20, color: '#f8fafc', fontSize: 13, fontWeight: '900', marginRight: 6 },
+  advisoryTitle: { flex: 1, color: '#f8fafc', fontSize: 12, fontWeight: '900', letterSpacing: 0.5 },
 });
