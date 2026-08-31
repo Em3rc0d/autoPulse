@@ -13,8 +13,10 @@ interface AutoPulseVoiceNativeModule {
 
 const nativeVoice = NativeModules.AutoPulseVoice as AutoPulseVoiceNativeModule | undefined;
 
+const nativeVoiceAvailable = () => Platform.OS === 'android' && Boolean(nativeVoice);
+
 async function speakWithLanguage(message: string, language: DriverVoiceLanguage): Promise<boolean> {
-  if (Platform.OS !== 'android' || !nativeVoice || !message.trim()) return false;
+  if (!nativeVoiceAvailable() || !nativeVoice || !message.trim()) return false;
   try {
     return await nativeVoice.speak(message.trim(), language);
   } catch (error) {
@@ -24,17 +26,19 @@ async function speakWithLanguage(message: string, language: DriverVoiceLanguage)
 }
 
 export async function speakDriverMessage(message: string): Promise<boolean> {
+  if (!nativeVoiceAvailable() || !message.trim()) return false;
   const language = await loadDriverVoiceLanguage();
   return speakWithLanguage(message, language);
 }
 
 export async function speakDriverAlert(key: DriverAlertKey): Promise<boolean> {
+  if (!nativeVoiceAvailable()) return false;
   const language = await loadDriverVoiceLanguage();
   return speakWithLanguage(resolveDriverAlertMessage(key, language), language);
 }
 
 export async function stopDriverVoice(): Promise<void> {
-  if (Platform.OS !== 'android' || !nativeVoice) return;
+  if (!nativeVoiceAvailable() || !nativeVoice) return;
   try {
     await nativeVoice.stop();
   } catch (error) {
