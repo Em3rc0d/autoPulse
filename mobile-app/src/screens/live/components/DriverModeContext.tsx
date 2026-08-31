@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 import type { AvailableSignal, DrivingMode, SignalOrigin, SignalQuality } from '../../../domain/driver-intelligence';
+import type { SignalAdvisoryStatus, SignalCalibrationStatus } from '../../../domain/telemetry/SignalAdvisory';
 import { buildLiveSignalInventory } from './LiveSignalInventory';
 
 export interface DriverSignalObservation {
@@ -8,6 +9,8 @@ export interface DriverSignalObservation {
   unit?: string;
   quality: SignalQuality;
   origin: SignalOrigin;
+  advisory?: SignalAdvisoryStatus;
+  calibration?: SignalCalibrationStatus;
   firstValue: number;
   firstObservedAt: number;
   observedAt: number;
