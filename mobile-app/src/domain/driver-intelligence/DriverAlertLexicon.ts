@@ -3,6 +3,7 @@ export type VoiceLanguage = 'en-US' | 'es-ES';
 export type DriverAlertSeverity = 'S0_NORMAL' | 'S1_ADVISORY' | 'S2_ATTENTION' | 'S3_CRITICAL';
 
 export type DriverAlertKey =
+  | 'AUTOPULSE_READY'
   | 'ENGINE_OK'
   | 'TEMP_RISING'
   | 'ENGINE_HOT'
@@ -21,6 +22,7 @@ export interface DriverAlertDefinition {
 }
 
 export const DRIVER_ALERT_LEXICON: Record<DriverAlertKey, DriverAlertDefinition> = {
+  AUTOPULSE_READY: { key: 'AUTOPULSE_READY', severity: 'S0_NORMAL', icon: '●', en: 'AUTOPULSE READY.', es: 'AUTOPULSE LISTO.' },
   ENGINE_OK: { key: 'ENGINE_OK', severity: 'S0_NORMAL', icon: '●', en: 'ENGINE OK.', es: 'MOTOR OK.' },
   TEMP_RISING: { key: 'TEMP_RISING', severity: 'S1_ADVISORY', icon: '▲', en: 'CAUTION. TEMP RISING.', es: 'ATENCIÓN. TEMPERATURA SUBIENDO.' },
   ENGINE_HOT: { key: 'ENGINE_HOT', severity: 'S3_CRITICAL', icon: '!', en: 'STOP. ENGINE HOT.', es: 'ALTO. MOTOR CALIENTE.' },
