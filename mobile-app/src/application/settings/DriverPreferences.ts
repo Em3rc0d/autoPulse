@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-export type VoiceLanguage = 'en-US' | 'es-ES';
+import type { VoiceLanguage } from '../../domain/driver-intelligence/DriverAlertLexicon';
 
 export interface DriverPreferences {
   voiceAlertsEnabled: boolean;
