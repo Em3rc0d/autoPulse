@@ -68,7 +68,8 @@ export class RealLiveSessionController {
     private workspaceId: string,
     public sessionId: string,
     private connectionHandleId: string,
-    private supportedPids: string[]
+    private supportedPids: string[],
+    private pollAdapterVoltage: boolean = false,
   ) {}
 
   public async start(
@@ -112,6 +113,12 @@ export class RealLiveSessionController {
     this.poller?.start(250);
   }
 
+  private livePollRequests(): string[] {
+    const normalized = this.supportedPids.map(pid => String(pid).trim().toUpperCase()).filter(Boolean);
+    if (this.pollAdapterVoltage && !normalized.includes('ATRV')) normalized.push('ATRV');
+    return normalized;
+  }
+
   private installTransport(conn: ActiveConnection) {
     this.obdController?.disconnect();
     this.bleDisconnectSubscription?.remove();
@@ -121,7 +128,7 @@ export class RealLiveSessionController {
     this.observePhysicalDisconnect(conn);
     this.poller = new RealTelemetryPoller(
       this.obdController,
-      this.supportedPids,
+      this.livePollRequests(),
       result => {
         if (this.onUiUpdate) this.handleCommandResult(result, this.onUiUpdate);
       },
@@ -149,7 +156,8 @@ export class RealLiveSessionController {
 
   private handlePollerDiagnostic(event: PollerDiagnosticEvent, conn: ActiveConnection) {
     if (event.type !== 'TRANSPORT_STALLED' || this.currentState !== 'ACTIVE') return;
-    void this.attemptConnectionRecovery('ECU_RESPONSE_LOST', conn);
+    const recoveryReason = event.reason === 'DISCONNECTED' ? 'DEVICE_DISCONNECTED' : 'ECU_RESPONSE_LOST';
+    void this.attemptConnectionRecovery(recoveryReason, conn);
   }
 
   private async delay(ms: number) {
