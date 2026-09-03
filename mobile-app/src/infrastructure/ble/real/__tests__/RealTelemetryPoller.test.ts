@@ -80,20 +80,37 @@ describe('RealTelemetryPoller', () => {
     );
   });
 
-  it('accepts lowercase discovered requests after normalization', async () => {
+  it('accepts request ids containing lowercase hex characters after normalization', async () => {
     mockExecutor.executeCommand.mockResolvedValue({
       status: 'SUCCESS_DECODED',
       request: {} as any,
       rawResponse: {} as any
     } as any);
 
-    const poller = new RealTelemetryPoller(mockExecutor, ['0111'.toLowerCase()], onData, onDiagnostic);
+    const poller = new RealTelemetryPoller(mockExecutor, ['010b'], onData, onDiagnostic);
     poller.start(10);
     await Promise.resolve();
     poller.stop();
 
     expect(mockExecutor.executeCommand).toHaveBeenCalledWith(
-      expect.objectContaining({ command: '0111', expectedPid: '11' })
+      expect.objectContaining({ command: '010B', expectedPid: '0B' })
+    );
+  });
+
+  it('falls back to the driver-critical set instead of unrelated diagnostic signals', async () => {
+    mockExecutor.executeCommand.mockResolvedValue({
+      status: 'SUCCESS_DECODED',
+      request: {} as any,
+      rawResponse: {} as any
+    } as any);
+
+    const poller = new RealTelemetryPoller(mockExecutor, ['FFFF'], onData, onDiagnostic);
+    poller.start(10);
+    await Promise.resolve();
+    poller.stop();
+
+    expect(mockExecutor.executeCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ command: '0105', expectedPid: '05' })
     );
   });
 
