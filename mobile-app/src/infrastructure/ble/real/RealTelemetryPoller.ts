@@ -7,6 +7,8 @@ type ObdCommandExecutor = {
   executeCommand(request: CommandRequest): Promise<CommandResult>;
 };
 
+type StallReason = 'TIMEOUT' | 'WRITE_FAILED' | 'DISCONNECTED' | 'UNUSABLE_RESPONSE';
+
 export type PollerDiagnosticEvent =
   | {
       type: 'PID_RETIRED_NO_DATA';
@@ -15,12 +17,29 @@ export type PollerDiagnosticEvent =
   | {
       type: 'TRANSPORT_STALLED';
       pid: string;
-      reason: 'TIMEOUT' | 'WRITE_FAILED' | 'DISCONNECTED';
+      reason: StallReason;
       consecutiveFailures: number;
     };
 
 const TRANSPORT_FAILURE_THRESHOLD = 3;
+const UNUSABLE_RESPONSE_THRESHOLD = 6;
 const NO_DATA_RETIRE_THRESHOLD = 3;
+
+const isTransportFailure = (result: CommandResult) =>
+  result.status === 'TIMEOUT' ||
+  result.status === 'WRITE_FAILED' ||
+  result.status === 'DISCONNECTED';
+
+const provesVehiclePathProgress = (result: CommandResult) =>
+  result.status === 'SUCCESS_DECODED' ||
+  result.status === 'SUCCESS_RAW' ||
+  result.status === 'NO_DATA';
+
+const isUnusableResponse = (result: CommandResult) =>
+  result.status === 'ELM_ERROR' ||
+  result.status === 'INVALID_RESPONSE' ||
+  result.status === 'PARTIAL' ||
+  result.status === 'CANCELLED';
 
 export class RealTelemetryPoller {
   private controller: ObdCommandExecutor;
@@ -33,6 +52,7 @@ export class RealTelemetryPoller {
 
   private consecutiveFailures: Record<string, number> = {};
   private consecutiveTransportFailures = 0;
+  private consecutiveUnusableResponses = 0;
   private transportStallEmitted = false;
 
   constructor(
@@ -127,14 +147,15 @@ export class RealTelemetryPoller {
     }
   }
 
-  private resetTransportHealth() {
+  private resetLinkHealth() {
     this.consecutiveTransportFailures = 0;
+    this.consecutiveUnusableResponses = 0;
     this.transportStallEmitted = false;
   }
 
   private emitTransportStall(
     pid: string,
-    reason: 'TIMEOUT' | 'WRITE_FAILED' | 'DISCONNECTED',
+    reason: StallReason,
     consecutiveFailures: number,
   ) {
     if (this.transportStallEmitted) return;
@@ -157,20 +178,33 @@ export class RealTelemetryPoller {
     }
   }
 
-  private observeTransportHealth(pid: string, result: CommandResult) {
-    if (
-      result.status === 'TIMEOUT' ||
-      result.status === 'WRITE_FAILED' ||
-      result.status === 'DISCONNECTED'
-    ) {
-      this.recordTransportFailure(pid, result.status);
+  private observeLinkHealth(pid: string, result: CommandResult) {
+    if (isTransportFailure(result)) {
+      this.consecutiveUnusableResponses = 0;
+      this.recordTransportFailure(pid, result.status as 'TIMEOUT' | 'WRITE_FAILED' | 'DISCONNECTED');
       return;
     }
 
-    // Any typed non-transport result proves the command pipeline returned control.
-    // Transport failures are therefore genuinely consecutive, not accumulated across
-    // NO_DATA / ELM_ERROR / INVALID_RESPONSE / PARTIAL responses.
-    this.resetTransportHealth();
+    if (provesVehiclePathProgress(result)) {
+      // A decoded/raw vehicle response or an explicit NO_DATA proves the request
+      // round-trip is alive. Only this class of response fully resets link health.
+      this.resetLinkHealth();
+      return;
+    }
+
+    // Typed malformed/partial/adapter-error responses prove the JS pipeline returned,
+    // but they do NOT prove that the ECU path is healthy. A sufficiently long run of
+    // unusable replies is treated as a degraded vehicle path and enters the exact same
+    // bounded recovery used for timeouts. This is intentionally global across PIDs: an
+    // intermittent unsupported optional PID cannot trigger recovery when other signals
+    // are still returning usable vehicle-path evidence.
+    this.consecutiveTransportFailures = 0;
+    if (isUnusableResponse(result)) {
+      this.consecutiveUnusableResponses += 1;
+      if (this.consecutiveUnusableResponses >= UNUSABLE_RESPONSE_THRESHOLD) {
+        this.emitTransportStall(pid, 'UNUSABLE_RESPONSE', this.consecutiveUnusableResponses);
+      }
+    }
   }
 
   private retirePid(pid: string) {
@@ -184,7 +218,7 @@ export class RealTelemetryPoller {
   }
 
   private handleResult(pid: string, result: CommandResult) {
-    this.observeTransportHealth(pid, result);
+    this.observeLinkHealth(pid, result);
 
     if (result.status === 'NO_DATA') {
       this.consecutiveFailures[pid] = (this.consecutiveFailures[pid] || 0) + 1;
