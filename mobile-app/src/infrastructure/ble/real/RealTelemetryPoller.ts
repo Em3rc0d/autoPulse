@@ -1,5 +1,6 @@
 import { CommandRequest, CommandResult } from './pipeline/types';
 import { STANDARD_OBD_TIER_1 } from '../../../domain/obd/StandardObdCatalogV1';
+import { LIVE_OBD_REQUEST_ORDER } from '../../../domain/obd/LiveObdPollingPolicy';
 
 type ObdCommandExecutor = {
   isConnected: boolean;
@@ -20,7 +21,6 @@ export type PollerDiagnosticEvent =
 
 const TRANSPORT_FAILURE_THRESHOLD = 3;
 const NO_DATA_RETIRE_THRESHOLD = 3;
-const DEFAULT_POLL_REQUESTS = ['010C', '010D', '0105', '0104', '0111', '010B', '0142'] as const;
 
 export class RealTelemetryPoller {
   private controller: ObdCommandExecutor;
@@ -55,8 +55,8 @@ export class RealTelemetryPoller {
 
     if (this.supportedPids.length === 0) {
       // Capability discovery can fail even while the vehicle path is usable.
-      // Probe a bounded, decodable fallback set; unsupported commands self-retire on NO_DATA.
-      this.supportedPids = [...DEFAULT_POLL_REQUESTS];
+      // Probe only the bounded Driving View v2 set; unsupported commands self-retire.
+      this.supportedPids = [...LIVE_OBD_REQUEST_ORDER];
     }
 
     this.onData = onData;
