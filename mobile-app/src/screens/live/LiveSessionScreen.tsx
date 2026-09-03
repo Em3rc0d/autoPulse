@@ -21,6 +21,10 @@ import { useProductDb } from '../../infrastructure/hooks/useProductDb';
 import { LiveMetricCard } from './components/LiveMetricCard';
 import { DEMO_PROFILES } from '../../domain/telemetry/SignalProfiles';
 import { liveSessionRegistry } from '../../application/live/LiveSessionRegistry';
+import {
+  parseInitialAdapterVoltage,
+  routeLiveDecodedValues,
+} from '../../application/live/LiveDecodedSignalRouter';
 import { useSignalTracker } from './components/useSignalTracker';
 import { AppConfig } from '../../application/config';
 import { DiagnosticsLogScreen } from './DiagnosticsLogScreen';
@@ -66,12 +70,54 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
   const rpmTracker = useSignalTracker('ENGINE_RPM', useGeneric ? DEMO_PROFILES.ENGINE_RPM : { ...DEMO_PROFILES.ENGINE_RPM, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
   const speedTracker = useSignalTracker('VEHICLE_SPEED', useGeneric ? DEMO_PROFILES.VEHICLE_SPEED : { ...DEMO_PROFILES.VEHICLE_SPEED, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
   const coolantTracker = useSignalTracker('ENGINE_COOLANT', useGeneric ? DEMO_PROFILES.ENGINE_COOLANT : { ...DEMO_PROFILES.ENGINE_COOLANT, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
+  const loadTracker = useSignalTracker('ENGINE_LOAD', useGeneric ? DEMO_PROFILES.ENGINE_LOAD : { ...DEMO_PROFILES.ENGINE_LOAD, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
+  const throttleTracker = useSignalTracker('THROTTLE_POSITION', useGeneric ? DEMO_PROFILES.THROTTLE_POSITION : { ...DEMO_PROFILES.THROTTLE_POSITION, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
   const ecuVoltageTracker = useSignalTracker('ECU_VOLTAGE', useGeneric ? DEMO_PROFILES.CONTROL_VOLTAGE : { ...DEMO_PROFILES.CONTROL_VOLTAGE, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
   const adapterVoltageTracker = useSignalTracker('ADAPTER_VOLTAGE', useGeneric ? DEMO_PROFILES.CONTROL_VOLTAGE : { ...DEMO_PROFILES.CONTROL_VOLTAGE, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
 
   const productDb = useProductDb();
   const { context: localContext } = useLocalContext();
   const isStopping = React.useRef(false);
+  const initialAdapterVoltageValue = parseInitialAdapterVoltage(initialAdapterVoltage);
+
+  const applyDecodedValues = (decodedValues: readonly { type: string; value: unknown; unit?: string }[] | null | undefined) => {
+    const readings = routeLiveDecodedValues(decodedValues);
+    if (readings.length === 0) return;
+
+    const speedCtx = speedTracker.getContextSnapshot();
+    const rpmCtx = rpmTracker.getContextSnapshot();
+
+    readings.forEach(reading => {
+      switch (reading.signalId) {
+        case 'ENGINE_RPM':
+          setDataPoints(prev => {
+            const next = [...prev, reading.value];
+            if (next.length > 20) next.shift();
+            return next;
+          });
+          rpmTracker.update(reading.value, 'VALID', { speed: speedCtx });
+          break;
+        case 'VEHICLE_SPEED':
+          speedTracker.update(reading.value, 'VALID');
+          break;
+        case 'ENGINE_COOLANT':
+          coolantTracker.update(reading.value, 'VALID');
+          break;
+        case 'ENGINE_LOAD':
+          loadTracker.update(reading.value, 'VALID');
+          break;
+        case 'THROTTLE_POSITION':
+          throttleTracker.update(reading.value, 'VALID');
+          break;
+        case 'CONTROL_VOLTAGE':
+          ecuVoltageTracker.update(reading.value, 'VALID', { rpm: rpmCtx });
+          break;
+        case 'ADAPTER_VOLTAGE':
+          adapterVoltageTracker.update(reading.value, 'VALID', { rpm: rpmCtx });
+          break;
+      }
+    });
+  };
 
   const publishTerminalOutcome = (outcome: LiveSessionTerminalOutcome) => {
     setTerminalOutcome(outcome);
@@ -83,7 +129,7 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
       Vibration.vibrate([0, 120, 80, 120]);
       const spokenReason = reason === 'APP_BACKGROUND'
         ? 'because the app left the foreground'
-        : reason === 'DEVICE_DISCONNECTED'
+        : reason.startsWith('DEVICE_DISCONNECTED')
           ? 'because the diagnostic adapter disconnected'
           : 'unexpectedly';
       void speakDriverMessage(`AutoPulse session stopped ${spokenReason}. Saved vehicle data is available in History.`);
@@ -91,11 +137,13 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
   };
 
   useEffect(() => {
-    if (initialAdapterVoltage && adapterVoltageTracker.value === null) {
-      const match = String(initialAdapterVoltage).match(/(\d+(?:\.\d+)?)/);
-      adapterVoltageTracker.update(match ? Number(match[1]) : null, match ? 'VALID' : 'UNAVAILABLE');
+    if (adapterVoltageTracker.value !== null) return;
+    if (initialAdapterVoltageValue !== null) {
+      adapterVoltageTracker.update(initialAdapterVoltageValue, 'VALID');
+    } else if (initialAdapterVoltage !== null && initialAdapterVoltage !== undefined) {
+      adapterVoltageTracker.update(null, 'UNAVAILABLE');
     }
-  }, [initialAdapterVoltage]);
+  }, [initialAdapterVoltage, initialAdapterVoltageValue]);
 
   useEffect(() => {
     async function requestPermissions() {
@@ -159,16 +207,23 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
       const numPrev = typeof speedTracker.value === 'number' ? speedTracker.value : 0;
       const lastRpm = dataPoints.length > 0 ? dataPoints[dataPoints.length - 1] : 800;
       const targetSpeed = (lastRpm / 6500) * 120;
-      speedTracker.update(Math.max(0, numPrev + ((targetSpeed - numPrev) * 0.1) + (Math.random() - 0.5)), 'VALID');
+      const nextSpeed = Math.max(0, numPrev + ((targetSpeed - numPrev) * 0.1) + (Math.random() - 0.5));
+      speedTracker.update(nextSpeed, 'VALID');
 
       const coolantPrev = typeof coolantTracker.value === 'number' ? coolantTracker.value : 90;
       coolantTracker.update(Math.min(105, coolantPrev + (Math.random() * 0.05)), 'VALID');
 
+      // Preview-only synthetic demand signals exercise the same resolver wiring as ECU data.
+      const virtualLoad = Math.max(8, Math.min(95, 18 + (lastRpm / 90) + (nextSpeed * 0.18)));
+      const virtualThrottle = Math.max(3, Math.min(92, 5 + (virtualLoad * 0.62)));
+      loadTracker.update(virtualLoad, 'VALID');
+      throttleTracker.update(virtualThrottle, 'VALID');
+
       const voltagePrev = typeof adapterVoltageTracker.value === 'number' ? adapterVoltageTracker.value : 14.1;
-      const drift = (Math.random() - 0.5) * 0.05;
+      const voltageDrift = (Math.random() - 0.5) * 0.05;
       const virtualRpmCtx = { value: 800, quality: 'VALID' as any, observedAt: Date.now() };
-      adapterVoltageTracker.update(Math.max(13.8, Math.min(14.4, voltagePrev + drift)), 'VALID', { rpm: virtualRpmCtx });
-      ecuVoltageTracker.update(Math.max(13.7, Math.min(14.7, voltagePrev + drift)), 'VALID', { rpm: virtualRpmCtx });
+      adapterVoltageTracker.update(Math.max(13.8, Math.min(14.4, voltagePrev + voltageDrift)), 'VALID', { rpm: virtualRpmCtx });
+      ecuVoltageTracker.update(Math.max(13.7, Math.min(14.7, voltagePrev + voltageDrift)), 'VALID', { rpm: virtualRpmCtx });
     }, 500);
     return () => clearInterval(simulator);
   }, [adapterMode, dataPoints, terminalOutcome]);
@@ -187,6 +242,7 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
         sessionId,
         connectionHandleId,
         supportedPids || [],
+        initialAdapterVoltageValue !== null,
       );
       liveSessionRegistry.registerController(sessionId, controller);
     }
@@ -197,56 +253,28 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
         setFirstEcuSampleAt(previous => previous ?? Date.now());
       }
 
-      if (result.status === 'NO_DATA' || result.status === 'TIMEOUT' || result.status === 'INVALID_RESPONSE' || result.status === 'ELM_ERROR') return;
-
-      const reading = result.status === 'SUCCESS_DECODED' ? result.decodedValues[0] : null;
-      if (!reading || reading.value === null) return;
-
-      const speedCtx = speedTracker.getContextSnapshot();
-      const rpmCtx = rpmTracker.getContextSnapshot();
-
-      if (reading.type === 'RPM') {
-        setDataPoints(prev => {
-          const next = [...prev, reading.value as number];
-          if (next.length > 20) next.shift();
-          return next;
-        });
-        rpmTracker.update(reading.value as number, 'VALID', { speed: speedCtx });
-      }
-      if (reading.type === 'SPEED') speedTracker.update(reading.value as number, 'VALID');
-      if (reading.type === 'COOLANT') coolantTracker.update(reading.value as number, 'VALID');
-      if (reading.type === 'ECU_VOLTAGE') ecuVoltageTracker.update(reading.value as number, 'VALID', { rpm: rpmCtx });
-      if (reading.type === 'ADAPTER_VOLTAGE') adapterVoltageTracker.update(reading.value as number, 'VALID', { rpm: rpmCtx });
+      if (result.status !== 'SUCCESS_DECODED') return;
+      applyDecodedValues(result.decodedValues);
     }, (error) => {
       setSessionError(error);
     }, publishTerminalOutcome);
 
     setSessionController(controller);
     return () => undefined;
-  }, [adapterMode, connectionHandleId, supportedPids, localContext, productDb, sessionId]);
+  }, [adapterMode, connectionHandleId, supportedPids, localContext, productDb, sessionId, initialAdapterVoltageValue]);
 
   useEffect(() => {
     if (adapterMode !== 'REPLAY_WS' || !replayUrl || terminalOutcome) return;
 
     const controller = new ReplayObdController(replayUrl);
-    const poller = new RealTelemetryPoller(controller, ['010C', '010D', '0105', 'ATRV'], (result) => {
-      const reading = result.status === 'SUCCESS_DECODED' ? result.decodedValues[0] : null;
-      if (!reading || reading.value === null) return;
-      const speedCtx = speedTracker.getContextSnapshot();
-      const rpmCtx = rpmTracker.getContextSnapshot();
-      if (reading.type === 'RPM') {
-        setDataPoints(prev => {
-          const next = [...prev, reading.value as number];
-          if (next.length > 20) next.shift();
-          return next;
-        });
-        rpmTracker.update(reading.value as number, 'VALID', { speed: speedCtx });
-      }
-      if (reading.type === 'SPEED') speedTracker.update(reading.value as number, 'VALID');
-      if (reading.type === 'COOLANT') coolantTracker.update(reading.value as number, 'VALID');
-      if (reading.type === 'ECU_VOLTAGE') ecuVoltageTracker.update(reading.value as number, 'VALID', { rpm: rpmCtx });
-      if (reading.type === 'ADAPTER_VOLTAGE') adapterVoltageTracker.update(reading.value as number, 'VALID', { rpm: rpmCtx });
-    });
+    const poller = new RealTelemetryPoller(
+      controller,
+      ['010C', '010D', '0105', '0104', '0111', '0142', 'ATRV'],
+      result => {
+        if (result.status !== 'SUCCESS_DECODED') return;
+        applyDecodedValues(result.decodedValues);
+      },
+    );
 
     controller.connect().then(() => poller.start(300)).catch(error => console.error('[OBD Replay] Connection failed', error));
     return () => {
@@ -350,11 +378,13 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         <View style={styles.grid}>
-          <LiveMetricCard label="Engine RPM" value={rpmTracker.value} unit="rpm" state={rpmTracker.advisoryState} stats={rpmTracker.stats} profile={DEMO_PROFILES.ENGINE_RPM} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-engine-rpm" />
-          <LiveMetricCard label="Vehicle Speed" value={speedTracker.value} unit="km/h" state={speedTracker.advisoryState} stats={speedTracker.stats} profile={DEMO_PROFILES.VEHICLE_SPEED} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-vehicle-speed" />
-          <LiveMetricCard label="Engine Coolant" value={coolantTracker.value} unit="°C" state={coolantTracker.advisoryState} stats={coolantTracker.stats} profile={DEMO_PROFILES.ENGINE_COOLANT} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-engine-coolant" />
-          <LiveMetricCard label="ECU Voltage" value={ecuVoltageTracker.value} unit="V" state={ecuVoltageTracker.advisoryState} stats={ecuVoltageTracker.stats} profile={DEMO_PROFILES.CONTROL_VOLTAGE} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-ecu-voltage" />
-          <LiveMetricCard label="Adapter Voltage" value={adapterVoltageTracker.value} unit="V" state={adapterVoltageTracker.advisoryState} stats={adapterVoltageTracker.stats} profile={DEMO_PROFILES.CONTROL_VOLTAGE} origin={adapterMode === 'REAL_BLE' ? 'Adapter measurement' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-adapter-voltage" />
+          <LiveMetricCard label="Engine RPM" value={rpmTracker.value} unit="rpm" state={rpmTracker.advisoryState} stats={rpmTracker.stats} profile={DEMO_PROFILES.ENGINE_RPM} observedAt={rpmTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-engine-rpm" />
+          <LiveMetricCard label="Vehicle Speed" value={speedTracker.value} unit="km/h" state={speedTracker.advisoryState} stats={speedTracker.stats} profile={DEMO_PROFILES.VEHICLE_SPEED} observedAt={speedTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-vehicle-speed" />
+          <LiveMetricCard label="Engine Coolant" value={coolantTracker.value} unit="°C" state={coolantTracker.advisoryState} stats={coolantTracker.stats} profile={DEMO_PROFILES.ENGINE_COOLANT} observedAt={coolantTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-engine-coolant" />
+          <LiveMetricCard label="Engine Load" value={loadTracker.value} unit="%" state={loadTracker.advisoryState} stats={loadTracker.stats} profile={DEMO_PROFILES.ENGINE_LOAD} observedAt={loadTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-engine-load" />
+          <LiveMetricCard label="Throttle Position" value={throttleTracker.value} unit="%" state={throttleTracker.advisoryState} stats={throttleTracker.stats} profile={DEMO_PROFILES.THROTTLE_POSITION} observedAt={throttleTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-throttle-position" />
+          <LiveMetricCard label="ECU Voltage" value={ecuVoltageTracker.value} unit="V" state={ecuVoltageTracker.advisoryState} stats={ecuVoltageTracker.stats} profile={DEMO_PROFILES.CONTROL_VOLTAGE} observedAt={ecuVoltageTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-ecu-voltage" />
+          <LiveMetricCard label="Adapter Voltage" value={adapterVoltageTracker.value} unit="V" state={adapterVoltageTracker.advisoryState} stats={adapterVoltageTracker.stats} profile={DEMO_PROFILES.CONTROL_VOLTAGE} observedAt={adapterVoltageTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'Adapter measurement' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-adapter-voltage" />
         </View>
 
         {supplement}
