@@ -108,8 +108,8 @@ function SafetyOrModePrimary({
   }
 
   if (alert?.key === 'ENGINE_HOT' || alert?.key === 'TEMP_RISING') {
-    const coolant = [presentation.primary, presentation.secondaryA, presentation.secondaryB]
-      .find(metric => metric?.signalId === 'ENGINE_COOLANT');
+    const thermal = presentation.evidenceByDimension.THERMAL;
+    const coolant = thermal?.signalId === 'ENGINE_COOLANT' ? thermal : undefined;
     if (coolant) {
       const formatted = formatMetric(coolant);
       return (
@@ -175,7 +175,8 @@ function DrivingPresentationSurface({
 }) {
   const unresolved = alertEpisode.state === 'UNRESOLVED';
   const severity = unresolved ? alertEpisode.peakSeverity : alert?.severity;
-  const tone = toneForSeverity(severity);
+  const visualSeverity = severity ?? (motionState === 'UNKNOWN' ? 'S1_ADVISORY' : undefined);
+  const tone = toneForSeverity(visualSeverity);
   const headline = alert
     ? driverAlertPhrase(alert.key, 'en-US').replace(/\.$/, '')
     : unresolved
