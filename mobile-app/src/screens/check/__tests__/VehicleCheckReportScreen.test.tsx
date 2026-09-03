@@ -9,6 +9,10 @@ jest.mock('@react-navigation/native', () => ({
   useRoute: () => ({ params: { sessionId: 'session-1', vehicleId: 'vehicle-1' } }),
 }));
 
+jest.mock('../../../application/diagnostics/CompatibilityPersistence', () => ({
+  loadSessionCompatibilitySnapshot: jest.fn(),
+}));
+
 jest.mock('../../../infrastructure/hooks/useProductDb', () => ({
   useProductDb: () => ({}),
 }));
