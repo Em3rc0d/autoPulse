@@ -11,7 +11,8 @@ export type DriverAlertKey =
   | 'LOW_VOLTAGE'
   | 'OIL_PRESSURE'
   | 'FIRE_RISK'
-  | 'SIGNAL_LOST';
+  | 'SIGNAL_LOST'
+  | 'SESSION_INTERRUPTED';
 
 export interface DriverAlertDefinition {
   key: DriverAlertKey;
@@ -31,6 +32,7 @@ export const DRIVER_ALERT_LEXICON: Record<DriverAlertKey, DriverAlertDefinition>
   OIL_PRESSURE: { key: 'OIL_PRESSURE', severity: 'S3_CRITICAL', icon: '!', en: 'STOP. OIL PRESSURE.', es: 'ALTO. PRESIÓN DE ACEITE.' },
   FIRE_RISK: { key: 'FIRE_RISK', severity: 'S3_CRITICAL', icon: '!', en: 'STOP. FIRE RISK.', es: 'ALTO. RIESGO DE FUEGO.' },
   SIGNAL_LOST: { key: 'SIGNAL_LOST', severity: 'S1_ADVISORY', icon: '▲', en: 'SIGNAL LOST.', es: 'SEÑAL PERDIDA.' },
+  SESSION_INTERRUPTED: { key: 'SESSION_INTERRUPTED', severity: 'S2_ATTENTION', icon: '▲', en: 'AUTOPULSE SESSION STOPPED.', es: 'SESIÓN AUTOPULSE DETENIDA.' },
 };
 
 export function driverAlertPhrase(key: DriverAlertKey, language: VoiceLanguage): string {
