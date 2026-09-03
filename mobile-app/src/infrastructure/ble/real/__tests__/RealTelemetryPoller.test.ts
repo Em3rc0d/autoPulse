@@ -21,9 +21,16 @@ describe('RealTelemetryPoller', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+    jest.restoreAllMocks();
   });
 
-  it('retires a PID after 3 consecutive NO_DATA', async () => {
+  const advanceOne = async (ms = 15) => {
+    await Promise.resolve();
+    jest.advanceTimersByTime(ms);
+    await Promise.resolve();
+  };
+
+  it('retires a PID after 3 truly consecutive NO_DATA', async () => {
     mockExecutor.executeCommand.mockResolvedValue({
       status: 'NO_DATA',
       request: {} as any,
@@ -33,10 +40,8 @@ describe('RealTelemetryPoller', () => {
     const poller = new RealTelemetryPoller(mockExecutor, ['010C'], onData, onDiagnostic);
     poller.start(10);
 
-    await Promise.resolve();
-    jest.advanceTimersByTime(15);
-    await Promise.resolve();
-    jest.advanceTimersByTime(15);
+    await advanceOne();
+    await advanceOne();
     await Promise.resolve();
 
     expect(onData).toHaveBeenCalledTimes(3);
@@ -47,7 +52,7 @@ describe('RealTelemetryPoller', () => {
     expect(mockExecutor.executeCommand).toHaveBeenCalledTimes(3);
   });
 
-  it('polls any discovered Tier-1 catalog PID and rejects unknown requests', async () => {
+  it('normalizes discovered Tier-1 requests, deduplicates and rejects unknown requests', async () => {
     mockExecutor.executeCommand.mockResolvedValue({
       status: 'SUCCESS_DECODED',
       request: {} as any,
@@ -56,7 +61,7 @@ describe('RealTelemetryPoller', () => {
 
     const poller = new RealTelemetryPoller(
       mockExecutor,
-      ['FFFF', '0104', '0104'],
+      ['FFFF', ' 0104 ', '0104'],
       onData,
       onDiagnostic
     );
@@ -75,24 +80,39 @@ describe('RealTelemetryPoller', () => {
     );
   });
 
-  it('resets NO_DATA counter on SUCCESS_DECODED', async () => {
+  it('accepts lowercase discovered requests after normalization', async () => {
+    mockExecutor.executeCommand.mockResolvedValue({
+      status: 'SUCCESS_DECODED',
+      request: {} as any,
+      rawResponse: {} as any
+    } as any);
+
+    const poller = new RealTelemetryPoller(mockExecutor, ['0111'.toLowerCase()], onData, onDiagnostic);
+    poller.start(10);
+    await Promise.resolve();
+    poller.stop();
+
+    expect(mockExecutor.executeCommand).toHaveBeenCalledWith(
+      expect.objectContaining({ command: '0111', expectedPid: '11' })
+    );
+  });
+
+  it('breaks the NO_DATA streak on any other typed result', async () => {
     mockExecutor.executeCommand
       .mockResolvedValue({ status: 'SUCCESS_DECODED', request: {} as any, rawResponse: {} as any } as any)
       .mockResolvedValueOnce({ status: 'NO_DATA', request: {} as any, rawResponse: {} as any } as any)
       .mockResolvedValueOnce({ status: 'NO_DATA', request: {} as any, rawResponse: {} as any } as any)
-      .mockResolvedValueOnce({ status: 'SUCCESS_DECODED', request: {} as any, rawResponse: {} as any } as any)
+      .mockResolvedValueOnce({ status: 'ELM_ERROR', request: {} as any, rawResponse: {} as any } as any)
       .mockResolvedValueOnce({ status: 'NO_DATA', request: {} as any, rawResponse: {} as any } as any);
 
     const poller = new RealTelemetryPoller(mockExecutor, ['010C'], onData, onDiagnostic);
     poller.start(10);
 
-    for (let i = 0; i < 4; i++) {
-      await Promise.resolve();
-      jest.advanceTimersByTime(15);
-    }
+    for (let i = 0; i < 4; i++) await advanceOne();
 
-    expect(onDiagnostic).not.toHaveBeenCalled();
+    expect(onDiagnostic).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'PID_RETIRED_NO_DATA' }));
     expect(mockExecutor.executeCommand).toHaveBeenCalledTimes(5);
+    poller.stop();
   });
 
   it('emits one TRANSPORT_STALLED after three consecutive transport failures', async () => {
@@ -105,10 +125,9 @@ describe('RealTelemetryPoller', () => {
     const poller = new RealTelemetryPoller(mockExecutor, ['010C', '010D'], onData, onDiagnostic);
     poller.start(10);
 
-    for (let i = 0; i < 3; i++) {
-      await Promise.resolve();
-      if (i < 2) jest.advanceTimersByTime(15);
-    }
+    await advanceOne();
+    await advanceOne();
+    await Promise.resolve();
 
     expect(onDiagnostic).toHaveBeenCalledTimes(1);
     expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
@@ -116,14 +135,15 @@ describe('RealTelemetryPoller', () => {
       reason: 'TIMEOUT',
       consecutiveFailures: 3,
     }));
+    poller.stop();
   });
 
-  it('does not treat NO_DATA or ELM_ERROR as a transport stall', async () => {
+  it('resets transport failure streak on any typed non-transport result', async () => {
     mockExecutor.executeCommand
       .mockResolvedValue({ status: 'SUCCESS_DECODED', request: {} as any, rawResponse: {} as any } as any)
       .mockResolvedValueOnce({ status: 'TIMEOUT', request: {} as any, rawResponse: {} as any } as any)
       .mockResolvedValueOnce({ status: 'TIMEOUT', request: {} as any, rawResponse: {} as any } as any)
-      .mockResolvedValueOnce({ status: 'NO_DATA', request: {} as any, rawResponse: {} as any } as any)
+      .mockResolvedValueOnce({ status: 'INVALID_RESPONSE', request: {} as any, rawResponse: {} as any } as any)
       .mockResolvedValueOnce({ status: 'TIMEOUT', request: {} as any, rawResponse: {} as any } as any)
       .mockResolvedValueOnce({ status: 'ELM_ERROR', request: {} as any, rawResponse: {} as any } as any)
       .mockResolvedValueOnce({ status: 'TIMEOUT', request: {} as any, rawResponse: {} as any } as any);
@@ -131,11 +151,46 @@ describe('RealTelemetryPoller', () => {
     const poller = new RealTelemetryPoller(mockExecutor, ['010C', '010D'], onData, onDiagnostic);
     poller.start(10);
 
-    for (let i = 0; i < 6; i++) {
-      await Promise.resolve();
-      if (i < 5) jest.advanceTimersByTime(15);
-    }
+    for (let i = 0; i < 6; i++) await advanceOne();
 
     expect(onDiagnostic).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'TRANSPORT_STALLED' }));
+    poller.stop();
+  });
+
+  it('contains thrown executor errors and keeps polling until bounded recovery is requested', async () => {
+    jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    mockExecutor.executeCommand.mockRejectedValue(new Error('socket exploded'));
+
+    const poller = new RealTelemetryPoller(mockExecutor, ['010C'], onData, onDiagnostic);
+    poller.start(10);
+
+    await advanceOne();
+    await advanceOne();
+    await Promise.resolve();
+
+    expect(mockExecutor.executeCommand).toHaveBeenCalledTimes(3);
+    expect(onData).not.toHaveBeenCalled();
+    expect(onDiagnostic).toHaveBeenCalledTimes(1);
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'TRANSPORT_STALLED',
+      reason: 'WRITE_FAILED',
+      consecutiveFailures: 3,
+    }));
+    poller.stop();
+  });
+
+  it('surfaces an already-disconnected controller instead of silently stopping', async () => {
+    mockExecutor.isConnected = false;
+    const poller = new RealTelemetryPoller(mockExecutor, ['010C'], onData, onDiagnostic);
+
+    poller.start(10);
+    await Promise.resolve();
+
+    expect(mockExecutor.executeCommand).not.toHaveBeenCalled();
+    expect(onDiagnostic).toHaveBeenCalledTimes(1);
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'TRANSPORT_STALLED',
+      reason: 'DISCONNECTED',
+    }));
   });
 });
