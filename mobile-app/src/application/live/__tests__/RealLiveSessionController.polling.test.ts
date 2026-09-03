@@ -31,6 +31,18 @@ describe('RealLiveSessionController polling contract', () => {
     expect((controller as any).livePollRequests()).toEqual(['010C', 'ATRV']);
   });
 
+  it('drops unrelated catalog signals from the live freshness budget', () => {
+    const controller = createController(['010B', '0110', '0105', '0111', '010D']);
+    expect((controller as any).livePollRequests()).toEqual(['0105', '010D', '0111']);
+  });
+
+  it('uses bounded evidence-seeking probes when discovery produced no driver signal', () => {
+    const controller = createController(['010B', '0110']);
+    expect((controller as any).livePollRequests()).toEqual([
+      '0105', '010D', '010C', '0104', '0111', '0142',
+    ]);
+  });
+
   it('classifies a hard disconnect as DEVICE_DISCONNECTED recovery', async () => {
     const controller = createController(['010C']);
     (controller as any).currentState = 'ACTIVE';
