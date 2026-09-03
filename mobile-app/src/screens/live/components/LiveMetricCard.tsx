@@ -61,11 +61,20 @@ export function LiveMetricCard(props: Props) {
         observedAt: props.observedAt ?? Date.now(),
       });
     }
-    // observedAt is intentionally part of the dependency list: repeated identical
-    // ECU values are still fresh observations and must refresh Motion/Trust state.
+    // validReadingCount is intentionally a dependency: repeated identical ECU values
+    // are still new observations and must refresh Motion/Trust state.
     // The context object is omitted because its identity changes when observations publish.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signalId, props.value, props.unit, props.observedAt, driverQuality, props.state.advisory, props.state.calibration]);
+  }, [
+    signalId,
+    props.value,
+    props.unit,
+    props.observedAt,
+    props.stats.validReadingCount,
+    driverQuality,
+    props.state.advisory,
+    props.state.calibration,
+  ]);
 
   if (!driverMode || !signalId) {
     return <BaseLiveMetricCard {...props} />;
