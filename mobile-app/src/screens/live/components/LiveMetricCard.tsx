@@ -24,6 +24,8 @@ const SIGNAL_BY_LABEL: Record<string, string> = {
   'Engine RPM': 'ENGINE_RPM',
   'Vehicle Speed': 'VEHICLE_SPEED',
   'Engine Coolant': 'ENGINE_COOLANT',
+  'Engine Load': 'ENGINE_LOAD',
+  'Throttle Position': 'THROTTLE_POSITION',
   'ECU Voltage': 'CONTROL_VOLTAGE',
   'Adapter Voltage': 'ADAPTER_VOLTAGE',
 };
