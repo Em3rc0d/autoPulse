@@ -34,6 +34,7 @@ export interface DrivingModePresentation {
   primary?: ResolvedDrivingMetric;
   secondaryA?: ResolvedDrivingMetric;
   secondaryB?: ResolvedDrivingMetric;
+  evidenceByDimension: Partial<Record<DrivingDimension, ResolvedDrivingMetric>>;
 }
 
 interface Candidate {
@@ -168,6 +169,18 @@ function readyContractSatisfied(mode: DrivingMode, metrics: readonly ResolvedDri
   );
 }
 
+function collectDimensionEvidence(
+  observations: Readonly<Record<string, DrivingEvidenceObservation>>,
+  nowMs: number,
+): Partial<Record<DrivingDimension, ResolvedDrivingMetric>> {
+  const result: Partial<Record<DrivingDimension, ResolvedDrivingMetric>> = {};
+  (Object.keys(DIMENSIONS) as DrivingDimension[]).forEach(dimension => {
+    const metric = resolveDimension(dimension, observations, new Set<string>(), nowMs);
+    if (metric) result[dimension] = metric;
+  });
+  return result;
+}
+
 export function resolveDrivingModePresentation(
   mode: DrivingMode,
   observations: Readonly<Record<string, DrivingEvidenceObservation>>,
@@ -176,6 +189,7 @@ export function resolveDrivingModePresentation(
   const definition = MODES[mode];
   const usedSignals = new Set<string>();
   const metrics: ResolvedDrivingMetric[] = [];
+  const evidenceByDimension = collectDimensionEvidence(observations, nowMs);
 
   for (const dimension of definition.slots) {
     const metric = resolveDimension(dimension, observations, usedSignals, nowMs);
@@ -186,7 +200,7 @@ export function resolveDrivingModePresentation(
   }
 
   if (metrics.length === 0) {
-    return { mode, readiness: 'UNAVAILABLE', stateFirst: definition.stateFirst };
+    return { mode, readiness: 'UNAVAILABLE', stateFirst: definition.stateFirst, evidenceByDimension };
   }
 
   const readiness: ModeReadiness = readyContractSatisfied(mode, metrics)
@@ -202,5 +216,6 @@ export function resolveDrivingModePresentation(
     primary: metrics[0],
     secondaryA: metrics[1],
     secondaryB: metrics[2],
+    evidenceByDimension,
   };
 }
