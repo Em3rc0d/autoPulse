@@ -43,7 +43,10 @@ describe('RealLiveSessionController polling contract', () => {
     ]);
   });
 
-  it('classifies a hard disconnect as DEVICE_DISCONNECTED recovery', async () => {
+  const expectRecoveryFor = async (
+    reason: 'DISCONNECTED' | 'TIMEOUT' | 'WRITE_FAILED' | 'UNUSABLE_RESPONSE',
+    expected: 'DEVICE_DISCONNECTED' | 'ECU_RESPONSE_LOST',
+  ) => {
     const controller = createController(['010C']);
     (controller as any).currentState = 'ACTIVE';
     const recovery = jest.spyOn(controller, 'attemptConnectionRecovery').mockResolvedValue(true);
@@ -52,28 +55,24 @@ describe('RealLiveSessionController polling contract', () => {
     (controller as any).handlePollerDiagnostic({
       type: 'TRANSPORT_STALLED',
       pid: '010C',
-      reason: 'DISCONNECTED',
-      consecutiveFailures: 3,
+      reason,
+      consecutiveFailures: reason === 'UNUSABLE_RESPONSE' ? 6 : 3,
     }, connection);
 
     await Promise.resolve();
-    expect(recovery).toHaveBeenCalledWith('DEVICE_DISCONNECTED', connection);
+    expect(recovery).toHaveBeenCalledWith(expected, connection);
+  };
+
+  it('classifies a hard disconnect as DEVICE_DISCONNECTED recovery', async () => {
+    await expectRecoveryFor('DISCONNECTED', 'DEVICE_DISCONNECTED');
   });
 
   it('classifies timeout/write stalls as ECU_RESPONSE_LOST recovery', async () => {
-    const controller = createController(['010C']);
-    (controller as any).currentState = 'ACTIVE';
-    const recovery = jest.spyOn(controller, 'attemptConnectionRecovery').mockResolvedValue(true);
-    const connection = {} as any;
+    await expectRecoveryFor('TIMEOUT', 'ECU_RESPONSE_LOST');
+    await expectRecoveryFor('WRITE_FAILED', 'ECU_RESPONSE_LOST');
+  });
 
-    (controller as any).handlePollerDiagnostic({
-      type: 'TRANSPORT_STALLED',
-      pid: '010C',
-      reason: 'TIMEOUT',
-      consecutiveFailures: 3,
-    }, connection);
-
-    await Promise.resolve();
-    expect(recovery).toHaveBeenCalledWith('ECU_RESPONSE_LOST', connection);
+  it('classifies sustained malformed/partial replies as ECU_RESPONSE_LOST recovery', async () => {
+    await expectRecoveryFor('UNUSABLE_RESPONSE', 'ECU_RESPONSE_LOST');
   });
 });
