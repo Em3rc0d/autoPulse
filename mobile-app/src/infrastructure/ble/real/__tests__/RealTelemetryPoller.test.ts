@@ -24,6 +24,12 @@ describe('RealTelemetryPoller', () => {
     jest.restoreAllMocks();
   });
 
+  const result = (status: CommandResult['status']) => ({
+    status,
+    request: {} as any,
+    rawResponse: {} as any,
+  } as any);
+
   const advanceOne = async (ms = 15) => {
     await Promise.resolve();
     jest.advanceTimersByTime(ms);
@@ -31,11 +37,7 @@ describe('RealTelemetryPoller', () => {
   };
 
   it('retires a PID after 3 truly consecutive NO_DATA', async () => {
-    mockExecutor.executeCommand.mockResolvedValue({
-      status: 'NO_DATA',
-      request: {} as any,
-      rawResponse: {} as any
-    } as any);
+    mockExecutor.executeCommand.mockResolvedValue(result('NO_DATA'));
 
     const poller = new RealTelemetryPoller(mockExecutor, ['010C'], onData, onDiagnostic);
     poller.start(10);
@@ -53,11 +55,7 @@ describe('RealTelemetryPoller', () => {
   });
 
   it('normalizes discovered Tier-1 requests, deduplicates and rejects unknown requests', async () => {
-    mockExecutor.executeCommand.mockResolvedValue({
-      status: 'SUCCESS_DECODED',
-      request: {} as any,
-      rawResponse: {} as any
-    } as any);
+    mockExecutor.executeCommand.mockResolvedValue(result('SUCCESS_DECODED'));
 
     const poller = new RealTelemetryPoller(
       mockExecutor,
@@ -81,11 +79,7 @@ describe('RealTelemetryPoller', () => {
   });
 
   it('accepts request ids containing lowercase hex characters after normalization', async () => {
-    mockExecutor.executeCommand.mockResolvedValue({
-      status: 'SUCCESS_DECODED',
-      request: {} as any,
-      rawResponse: {} as any
-    } as any);
+    mockExecutor.executeCommand.mockResolvedValue(result('SUCCESS_DECODED'));
 
     const poller = new RealTelemetryPoller(mockExecutor, ['010b'], onData, onDiagnostic);
     poller.start(10);
@@ -98,11 +92,7 @@ describe('RealTelemetryPoller', () => {
   });
 
   it('falls back to the driver-critical set instead of unrelated diagnostic signals', async () => {
-    mockExecutor.executeCommand.mockResolvedValue({
-      status: 'SUCCESS_DECODED',
-      request: {} as any,
-      rawResponse: {} as any
-    } as any);
+    mockExecutor.executeCommand.mockResolvedValue(result('SUCCESS_DECODED'));
 
     const poller = new RealTelemetryPoller(mockExecutor, ['FFFF'], onData, onDiagnostic);
     poller.start(10);
@@ -116,11 +106,11 @@ describe('RealTelemetryPoller', () => {
 
   it('breaks the NO_DATA streak on any other typed result', async () => {
     mockExecutor.executeCommand
-      .mockResolvedValue({ status: 'SUCCESS_DECODED', request: {} as any, rawResponse: {} as any } as any)
-      .mockResolvedValueOnce({ status: 'NO_DATA', request: {} as any, rawResponse: {} as any } as any)
-      .mockResolvedValueOnce({ status: 'NO_DATA', request: {} as any, rawResponse: {} as any } as any)
-      .mockResolvedValueOnce({ status: 'ELM_ERROR', request: {} as any, rawResponse: {} as any } as any)
-      .mockResolvedValueOnce({ status: 'NO_DATA', request: {} as any, rawResponse: {} as any } as any);
+      .mockResolvedValue(result('SUCCESS_DECODED'))
+      .mockResolvedValueOnce(result('NO_DATA'))
+      .mockResolvedValueOnce(result('NO_DATA'))
+      .mockResolvedValueOnce(result('ELM_ERROR'))
+      .mockResolvedValueOnce(result('NO_DATA'));
 
     const poller = new RealTelemetryPoller(mockExecutor, ['010C'], onData, onDiagnostic);
     poller.start(10);
@@ -133,11 +123,7 @@ describe('RealTelemetryPoller', () => {
   });
 
   it('emits one TRANSPORT_STALLED after three consecutive transport failures', async () => {
-    mockExecutor.executeCommand.mockResolvedValue({
-      status: 'TIMEOUT',
-      request: {} as any,
-      rawResponse: {} as any
-    } as any);
+    mockExecutor.executeCommand.mockResolvedValue(result('TIMEOUT'));
 
     const poller = new RealTelemetryPoller(mockExecutor, ['010C', '010D'], onData, onDiagnostic);
     poller.start(10);
@@ -155,22 +141,88 @@ describe('RealTelemetryPoller', () => {
     poller.stop();
   });
 
-  it('resets transport failure streak on any typed non-transport result', async () => {
+  it('does not accumulate hard transport failures across typed pipeline replies', async () => {
     mockExecutor.executeCommand
-      .mockResolvedValue({ status: 'SUCCESS_DECODED', request: {} as any, rawResponse: {} as any } as any)
-      .mockResolvedValueOnce({ status: 'TIMEOUT', request: {} as any, rawResponse: {} as any } as any)
-      .mockResolvedValueOnce({ status: 'TIMEOUT', request: {} as any, rawResponse: {} as any } as any)
-      .mockResolvedValueOnce({ status: 'INVALID_RESPONSE', request: {} as any, rawResponse: {} as any } as any)
-      .mockResolvedValueOnce({ status: 'TIMEOUT', request: {} as any, rawResponse: {} as any } as any)
-      .mockResolvedValueOnce({ status: 'ELM_ERROR', request: {} as any, rawResponse: {} as any } as any)
-      .mockResolvedValueOnce({ status: 'TIMEOUT', request: {} as any, rawResponse: {} as any } as any);
+      .mockResolvedValue(result('SUCCESS_DECODED'))
+      .mockResolvedValueOnce(result('TIMEOUT'))
+      .mockResolvedValueOnce(result('TIMEOUT'))
+      .mockResolvedValueOnce(result('INVALID_RESPONSE'))
+      .mockResolvedValueOnce(result('TIMEOUT'))
+      .mockResolvedValueOnce(result('ELM_ERROR'))
+      .mockResolvedValueOnce(result('TIMEOUT'));
 
     const poller = new RealTelemetryPoller(mockExecutor, ['010C', '010D'], onData, onDiagnostic);
     poller.start(10);
 
     for (let i = 0; i < 6; i++) await advanceOne();
 
-    expect(onDiagnostic).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'TRANSPORT_STALLED' }));
+    expect(onDiagnostic).not.toHaveBeenCalledWith(expect.objectContaining({
+      type: 'TRANSPORT_STALLED',
+      reason: 'TIMEOUT',
+    }));
+    poller.stop();
+  });
+
+  it('enters bounded recovery after a sustained run of unusable ECU-path responses', async () => {
+    mockExecutor.executeCommand.mockResolvedValue(result('INVALID_RESPONSE'));
+
+    const poller = new RealTelemetryPoller(mockExecutor, ['010C', '010D'], onData, onDiagnostic);
+    poller.start(10);
+
+    for (let i = 0; i < 5; i++) await advanceOne();
+    await Promise.resolve();
+
+    expect(onDiagnostic).toHaveBeenCalledTimes(1);
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'TRANSPORT_STALLED',
+      reason: 'UNUSABLE_RESPONSE',
+      consecutiveFailures: 6,
+    }));
+    poller.stop();
+  });
+
+  it('resets degraded-response health only when the vehicle path produces usable evidence', async () => {
+    mockExecutor.executeCommand
+      .mockResolvedValue(result('INVALID_RESPONSE'))
+      .mockResolvedValueOnce(result('INVALID_RESPONSE'))
+      .mockResolvedValueOnce(result('ELM_ERROR'))
+      .mockResolvedValueOnce(result('PARTIAL'))
+      .mockResolvedValueOnce(result('SUCCESS_DECODED'))
+      .mockResolvedValueOnce(result('INVALID_RESPONSE'))
+      .mockResolvedValueOnce(result('ELM_ERROR'))
+      .mockResolvedValueOnce(result('PARTIAL'));
+
+    const poller = new RealTelemetryPoller(mockExecutor, ['010C', '010D'], onData, onDiagnostic);
+    poller.start(10);
+
+    for (let i = 0; i < 7; i++) await advanceOne();
+
+    expect(onDiagnostic).not.toHaveBeenCalledWith(expect.objectContaining({
+      type: 'TRANSPORT_STALLED',
+      reason: 'UNUSABLE_RESPONSE',
+    }));
+    poller.stop();
+  });
+
+  it('does not mistake an optional bad PID for a dead link when other PIDs keep succeeding', async () => {
+    mockExecutor.executeCommand
+      .mockResolvedValueOnce(result('ELM_ERROR'))
+      .mockResolvedValueOnce(result('SUCCESS_DECODED'))
+      .mockResolvedValueOnce(result('ELM_ERROR'))
+      .mockResolvedValueOnce(result('SUCCESS_DECODED'))
+      .mockResolvedValueOnce(result('ELM_ERROR'))
+      .mockResolvedValueOnce(result('SUCCESS_DECODED'))
+      .mockResolvedValue(result('SUCCESS_DECODED'));
+
+    const poller = new RealTelemetryPoller(mockExecutor, ['0104', '010C'], onData, onDiagnostic);
+    poller.start(10);
+
+    for (let i = 0; i < 5; i++) await advanceOne();
+
+    expect(onDiagnostic).not.toHaveBeenCalledWith(expect.objectContaining({
+      type: 'TRANSPORT_STALLED',
+      reason: 'UNUSABLE_RESPONSE',
+    }));
     poller.stop();
   });
 
