@@ -58,7 +58,6 @@ export function DriverModeSelector({ selectedMode, availableSignals, onSelectMod
           <Text style={styles.compactLabel}>{presentation.shortLabel}</Text>
           <Text style={styles.compactChevron}>›</Text>
         </TouchableOpacity>
-        {state ? <Text style={[styles.compactState, { color: state === 'READY' ? '#4ade80' : '#f59e0b' }]}>{state}</Text> : null}
       </View>
     );
   }
@@ -134,5 +133,4 @@ const styles = StyleSheet.create({
   compactIcon: { color: '#d7ff4f', marginRight: 6 },
   compactLabel: { color: '#f8fafc', fontSize: 10, fontFamily: 'Inter_700Bold', flex: 1 },
   compactChevron: { color: '#64748b', fontSize: 17 },
-  compactState: { fontSize: 7.5, fontFamily: 'SpaceMono_700Bold' },
 });
