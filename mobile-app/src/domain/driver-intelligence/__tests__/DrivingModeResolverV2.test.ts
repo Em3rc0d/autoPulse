@@ -59,6 +59,23 @@ describe('DrivingModeResolverV2', () => {
     const result = resolveDrivingModePresentation('OFF_ROAD', observations, 10_100);
     expect(result.primary?.signalId).toBe('PITCH');
     expect(result.primary?.label).toBe('PITCH');
+    expect(result.readiness).toBe('READY');
+  });
+
+  it('retains thermal evidence for Safety even when Off-Road display slots are occupied', () => {
+    const observations = {
+      PITCH: obs('PITCH', 8, 10_000, {
+        unit: '°', origin: 'DEVICE_SENSOR', calibration: 'VEHICLE_CALIBRATED', mountContinuity: 'VALID',
+      }),
+      HEADING: obs('HEADING', 247, 10_000, { unit: '°', origin: 'DEVICE_SENSOR' }),
+      ALTITUDE: obs('ALTITUDE', 159, 10_000, { unit: 'm', origin: 'DEVICE_SENSOR' }),
+      VEHICLE_SPEED: obs('VEHICLE_SPEED', 12, 10_000, { unit: 'km/h' }),
+      ENGINE_COOLANT: obs('ENGINE_COOLANT', 108, 10_000, { unit: '°C' }),
+    };
+    const result = resolveDrivingModePresentation('OFF_ROAD', observations, 10_100);
+    expect(result.primary?.signalId).toBe('PITCH');
+    expect(result.evidenceByDimension.THERMAL?.signalId).toBe('ENGINE_COOLANT');
+    expect(result.evidenceByDimension.THERMAL?.value).toBe(108);
   });
 
   it('never duplicates one evidence signal across slots', () => {
