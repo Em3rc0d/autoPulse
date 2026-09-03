@@ -163,10 +163,14 @@ function resolveDimension(
   return undefined;
 }
 
-function readyContractSatisfied(mode: DrivingMode, metrics: readonly ResolvedDrivingMetric[]): boolean {
-  return MODES[mode].readyDimensions.every(dimension =>
-    metrics.some(metric => metric.dimension === dimension && metric.decisionable && metric.preferred),
-  );
+function readyContractSatisfied(
+  mode: DrivingMode,
+  evidenceByDimension: Partial<Record<DrivingDimension, ResolvedDrivingMetric>>,
+): boolean {
+  return MODES[mode].readyDimensions.every(dimension => {
+    const metric = evidenceByDimension[dimension];
+    return Boolean(metric?.decisionable && metric.preferred);
+  });
 }
 
 function collectDimensionEvidence(
@@ -203,7 +207,7 @@ export function resolveDrivingModePresentation(
     return { mode, readiness: 'UNAVAILABLE', stateFirst: definition.stateFirst, evidenceByDimension };
   }
 
-  const readiness: ModeReadiness = readyContractSatisfied(mode, metrics)
+  const readiness: ModeReadiness = readyContractSatisfied(mode, evidenceByDimension)
     ? 'READY'
     : metrics.length >= 2
       ? 'ADAPTIVE'
