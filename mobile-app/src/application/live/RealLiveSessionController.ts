@@ -12,6 +12,10 @@ import {
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { ITelemetryBlockRepository } from '../../domain/telemetry/repositories/TelemetryBlockRepository';
 import {
+  resolveLivePollingPlan,
+  withProvenAdapterVoltage,
+} from '../../domain/obd/LiveObdPollingPolicy';
+import {
   TelemetryCommitQueue,
   CommitQueueEvent,
   TelemetryCommitQueueDrainTimeoutError
@@ -39,6 +43,8 @@ const RECOVERY_CONNECT_TIMEOUT_MS = 3500;
  * - Temporary adapter/ECU transport failures receive a bounded recovery window.
  * - Recovery never fabricates telemetry; any missing interval remains missing evidence.
  * - Leaving the app while ACTIVE/RECOVERING still produces explicit interruption.
+ * - Live polling is bounded to signals consumed by Driving View v2 so a weak link
+ *   does not burn freshness budget on unrelated capability-catalog signals.
  */
 export class RealLiveSessionController {
   private obdController: RealObdController | null = null;
@@ -114,9 +120,8 @@ export class RealLiveSessionController {
   }
 
   private livePollRequests(): string[] {
-    const normalized = this.supportedPids.map(pid => String(pid).trim().toUpperCase()).filter(Boolean);
-    if (this.pollAdapterVoltage && !normalized.includes('ATRV')) normalized.push('ATRV');
-    return normalized;
+    const plan = resolveLivePollingPlan(this.supportedPids);
+    return withProvenAdapterVoltage(plan.requestIds, this.pollAdapterVoltage);
   }
 
   private installTransport(conn: ActiveConnection) {
@@ -327,7 +332,7 @@ export class RealLiveSessionController {
   }
 
   private async performStop(mode: 'NORMAL' | 'INTERRUPTED', reason?: string): Promise<void> {
-    const wasActive = this.currentState === 'ACTIVE';
+    const wasRunning = this.currentState === 'ACTIVE' || this.currentState === 'RECOVERING';
     this.currentState = mode === 'NORMAL' ? 'STOPPING' : 'INTERRUPTED';
 
     this.appStateSubscription?.remove();
@@ -335,7 +340,7 @@ export class RealLiveSessionController {
     this.bleDisconnectSubscription?.remove();
     this.bleDisconnectSubscription = null;
 
-    if (wasActive && mode === 'NORMAL') {
+    if (wasRunning && mode === 'NORMAL') {
       await this.sessionRepo.requestStop(this.workspaceId, this.sessionId, 'USER_INITIATED');
     }
 
