@@ -16,6 +16,7 @@ import {
   STANDARD_OBD_CATALOG_VERSION,
   STANDARD_OBD_TIER_1
 } from '../../domain/obd/StandardObdCatalogV1';
+import { resolveLivePollingPlan } from '../../domain/obd/LiveObdPollingPolicy';
 
 import { useKeepAwake } from 'expo-keep-awake';
 
@@ -146,7 +147,7 @@ export default function InitializationScreen() {
 
       setRealSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
       setCurrentStepIndex(realSteps.length);
-      let liveSupportedPids = [...snapshot.supportedPids];
+      let liveSupportedPids: string[] = [];
 
       // Persist capabilities
       try {
@@ -213,25 +214,24 @@ export default function InitializationScreen() {
         );
         const discoveredSupportedPids = Array.from(new Set(snapshot.supportedPids))
           .filter(pid => catalogByRequestId.has(pid));
+        const livePlan = resolveLivePollingPlan(discoveredSupportedPids);
+        const activePollingPids = livePlan.requestIds;
+        const probeCandidatePids = livePlan.fallbackProbe ? livePlan.requestIds : [];
 
-        // A fallback is only a bounded probe when discovery found no decodable
-        // Tier-1 signal. It is never persisted as advertised vehicle truth.
-        const probeCandidatePids = discoveredSupportedPids.length === 0
-          ? ['010C', '010D', '0105', '0104', '010B']
-          : [];
-        const activePollingPids = discoveredSupportedPids.length > 0
-          ? discoveredSupportedPids
-          : probeCandidatePids;
+        // When these are only evidence-seeking probes, do not pass them to the
+        // presentation as though support were already known. The live controller
+        // receives an empty supported list and independently resolves the same bounded
+        // fallback; successful observations will promote the signals truthfully.
+        liveSupportedPids = livePlan.fallbackProbe ? [] : livePlan.requestIds;
 
-        if (probeCandidatePids.length > 0) {
-          console.log(`[InitializationScreen] No advertised Tier-1 signal; bounded probes: ${probeCandidatePids.join(', ')}`);
+        if (livePlan.fallbackProbe) {
+          console.log(`[InitializationScreen] No discovered live driver signal; bounded probes: ${probeCandidatePids.join(', ')}`);
         }
-        liveSupportedPids = activePollingPids;
 
         const signals = activePollingPids
           .filter(pid => catalogByRequestId.has(pid))
           .map((pid, index) => {
-            const isProbed = probeCandidatePids.includes(pid);
+            const isProbed = livePlan.fallbackProbe;
             const definition = catalogByRequestId.get(pid)!;
             return {
               signalDefinitionId: pid,
@@ -257,7 +257,7 @@ export default function InitializationScreen() {
           });
 
         if (signals.length === 0) {
-          throw new Error('NO_DECODABLE_STANDARD_SIGNALS: ECU responded, but no Release-1 catalog signal was available.');
+          throw new Error('NO_DECODABLE_STANDARD_SIGNALS: ECU responded, but no Release-1 live signal was available.');
         }
 
         await sessionRepo.attachCapabilitySnapshot(
