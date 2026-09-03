@@ -102,35 +102,35 @@ const DIMENSIONS: Record<DrivingDimension, DimensionDefinition> = {
 
 interface ModeDefinition {
   stateFirst: boolean;
-  fundamental: readonly DrivingDimension[];
   slots: readonly DrivingDimension[];
+  readyDimensions: readonly DrivingDimension[];
 }
 
 const MODES: Record<DrivingMode, ModeDefinition> = {
   ESSENTIAL: {
     stateFirst: false,
-    fundamental: ['THERMAL'],
     slots: ['THERMAL', 'ENGINE_ACTIVITY', 'MOTION', 'ELECTRICAL'],
+    readyDimensions: ['THERMAL', 'ENGINE_ACTIVITY', 'MOTION'],
   },
   FAMILY: {
     stateFirst: true,
-    fundamental: ['THERMAL'],
     slots: ['THERMAL', 'ELECTRICAL', 'MOTION', 'ENGINE_ACTIVITY'],
+    readyDimensions: ['THERMAL', 'ELECTRICAL', 'MOTION'],
   },
   PERFORMANCE: {
     stateFirst: false,
-    fundamental: ['ENGINE_ACTIVITY'],
     slots: ['ENGINE_ACTIVITY', 'POWER_DEMAND', 'THERMAL', 'MOTION'],
+    readyDimensions: ['ENGINE_ACTIVITY', 'POWER_DEMAND', 'THERMAL'],
   },
   OFF_ROAD: {
     stateFirst: false,
-    fundamental: ['VEHICLE_ATTITUDE'],
     slots: ['VEHICLE_ATTITUDE', 'HEADING', 'ALTITUDE', 'MOTION', 'THERMAL'],
+    readyDimensions: ['VEHICLE_ATTITUDE', 'MOTION'],
   },
   DIAGNOSTIC: {
     stateFirst: true,
-    fundamental: ['DIAGNOSTIC_HEALTH'],
     slots: ['ELECTRICAL', 'THERMAL', 'ENGINE_ACTIVITY', 'MOTION'],
+    readyDimensions: ['ELECTRICAL', 'THERMAL', 'ENGINE_ACTIVITY'],
   },
 };
 
@@ -162,14 +162,9 @@ function resolveDimension(
   return undefined;
 }
 
-function fundamentalResolved(
-  mode: DrivingMode,
-  metrics: readonly ResolvedDrivingMetric[],
-): boolean {
-  const definition = MODES[mode];
-  if (mode === 'DIAGNOSTIC') return true; // health state is resolved by the alert/diagnostic layer.
-  return definition.fundamental.some(dimension =>
-    metrics.some(metric => metric.dimension === dimension && metric.decisionable),
+function readyContractSatisfied(mode: DrivingMode, metrics: readonly ResolvedDrivingMetric[]): boolean {
+  return MODES[mode].readyDimensions.every(dimension =>
+    metrics.some(metric => metric.dimension === dimension && metric.decisionable && metric.preferred),
   );
 }
 
@@ -190,17 +185,15 @@ export function resolveDrivingModePresentation(
     if (metrics.length === 3) break;
   }
 
-  if (metrics.length === 0 && mode !== 'DIAGNOSTIC') {
+  if (metrics.length === 0) {
     return { mode, readiness: 'UNAVAILABLE', stateFirst: definition.stateFirst };
   }
 
-  const fundamental = fundamentalResolved(mode, metrics);
-  const allSelectedPreferred = metrics.every(metric => metric.preferred);
-  const readiness: ModeReadiness = !fundamental
-    ? 'LIMITED'
-    : allSelectedPreferred && metrics.length >= 2
-      ? 'READY'
-      : 'ADAPTIVE';
+  const readiness: ModeReadiness = readyContractSatisfied(mode, metrics)
+    ? 'READY'
+    : metrics.length >= 2
+      ? 'ADAPTIVE'
+      : 'LIMITED';
 
   return {
     mode,
