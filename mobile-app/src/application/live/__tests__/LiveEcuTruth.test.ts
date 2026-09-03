@@ -53,7 +53,7 @@ describe('LiveEcuTruth', () => {
     expect(state.tone).toBe('error');
   });
 
-  it('accepts decoded OBD observations as ECU samples', () => {
+  it('accepts finite decoded OBD observations as ECU samples', () => {
     expect(commandResultContainsValidEcuSample({
       status: 'SUCCESS_DECODED',
       request: { family: 'OBD_MODE_01' },
@@ -67,5 +67,17 @@ describe('LiveEcuTruth', () => {
       request: { family: 'ELM_AT' },
       decodedValues: [{ value: 14.3 }],
     })).toBe(false);
+  });
+
+  it('rejects nonnumeric and non-finite decoder artifacts as live driving evidence', () => {
+    const base = {
+      status: 'SUCCESS_DECODED',
+      request: { family: 'OBD_MODE_01' },
+    };
+
+    expect(commandResultContainsValidEcuSample({ ...base, decodedValues: [{ value: ['010C', '010D'] }] })).toBe(false);
+    expect(commandResultContainsValidEcuSample({ ...base, decodedValues: [{ value: '838' }] })).toBe(false);
+    expect(commandResultContainsValidEcuSample({ ...base, decodedValues: [{ value: Number.NaN }] })).toBe(false);
+    expect(commandResultContainsValidEcuSample({ ...base, decodedValues: [{ value: Number.POSITIVE_INFINITY }] })).toBe(false);
   });
 });

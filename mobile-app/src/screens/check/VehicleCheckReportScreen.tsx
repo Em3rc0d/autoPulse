@@ -68,11 +68,15 @@ export default function VehicleCheckReportScreen() {
     return () => { cancelled = true; };
   }, [db, sessionId, summary, vehicle?.alias, vehicle?.make, vehicle?.model, vehicle?.year, vehicleId, workspaceId]);
 
+  const routeError = !sessionId || !vehicleId ? 'CHECK_ROUTE_PARAMS_MISSING' : null;
+  if (routeError || summaryError) {
+    return <View style={styles.center}><Text style={styles.errorTitle}>Check unavailable</Text><Text style={styles.centerText}>{routeError ?? summaryError?.message}</Text><TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}><Text style={styles.backText}>Back</Text></TouchableOpacity></View>;
+  }
   if (contextLoading || summaryLoading || generating || !db) {
     return <View style={styles.center}><ActivityIndicator size="large" color="#4ade80" /><Text style={styles.centerText}>Reconstructing and sealing evidence…</Text></View>;
   }
-  if (summaryError || error || !result) {
-    return <View style={styles.center}><Text style={styles.errorTitle}>Check unavailable</Text><Text style={styles.centerText}>{error ?? summaryError?.message ?? 'Unknown error'}</Text><TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}><Text style={styles.backText}>Back</Text></TouchableOpacity></View>;
+  if (error || !result) {
+    return <View style={styles.center}><Text style={styles.errorTitle}>Check unavailable</Text><Text style={styles.centerText}>{error ?? 'Vehicle Check could not produce a report from this session.'}</Text><TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}><Text style={styles.backText}>Back</Text></TouchableOpacity></View>;
   }
 
   const { snapshot } = result;

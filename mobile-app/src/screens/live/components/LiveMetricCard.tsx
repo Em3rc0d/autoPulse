@@ -15,6 +15,7 @@ interface Props {
   state: SignalAdvisoryState;
   stats: SignalSessionStats;
   profile: SignalAdvisoryProfile;
+  observedAt?: number | null;
   origin?: string;
   testID?: string;
 }
@@ -23,6 +24,8 @@ const SIGNAL_BY_LABEL: Record<string, string> = {
   'Engine RPM': 'ENGINE_RPM',
   'Vehicle Speed': 'VEHICLE_SPEED',
   'Engine Coolant': 'ENGINE_COOLANT',
+  'Engine Load': 'ENGINE_LOAD',
+  'Throttle Position': 'THROTTLE_POSITION',
   'ECU Voltage': 'CONTROL_VOLTAGE',
   'Adapter Voltage': 'ADAPTER_VOLTAGE',
 };
@@ -57,13 +60,23 @@ export function LiveMetricCard(props: Props) {
         origin: signalId === 'ADAPTER_VOLTAGE' ? 'DEVICE_SENSOR' : 'ECU_DIRECT',
         advisory: props.state.advisory,
         calibration: props.state.calibration,
-        observedAt: Date.now(),
+        observedAt: props.observedAt ?? Date.now(),
       });
     }
-    // Deliberately keyed to real observation changes rather than the context
-    // object, whose identity changes when observations are published.
+    // validReadingCount is intentionally a dependency: repeated identical ECU values
+    // are still new observations and must refresh Motion/Trust state.
+    // The context object is omitted because its identity changes when observations publish.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signalId, props.value, props.unit, driverQuality, props.state.advisory, props.state.calibration]);
+  }, [
+    signalId,
+    props.value,
+    props.unit,
+    props.observedAt,
+    props.stats.validReadingCount,
+    driverQuality,
+    props.state.advisory,
+    props.state.calibration,
+  ]);
 
   if (!driverMode || !signalId) {
     return <BaseLiveMetricCard {...props} />;
