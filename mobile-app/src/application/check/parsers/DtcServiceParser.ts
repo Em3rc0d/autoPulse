@@ -141,15 +141,6 @@ function decodeCanStoredPayload(payload: readonly number[]): {
 function positiveResult(service: DtcRequestService, envelope: PositiveDiagnosticServiceEnvelope): DtcServiceParseResult {
   const meta = SERVICE_META[service];
   const base = baseResult(service, envelope);
-  if (envelope.requestService.toUpperCase() !== service) {
-    return {
-      ...base,
-      outcome: 'INVALID_RESPONSE',
-      codes: [],
-      rawPayload: envelope.payload,
-      limitation: `Envelope request service ${envelope.requestService} does not match parser service ${service}`,
-    };
-  }
   if (envelope.responseService.toUpperCase() !== meta.responseService) {
     return {
       ...base,
@@ -221,6 +212,18 @@ function positiveResult(service: DtcRequestService, envelope: PositiveDiagnostic
 
 export function parseDtcServiceEnvelope(service: DtcRequestService, envelope: DiagnosticServiceEnvelope): DtcServiceParseResult {
   const base = baseResult(service, envelope);
+
+  if (envelope.requestService.toUpperCase() !== service) {
+    return {
+      ...base,
+      outcome: 'INVALID_RESPONSE',
+      codes: [],
+      rawPayload: envelope.kind === 'POSITIVE_RESPONSE' || envelope.kind === 'PARTIAL'
+        ? envelope.payload ?? []
+        : [],
+      limitation: `Envelope request service ${envelope.requestService} does not match parser service ${service}`,
+    };
+  }
 
   switch (envelope.kind) {
     case 'POSITIVE_RESPONSE':
