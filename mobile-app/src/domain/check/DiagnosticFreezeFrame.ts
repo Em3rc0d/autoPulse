@@ -10,6 +10,8 @@ export type DiagnosticFreezeFrameState =
 
 export interface DiagnosticFreezeFrameValue {
   readonly pid: string;
+  /** Optional decoded sub-signal identity for compound PIDs (for example O2 voltage + trim). */
+  readonly signalId?: string;
   readonly value: number | string | boolean;
   readonly unit?: string;
 }
