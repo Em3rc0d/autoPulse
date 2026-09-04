@@ -1,0 +1,22 @@
+{
+  "contract_id": "CHECK-SUPPORTED-PID-DISCOVERY-V0",
+  "status": "RESEARCH_CANDIDATE_NOT_RUNTIME",
+  "support_blocks": [
+    {"request":"0100","covers":"01-20","next_block_pid":"20"},
+    {"request":"0120","covers":"21-40","next_block_pid":"40"},
+    {"request":"0140","covers":"41-60","next_block_pid":"60"},
+    {"request":"0160","covers":"61-80","next_block_pid":"80"},
+    {"request":"0180","covers":"81-A0","next_block_pid":"A0"},
+    {"request":"01A0","covers":"A1-C0","next_block_pid":"C0"},
+    {"request":"01C0","covers":"C1-E0","next_block_pid":"E0"}
+  ],
+  "rules": {
+    "support_is_endpoint_scoped": true,
+    "follow_next_block_only_if_advertised": true,
+    "blind_catalog_polling": false,
+    "advertised_does_not_equal_observed": true,
+    "not_advertised_does_not_equal_fault": true,
+    "advertised_then_no_data_is_representable": true
+  },
+  "runtime_gate": "BLOCKED_UNTIL_BITMAP_FIXTURES"
+}
