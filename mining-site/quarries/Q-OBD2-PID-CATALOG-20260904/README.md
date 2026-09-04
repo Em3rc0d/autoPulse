@@ -27,10 +27,12 @@ The raw 100+ MB pack, MF4 recordings, and proprietary manufacturer DBCs are **no
 
 ## Files
 
-- `mode01_pid_inventory.csv` — one row per discovered standardized Mode 01 PID in the supplied DBC.
-- `mode01_signal_inventory.csv` — normalized signal/subfield definitions associated with those PIDs.
+- `mode01_pid_inventory.csv` — one row per discovered standardized Mode 01 PID in the supplied DBC, including aggregated signal/subfield names and units.
+- `extract_mode01.py` — deterministic extractor that regenerates both the PID inventory and the 145-row signal-level inventory from the original pack.
 - `sources.json` — provenance, hashes, source roles, normalization counts, and explicit boundaries.
 - `RESEARCH_BOUNDARY.md` — PID vs DTC vs manufacturer/proprietary data boundary.
+
+The signal-level CSV is intentionally generated on demand from the hashed source pack rather than committed as a second derived snapshot; this avoids drift between the PID aggregate and its lower-level expansion.
 
 ## Important interpretation rule
 
