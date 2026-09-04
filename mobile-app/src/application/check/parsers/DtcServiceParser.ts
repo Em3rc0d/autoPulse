@@ -34,7 +34,9 @@ export interface ParsedDtcCode {
 
 export interface DtcServiceParseResult {
   readonly requestService: DtcRequestService;
-  readonly responseService: '43' | '47' | '4A';
+  readonly expectedResponseService: '43' | '47' | '4A';
+  /** Present only when a positive/partial response service was actually observed. */
+  readonly observedResponseService?: string;
   readonly status: DiagnosticTroubleCodeStatus;
   readonly outcome: DtcServiceParseOutcome;
   readonly sourceEndpointId: string | null;
@@ -68,7 +70,7 @@ function baseResult(service: DtcRequestService, envelope: DiagnosticServiceEnvel
   const meta = SERVICE_META[service];
   return {
     requestService: service,
-    responseService: meta.responseService,
+    expectedResponseService: meta.responseService,
     status: meta.status,
     sourceEndpointId: envelope.sourceEndpointId,
     protocol: envelope.protocol,
@@ -142,8 +144,11 @@ function decodeCanStoredPayload(payload: readonly number[]): {
 
 function positiveResult(service: DtcRequestService, envelope: PositiveDiagnosticServiceEnvelope): DtcServiceParseResult {
   const meta = SERVICE_META[service];
-  const base = baseResult(service, envelope);
-  if (envelope.responseService.toUpperCase() !== meta.responseService) {
+  const base = {
+    ...baseResult(service, envelope),
+    observedResponseService: envelope.responseService.toUpperCase(),
+  };
+  if (base.observedResponseService !== meta.responseService) {
     return {
       ...base,
       outcome: 'INVALID_RESPONSE',
@@ -218,6 +223,9 @@ export function parseDtcServiceEnvelope(service: DtcRequestService, envelope: Di
   if (envelope.requestService.toUpperCase() !== service) {
     return {
       ...base,
+      observedResponseService: envelope.kind === 'POSITIVE_RESPONSE' || envelope.kind === 'PARTIAL'
+        ? envelope.responseService?.toUpperCase()
+        : undefined,
       outcome: 'INVALID_RESPONSE',
       codes: [],
       rawPayload: envelope.kind === 'POSITIVE_RESPONSE' || envelope.kind === 'PARTIAL'
@@ -262,6 +270,7 @@ export function parseDtcServiceEnvelope(service: DtcRequestService, envelope: Di
     case 'PARTIAL':
       return {
         ...base,
+        observedResponseService: envelope.responseService?.toUpperCase(),
         outcome: 'PARTIAL',
         codes: [],
         rawPayload: envelope.payload ?? [],
