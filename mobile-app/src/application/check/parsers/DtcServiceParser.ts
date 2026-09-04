@@ -19,8 +19,10 @@ export type DtcServiceParseOutcome =
   | 'TIMEOUT'
   | 'INVALID_RESPONSE'
   | 'NEGATIVE_RESPONSE'
+  | 'RESPONSE_PENDING'
   | 'DISCONNECTED'
   | 'UNSUPPORTED'
+  | 'FAILED'
   | 'PARTIAL';
 
 export interface ParsedDtcCode {
@@ -228,14 +230,19 @@ export function parseDtcServiceEnvelope(service: DtcRequestService, envelope: Di
   switch (envelope.kind) {
     case 'POSITIVE_RESPONSE':
       return positiveResult(service, envelope);
-    case 'NEGATIVE_RESPONSE':
+    case 'NEGATIVE_RESPONSE': {
+      const responseCode = envelope.negativeResponseCode.toUpperCase();
       return {
         ...base,
-        outcome: 'NEGATIVE_RESPONSE',
+        outcome: responseCode === '78' ? 'RESPONSE_PENDING' : 'NEGATIVE_RESPONSE',
         codes: [],
         rawPayload: [],
-        negativeResponseCode: envelope.negativeResponseCode,
+        negativeResponseCode: responseCode,
+        limitation: responseCode === '78'
+          ? 'ECU reported Response Pending; transport/planner owns the bounded continuation deadline'
+          : undefined,
       };
+    }
     case 'NO_DATA':
       return { ...base, outcome: 'NO_DATA', codes: [], rawPayload: [] };
     case 'TIMEOUT':
@@ -244,6 +251,14 @@ export function parseDtcServiceEnvelope(service: DtcRequestService, envelope: Di
       return { ...base, outcome: 'DISCONNECTED', codes: [], rawPayload: [] };
     case 'UNSUPPORTED':
       return { ...base, outcome: 'UNSUPPORTED', codes: [], rawPayload: [] };
+    case 'FAILED':
+      return {
+        ...base,
+        outcome: 'FAILED',
+        codes: [],
+        rawPayload: [],
+        limitation: envelope.detail ?? 'Diagnostic transport/request failed',
+      };
     case 'PARTIAL':
       return {
         ...base,
