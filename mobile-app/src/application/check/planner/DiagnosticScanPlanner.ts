@@ -112,10 +112,10 @@ export function buildDiagnosticScanPlan(input: BuildDiagnosticScanPlanInput): Di
   return frozenPlan(input, blocked.length > 0 ? 'LIMITED' : 'READY', requests, blocked);
 }
 
-export type PlannedRequestGateBlockReason = 'PLAN_BLOCKED' | 'REQUEST_NOT_IN_PLAN' | StageGateBlockReason | 'COMMAND_BUDGET_EXHAUSTED' | 'TOTAL_BYTE_BUDGET_EXHAUSTED' | 'ELAPSED_TIME_BUDGET_EXHAUSTED' | 'INTER_COMMAND_DELAY_NOT_SATISFIED';
+export type PlannedRequestGateBlockReason = 'PLAN_BLOCKED' | 'REQUEST_NOT_IN_PLAN' | 'OUT_OF_SEQUENCE' | StageGateBlockReason | 'COMMAND_BUDGET_EXHAUSTED' | 'TOTAL_BYTE_BUDGET_EXHAUSTED' | 'ELAPSED_TIME_BUDGET_EXHAUSTED' | 'INTER_COMMAND_DELAY_NOT_SATISFIED';
 export type PlannedRequestGateDecision = { readonly disposition: 'ALLOW'; readonly deadlineRemainingMs: number } | { readonly disposition: 'BLOCK'; readonly reason: PlannedRequestGateBlockReason };
 export interface PlannedRequestGateContext {
-  readonly planRequestId: string; readonly scanStartedAt: number; readonly stageStartedAt: number; readonly now: number; readonly cancelRequested: boolean;
+  readonly planRequestId: string; readonly nextRequestOrdinal: number; readonly scanStartedAt: number; readonly stageStartedAt: number; readonly now: number; readonly cancelRequested: boolean;
   readonly lastCommandFinishedAt?: number; readonly budgetUsage: Pick<CommandBudgetUsage, 'commandsIssued' | 'responseBytes'>;
 }
 
@@ -124,6 +124,8 @@ export function evaluatePlannedRequestGate(plan: DiagnosticScanPlan, context: Pl
   if (plan.status === 'BLOCKED') return { disposition: 'BLOCK', reason: 'PLAN_BLOCKED' };
   const request = plan.requests.find(item => item.planRequestId === context.planRequestId);
   if (!request) return { disposition: 'BLOCK', reason: 'REQUEST_NOT_IN_PLAN' };
+  if (!Number.isInteger(context.nextRequestOrdinal) || context.nextRequestOrdinal < 0) throw new Error('nextRequestOrdinal must be a non-negative integer');
+  if (request.ordinal !== context.nextRequestOrdinal) return { disposition: 'BLOCK', reason: 'OUT_OF_SEQUENCE' };
   const stageGate = evaluateStageGate(plan.deadlinePolicy, { stage: request.stage, scanStartedAt: context.scanStartedAt, stageStartedAt: context.stageStartedAt, now: context.now, cancelRequested: context.cancelRequested });
   if (stageGate.disposition === 'BLOCK') return { disposition: 'BLOCK', reason: stageGate.reason };
   const pacing = evaluateInterCommandPacing(plan.budget, context.now, context.lastCommandFinishedAt);
