@@ -7,7 +7,7 @@ export interface DiagnosticMeaningProvenance {
   readonly sourceVersion: string;
 }
 
-export interface DiagnosticTroubleCode {
+interface DiagnosticTroubleCodeBase {
   readonly observationId: string;
   readonly code: string;
   readonly family: DiagnosticTroubleCodeFamily;
@@ -15,13 +15,24 @@ export interface DiagnosticTroubleCode {
   readonly status: DiagnosticTroubleCodeStatus;
   /** Null means the response was valid but source ownership was not observable. */
   readonly sourceEndpointId: string | null;
-  readonly canonicalMeaning?: string;
-  readonly meaningProvenance?: DiagnosticMeaningProvenance;
   readonly milRelated?: boolean;
   readonly freezeFrameAvailable?: boolean;
   readonly evidenceIds: readonly string[];
   readonly observedAt: number;
 }
+
+type DiagnosticTroubleCodeMeaning =
+  | {
+      readonly canonicalMeaning: string;
+      readonly meaningProvenance: DiagnosticMeaningProvenance;
+    }
+  | {
+      readonly canonicalMeaning?: undefined;
+      readonly meaningProvenance?: undefined;
+    };
+
+/** Human meaning is optional; when present it is inseparable from provenance. */
+export type DiagnosticTroubleCode = DiagnosticTroubleCodeBase & DiagnosticTroubleCodeMeaning;
 
 export function diagnosticTroubleCodeFamily(code: string): DiagnosticTroubleCodeFamily {
   const prefix = code.trim().toUpperCase()[0];
