@@ -2,286 +2,225 @@
 
 **Lane:** Plan  
 **Authority:** EXECUTION AUTHORITY  
-**Updated:** CHECK Core Research Wave A  
-**Purpose:** make every architectural/research dependency explicit before implementation.
+**Updated through:** Research Wave B  
+**Purpose:** keep every pre-runtime dependency explicit and prevent hidden implementation decisions.
 
-## 1. Graph legend
+## Legend
 
 ```text
 CLOSED
-= design/decision or full research node is sufficiently evidenced for downstream promotion
+= decision/research evidence is sufficient for its declared downstream scope
 
 SEMANTICS_CLOSED_FIXTURES_OPEN
-= semantic/design boundary is closed, but parser/replay/physical evidence still blocks runtime
+= architecture/domain semantics are closed; runtime remains blocked by fixtures/evidence
+
+HARDENING_IMPLEMENTED_SOURCE_REGEN_OPEN
+= research tooling is hardened; exact frozen source must still be rerun
 
 OPEN_RESEARCH
-= evidence/research required before downstream promotion
+= material evidence/semantic work remains
 
 OPEN_IMPLEMENTATION
-= architecture is closed; code does not exist yet
+= design is closed but code does not exist
 
 DEFERRED_BY_CONTRACT
 = intentionally outside Check Core V1
 
 BLOCKED
-= downstream node cannot start
+= downstream promotion is not authorized
 ```
 
-## 2. Top-level graph
+## Top-level graph
 
 ```text
-                         CHECK PRODUCT
-                              │
-                 ┌────────────┴────────────┐
-                 │                         │
-          PRODUCT BOUNDARY             SAFETY
-                 │                         │
-                 └────────────┬────────────┘
-                              ▼
-                     DIAGNOSTIC DOMAIN
-                              │
-             ┌────────────────┼────────────────┐
-             │                │                │
-       ECU ATTRIBUTION   SERVICE MODEL    EVIDENCE MODEL
-             │                │                │
-             └────────────────┼────────────────┘
-                              ▼
-                     RESEARCH PROMOTION
-                              │
-       ┌──────────────┬───────┼───────┬──────────────┐
-       │              │       │       │              │
-      DTC         READINESS FREEZE  MODE06      PID SUPPORT
-       │              │       │       │              │
-       └──────────────┴───────┼───────┴──────────────┘
-                              ▼
-                      PARSER / FIXTURES
-                              │
-                              ▼
-                       SAFETY + PLANNER
-                              │
-                              ▼
-                    DIAGNOSTIC SCAN ENGINE
-                              │
-                              ▼
-                         CORE CHECK
-                              │
-                 ┌────────────┴─────────────┐
-                 │                          │
-           PERSISTENCE                 CHECK UX
-                 │                          │
-                 └────────────┬─────────────┘
-                              ▼
-                       PHYSICAL PILOT
-                              │
-                              ▼
-                      RELEASE CONTRACT
+CHECK PRODUCT CONTRACT ─────────────── CLOSED
+        │
+        ├── Safety Architecture ────── CLOSED
+        ├── Endpoint Model ─────────── CLOSED
+        ├── Evidence Truth Model ───── CLOSED
+        ├── State Machine ──────────── CLOSED
+        ├── Persistence Boundary ───── CLOSED
+        └── UX Semantics ───────────── CLOSED
+                     │
+                     ▼
+               RESEARCH GATES
+                     │
+     ┌───────────────┼─────────────────────┐
+     │               │                     │
+   Core DTC       Enrichment            Intelligence
+     │               │                     │
+001 DTC          002 PID Support       005 Mode06
+007 Attribution  003 Readiness         009 DTC Knowledge
+008 Safety       004 Freeze Frame      010 Correlation
+011 Transport    006 Vehicle Info
+     │               │                     │
+     └───────────────┼─────────────────────┘
+                     ▼
+             GOLDEN FIXTURES
+                     ▼
+        DOMAIN / PARSER / SAFETY CODE
+                     ▼
+             REPLAY CERTIFICATION
+                     ▼
+             PHYSICAL PILOT
+                     ▼
+             RELEASE CONTRACT
 ```
 
-## 3. Architecture decisions — closed
+## Architecture decisions
 
-| Node | Status | Decision |
+| Node | Status | Frozen decision |
 |---|---|---|
-| Product boundary | CLOSED | Live, Session Report and Check are separate products/surfaces. |
-| Check purpose | CLOSED | Active read-only ECU diagnostic interrogation with evidence-aware explanation. |
-| Existing BLE stack reuse | CLOSED | Check reuses `DiagnosticConnector` and existing RealObd/ELM path. |
-| Transport abstraction | CLOSED | Check depends on `DiagnosticConnector`, not BLE/ELM implementation details. |
-| Endpoint attribution model | CLOSED | Capability/evidence is preserved per observed endpoint/source address where available. |
-| ECU role inference | CLOSED | Address does not imply role; UNKNOWN is valid until evidence exists. |
-| Capability truth | CLOSED | REFERENCE_DEFINED != ECU_ADVERTISED != QUERIED != OBSERVED. |
-| PID strategy | CLOSED | Support bitmap discovery + targeted acquisition; no full blind sweep. |
-| DTC/PID relationship | CLOSED | DTC -> concern -> evidence requirements -> supported targeted PIDs. |
-| Zero-DTC semantics | CLOSED | No reported codes != healthy vehicle. |
-| Readiness semantics | CLOSED | NOT_READY != FAILED. |
-| Freeze-frame semantics | CLOSED | Freeze-frame values remain separate from current PID values. |
-| Cause semantics | CLOSED | Event confidence and root-cause confidence are separate. |
-| Safety model | CLOSED | Default deny; only READ_ONLY_PROVEN requests execute in Core V1. |
+| Live vs Session Report vs Check | CLOSED | Separate products/surfaces. |
+| Check scope | CLOSED | Active read-only diagnostic interrogation. |
+| Connector abstraction | CLOSED | Reuse `DiagnosticConnector`; no second BLE stack. |
+| Endpoint attribution | CLOSED | Preserve source evidence per endpoint; unattributed is valid. |
+| ECU role | CLOSED | Address does not imply module role. |
+| Evidence truth | CLOSED | `REFERENCE_DEFINED != ECU_ADVERTISED != QUERIED != OBSERVED`. |
+| DTC/PID relation | CLOSED | DTC/monitor → concern → evidence requirements → supported targeted PIDs. |
+| Support strategy | CLOSED | Bitmap discovery, not blind catalog sweep. |
+| Zero-DTC wording | CLOSED | No reported DTCs is coverage-bounded, not “healthy”. |
+| Readiness wording | CLOSED | `NOT_READY != FAILED`. |
+| Freeze-frame context | CLOSED | Frozen ECU context is separate from current PID and Live history. |
+| Safety | CLOSED | Default deny; only exact `READ_ONLY_PROVEN` descriptors can execute. |
 | Scan concurrency | CLOSED | Serial by default per diagnostic session. |
-| Failure model | CLOSED | Partial successful evidence is retained; LIMITED is first-class. |
-| Persistence boundary | CLOSED | DiagnosticScan is independent from LiveSession. |
-| Report history | CLOSED | Completed report immutable + versioned; reinterpretation creates a new artifact. |
-| Coverage UI | CLOSED | Explicit coverage, never universal health score. |
-| UX entry | CLOSED | Single primary Run Check action; complexity stays behind the surface. |
-| Enhanced diagnostics | DEFERRED_BY_CONTRACT | Supported by architecture, not promised by Core V1. |
-| Mutating diagnostics | DEFERRED_BY_CONTRACT | Clear/reset/coding/actuation excluded from Core V1. |
+| Partial evidence | CLOSED | Retain successful evidence; `LIMITED` is first-class. |
+| Persistence | CLOSED | `DiagnosticScan` independent from `LiveSession`. |
+| Report mutation | CLOSED | Completed report immutable/versioned. |
+| Health score | CLOSED | No universal health percentage. |
+| Enhanced diagnostics | DEFERRED_BY_CONTRACT | Architecture-ready, not Core V1 claim. |
+| Mutating diagnostics | DEFERRED_BY_CONTRACT | Clear/reset/control/coding excluded from Core V1. |
 
-## 4. Existing code nodes
+## Existing implementation assets
 
-| Node | Current state | Program action |
+| Node | Current state | Planned treatment |
 |---|---|---|
 | `DiagnosticConnector` | IMPLEMENTED | retain/evolve compatibly |
-| `ElmBleDiagnosticConnector` | IMPLEMENTED | retain; harden through Check fixtures |
-| `DiagnosticDiscovery` | IMPLEMENTED | reuse/refactor into Check characterization stage |
-| `EcuCapabilityDiscovery` | IMPLEMENTED | evolve from probe observations to endpoint capability model |
-| `DiagnosticServiceCharacterization` | IMPLEMENTED | reuse; expand only through promoted research |
-| DTC byte-pair decoder 43/47/4A | IMPLEMENTED_INITIAL | migrate to service-aware parser fixture coverage |
-| `ObdFrameParser` PID-shaped response model | KNOWN_LIMITATION | cannot be final DTC parser contract; CAN count-byte hazard recorded in Q-CHECK-001 |
-| `CompatibilitySnapshot` | IMPLEMENTED | reuse as characterization evidence or adapt to endpoint model |
-| `RuntimeCompatibilityCharacterization` | IMPLEMENTED | refactor into reusable characterizer; do not duplicate |
-| Check Lite Session Report | IMPLEMENTED_PHYSICAL | relocate to History/Session Report |
+| `ElmBleDiagnosticConnector` | IMPLEMENTED | reuse behind safety/planner |
+| `DiagnosticDiscovery` | IMPLEMENTED | reuse/refactor as Check characterization stage |
+| `EcuCapabilityDiscovery` | IMPLEMENTED | evolve to endpoint capability evidence |
+| `DiagnosticServiceCharacterization` | IMPLEMENTED | expand only through promoted research |
+| DTC pair decoder | IMPLEMENTED_INITIAL | replace/contain behind service-aware fixtures |
+| `ObdFrameParser` PID-shaped model | KNOWN_LIMITATION | cannot be final DTC-list parser; CAN count-byte hazard recorded |
+| `CompatibilitySnapshot` | IMPLEMENTED | reuse/adapt as characterization evidence |
+| Check Lite | IMPLEMENTED_PHYSICAL | relocate to History → Session Report |
 | DiagnosticScan aggregate | OPEN_IMPLEMENTATION | CHECK-MK3 |
-| Safety policy | OPEN_IMPLEMENTATION | CHECK-MK5 |
-| Scan planner/budget | OPEN_IMPLEMENTATION | CHECK-MK5 |
-| Diagnostic replay connector | OPEN_IMPLEMENTATION | CHECK-MK6 |
+| Safety policy / planner | OPEN_IMPLEMENTATION | CHECK-MK5 |
+| Replay connector | OPEN_IMPLEMENTATION | CHECK-MK6 |
 | Real Check UX | OPEN_IMPLEMENTATION | CHECK-MK12 |
 
-## 5. Research dependency graph
+## Research closure ledger
+
+| Node | Status | Pre-runtime result |
+|---|---|---|
+| PID quarry provenance | CLOSED | Frozen pack hashes/counts recorded. |
+| PID quarry hardening | HARDENING_IMPLEMENTED_SOURCE_REGEN_OPEN | Fail-closed extractor implemented; exact pack rerun still required. |
+| Q-CHECK-001 DTC services | SEMANTICS_CLOSED_FIXTURES_OPEN | DTC-list/no-PID/status/zero-code/CAN-envelope constraints closed. |
+| Q-CHECK-002 supported PID discovery | SEMANTICS_CLOSED_FIXTURES_OPEN | Endpoint bitmaps/continuation/planner semantics closed. |
+| Q-CHECK-003 readiness | SEMANTICS_CLOSED_FIXTURES_OPEN | Support/completion, engine-layout and time-horizon semantics closed; exact bit-table verification open. |
+| Q-CHECK-004 freeze frame | SEMANTICS_CLOSED_FIXTURES_OPEN | Current-vs-frozen/DTC-association/no-frame semantics closed. |
+| Q-CHECK-005 Mode 06 | OPEN_RESEARCH | Wave C. |
+| Q-CHECK-006 vehicle information | OPEN_RESEARCH | Wave C. |
+| Q-CHECK-007 endpoint attribution | SEMANTICS_CLOSED_FIXTURES_OPEN | Source-vs-role/unattributed/per-message provenance closed. |
+| Q-CHECK-008 safety evidence | SEMANTICS_CLOSED_FIXTURES_OPEN | Mode04/08/raw default block + exact descriptor model closed. |
+| Q-CHECK-009 DTC knowledge | OPEN_RESEARCH | Wave C. |
+| Q-CHECK-010 correlation | OPEN_RESEARCH | Wave C. |
+| Q-CHECK-011 transport | SEMANTICS_CLOSED_FIXTURES_OPEN | Completion/NO DATA/pending/serial/budget-shape semantics closed. |
+
+## Wave A result
 
 ```text
-Q-OBD2-PID-CATALOG
-        │
-        ├── hardening ──────────────┐
-        │                           │
-        ▼                           ▼
-Q-CHECK-002 PID SUPPORT       Q-CHECK-010 CORRELATION
-        │                           │
-        └──────────┬────────────────┘
-                   ▼
-             TARGETED PIDS
-
-Q-CHECK-001 DTC SERVICES ──┐
-Q-CHECK-003 READINESS ─────┤
-Q-CHECK-004 FREEZE FRAME ──┤
-Q-CHECK-005 MODE06 ────────┼──► PARSERS/FIXTURES
-Q-CHECK-006 VEHICLE INFO ──┤
-Q-CHECK-007 ECU ATTRIB ────┤
-Q-CHECK-011 TRANSPORT ─────┘
-
-Q-CHECK-008 SAFETY ─────────────► SAFETY POLICY / PLANNER
-Q-CHECK-009 DTC KNOWLEDGE ───────► KNOWLEDGE BASE
-Q-CHECK-010 CORRELATION ─────────► EVIDENCE PLANNER / REASONER
+DTC service semantics             CLOSED
+endpoint attribution semantics    CLOSED
+diagnostic safety semantics       CLOSED
+transport semantics               CLOSED
+fixtures / timing / physical proof OPEN
 ```
 
-## 6. Research nodes and current closure
-
-| Research node | Status | Core V1 dependency | Closure artifact / remaining gate |
-|---|---|---:|---|
-| PID quarry provenance | CLOSED | yes | PR #59 research pack |
-| PID quarry hardening | OPEN_RESEARCH | before expanded PID runtime | rename `DBC_OBSERVED`, preserve decode fields, conflict detection, deterministic assertions |
-| DTC standard services | SEMANTICS_CLOSED_FIXTURES_OPEN | yes | Q-CHECK-001; service/zero-code/status/CAN-envelope constraints closed; fixture corpus open |
-| Supported PID discovery semantics | OPEN_RESEARCH | enrichment | Q-CHECK-002 |
-| Readiness monitor decoding | OPEN_RESEARCH | yes for complete Core readiness | Q-CHECK-003 |
-| Freeze-frame acquisition | OPEN_RESEARCH | enrichment | Q-CHECK-004 |
-| Mode 06 semantics | OPEN_RESEARCH | no for earliest DTC Core; yes if Intelligence claims Mode 06 | Q-CHECK-005 |
-| Vehicle information | OPEN_RESEARCH | optional Core enrichment | Q-CHECK-006 |
-| ECU attribution/roles | SEMANTICS_CLOSED_FIXTURES_OPEN | yes | Q-CHECK-007; endpoint/role/unattributed rules closed; transport fixtures open |
-| Diagnostic command safety | SEMANTICS_CLOSED_FIXTURES_OPEN | absolute | Q-CHECK-008; service-family safety boundary closed; exact descriptors + adversarial tests open |
-| DTC knowledge/provenance | OPEN_RESEARCH | descriptions | Q-CHECK-009 |
-| DTC/PID correlation | OPEN_RESEARCH | Intelligence V1 | Q-CHECK-010 |
-| Transport behavior | SEMANTICS_CLOSED_FIXTURES_OPEN | yes | Q-CHECK-011; completion/pending/budget shape closed; timings + fixtures open |
-
-## 7. Wave A closure receipt
-
-Wave A closes semantic ambiguity on the first runtime critical path without pretending fixture evidence exists.
+## Wave B result
 
 ```text
-Q-CHECK-001 DTC SERVICES
-semantic boundary        CLOSED
-fixtures                 OPEN
-runtime                  BLOCKED
-
-Q-CHECK-007 ECU ATTRIBUTION
-semantic boundary        CLOSED
-fixtures                 OPEN
-physical CAN proof       OPEN
-runtime                  BLOCKED
-
-Q-CHECK-008 SAFETY
-semantic classification  CLOSED
-exact descriptors        OPEN
-adversarial tests        OPEN
-runtime                  BLOCKED
-
-Q-CHECK-011 TRANSPORT
-semantic boundary        CLOSED
-budget dimensions        CLOSED
-timing values            OPEN
-fixtures                 OPEN
-runtime                  BLOCKED
+supported PID semantics           CLOSED
+readiness domain semantics        CLOSED
+freeze-frame semantics            CLOSED
+PID hardening implementation      DONE
+PID exact-source regeneration      OPEN
+fixtures / normative bit proof     OPEN
 ```
 
-## 8. Critical path for the first real Check
+## Runtime critical path
 
 ```text
-CHECK-MK0 docs CLOSED
+CHECK-MK0 architecture CLOSED
         ↓
 Wave A semantics CLOSED
         ↓
-Q-CHECK-003 basic readiness semantics
+Wave B semantics CLOSED
         ↓
-Wave A + readiness fixture corpus
+Wave C semantics
         ↓
-Domain contracts
+Pre-Hammer Closure Matrix
         ↓
-service-aware DTC parser / golden fixtures
+Golden fixture corpus
         ↓
-exact read-only descriptors
+exact READ_ONLY_PROVEN descriptors
         ↓
-Safety + planner adversarial PASS
+CHECK-MK3 domain contracts
         ↓
-DiagnosticScanEngine + replay PASS
+CHECK-MK4 service-aware parsers
         ↓
-Stored/Pending/Permanent + MIL
+CHECK-MK5 safety/planner adversarial PASS
         ↓
-LOGAN PHYSICAL DTC CORE
+CHECK-MK6 replay PASS
+        ↓
+physical Logan / Duster / CAN validation
 ```
 
-Mode 06, freeze-frame enrichment, broad PID correlation and manufacturer-specific diagnostics do not block the earliest bounded DTC Core.
-
-## 9. Hammer authorization graph
+## Current hammer authorization
 
 ```text
-CHECK-MK0 architecture           CLOSED
-Wave A semantic boundaries       CLOSED
-Wave A fixtures                  OPEN
-Basic readiness research         OPEN
-PID quarry hardening             OPEN
-
-research/documentation hammer    AUTHORIZED
-runtime diagnostic hammer        BLOCKED
+documentation/research hammer      AUTHORIZED
+pure domain modeling hammer        NOT YET — wait for Wave C/pre-hammer matrix
+new diagnostic runtime requests    BLOCKED
+physical Check Core pilot          BLOCKED
 ```
 
-The architecture is no longer the blocker. The blocker is now explicit evidence work.
+Architecture is no longer the blocker. Remaining pre-hammer work is explicit research evidence and fixture closure.
 
-## 10. Runtime hammer gate
+## Runtime request gate
 
-Runtime implementation of a specific diagnostic request/service becomes READY only when:
+One concrete request/service becomes implementation-ready only when:
 
 ```text
-reference/source CLOSED
+source/provenance CLOSED
 + semantic boundary CLOSED
-+ safety classification CLOSED
-+ exact request descriptor CLOSED
++ exact safety descriptor CLOSED
 + parser fixture CLOSED
-+ negative/failure semantics CLOSED
-+ endpoint attribution fixture CLOSED where applicable
++ failure/negative semantics CLOSED
++ endpoint attribution fixture CLOSED where relevant
 + transport fixture/budget CLOSED
-= runtime node READY
+= REQUEST READY
 ```
 
-## 11. No-hidden-decision rule
+## No-hidden-decision rule
 
-Any implementation PR that discovers a material question adds a graph node rather than deciding silently in code.
+If implementation discovers a material ambiguity, add/reopen a graph node. Never decide silently in code whether:
 
-Material questions include:
+- a request mutates state;
+- bytes form a PID or service payload;
+- a response belongs to one endpoint;
+- absence means zero, unsupported or no-data;
+- a monitor is unsupported vs incomplete;
+- a value is current vs frozen vs historical;
+- a causal statement exceeds evidence.
 
-- whether a request may mutate state;
-- whether a response belongs to a specific ECU;
-- whether a service envelope differs by transport;
-- whether absence means unsupported, no-data or zero-result;
-- whether a historical fact may be treated as current;
-- whether a cause claim exceeds evidence.
-
-## 12. Next closure wave
-
-Proceed before CHECK-MK3/MK4 runtime work:
+## Next closure wave
 
 ```text
-1. PID quarry hardening
-2. Q-CHECK-003 readiness
-3. Q-CHECK-002 supported PID discovery
-4. Q-CHECK-004 freeze frame
-5. diagnostic golden fixture skeleton
-6. Wave A transport/parser fixtures
+Q-CHECK-005 Mode 06
+Q-CHECK-006 vehicle information
+Q-CHECK-009 DTC knowledge/provenance
+Q-CHECK-010 DTC/PID correlation
+Diagnostic Golden Dataset contract
+Pre-Hammer Closure Matrix
 ```
-
-After those nodes close, reassess the runtime hammer gate rather than assuming it automatically opens.
