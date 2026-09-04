@@ -122,6 +122,18 @@ describe('CHECK-MK4 DTC service parser', () => {
     expect(canPending.limitation).toContain('refuses to guess');
   });
 
+  it('fails closed when parser service and envelope request service disagree', () => {
+    const mismatchedPositive = parseDtcServiceEnvelope('03', positive('07', '43', [0x03, 0x01]));
+    expect(mismatchedPositive.outcome).toBe('INVALID_RESPONSE');
+    expect(mismatchedPositive.limitation).toContain('does not match parser service');
+
+    const mismatchedNoData: DiagnosticServiceEnvelope = {
+      kind: 'NO_DATA', requestService: '07', protocol: 'ISO_14230_KWP', sourceEndpointId: 'ecu-1',
+      provenance: 'fixture:mismatch', observedAt: 101,
+    };
+    expect(parseDtcServiceEnvelope('03', mismatchedNoData).outcome).toBe('INVALID_RESPONSE');
+  });
+
   it('rejects malformed lengths and unexpected response services', () => {
     expect(parseDtcServiceEnvelope('03', positive('03', '43', [0x03])).outcome).toBe('INVALID_RESPONSE');
     expect(parseDtcServiceEnvelope('03', positive('03', '47', [0x03, 0x01])).outcome).toBe('INVALID_RESPONSE');
