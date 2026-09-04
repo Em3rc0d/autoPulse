@@ -1,0 +1,18 @@
+{
+  "quarry_id": "Q-CHECK-006-VEHICLE-INFORMATION-20260904",
+  "status": "SEMANTICS_CLOSED_FIXTURES_OPEN",
+  "runtime_authorized": false,
+  "closed": [
+    "service09_is_identity_evidence",
+    "garage_and_ecu_identity_are_separate",
+    "identity_mismatch_is_explicit",
+    "vin_redaction_required",
+    "missing_vehicle_info_is_not_fault"
+  ],
+  "open_gates": [
+    "transport_reassembly_fixtures",
+    "normalization_fixtures",
+    "privacy_tests",
+    "exact_read_only_descriptors"
+  ]
+}

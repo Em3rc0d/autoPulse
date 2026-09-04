@@ -1,0 +1,20 @@
+{
+  "quarry_id": "Q-CHECK-005-MODE06-20260904",
+  "status": "SEMANTICS_CLOSED_FIXTURES_OPEN",
+  "runtime_authorized": false,
+  "downstream": ["CHECK-MK4", "CHECK-INTELLIGENCE-V1"],
+  "closed": [
+    "mode06_is_monitor_evidence_not_dtc",
+    "unsupported_is_not_pass",
+    "raw_values_preserved_when_scale_unknown",
+    "endpoint_scope_preserved",
+    "root_cause_not_inferred"
+  ],
+  "open_gates": [
+    "verified_encoding_reference",
+    "legacy_and_can_fixtures",
+    "golden_raw_decoded_cases",
+    "exact_read_only_descriptor",
+    "physical_or_replay_evidence"
+  ]
+}
