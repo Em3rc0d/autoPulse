@@ -7,6 +7,7 @@ export type DiagnosticServiceEnvelopeKind =
   | 'TIMEOUT'
   | 'DISCONNECTED'
   | 'UNSUPPORTED'
+  | 'FAILED'
   | 'PARTIAL'
   | 'INVALID_RESPONSE';
 
@@ -29,6 +30,7 @@ export interface PositiveDiagnosticServiceEnvelope extends DiagnosticServiceEnve
 
 export interface NegativeDiagnosticServiceEnvelope extends DiagnosticServiceEnvelopeBase {
   readonly kind: 'NEGATIVE_RESPONSE';
+  /** Negative response code, for example 78 = Response Pending. */
   readonly negativeResponseCode: string;
 }
 
@@ -46,6 +48,11 @@ export interface DisconnectedDiagnosticServiceEnvelope extends DiagnosticService
 
 export interface UnsupportedDiagnosticServiceEnvelope extends DiagnosticServiceEnvelopeBase {
   readonly kind: 'UNSUPPORTED';
+}
+
+export interface FailedDiagnosticServiceEnvelope extends DiagnosticServiceEnvelopeBase {
+  readonly kind: 'FAILED';
+  readonly detail?: string;
 }
 
 export interface PartialDiagnosticServiceEnvelope extends DiagnosticServiceEnvelopeBase {
@@ -72,6 +79,7 @@ export type DiagnosticServiceEnvelope =
   | TimeoutDiagnosticServiceEnvelope
   | DisconnectedDiagnosticServiceEnvelope
   | UnsupportedDiagnosticServiceEnvelope
+  | FailedDiagnosticServiceEnvelope
   | PartialDiagnosticServiceEnvelope
   | InvalidDiagnosticServiceEnvelope;
 
