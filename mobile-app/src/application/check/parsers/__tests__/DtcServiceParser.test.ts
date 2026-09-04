@@ -34,6 +34,7 @@ function outcome(kind: Exclude<DiagnosticServiceEnvelope['kind'], 'POSITIVE_RESP
   };
   switch (kind) {
     case 'NEGATIVE_RESPONSE': return { ...base, kind, negativeResponseCode: '11' };
+    case 'FAILED': return { ...base, kind, detail: 'adapter failure' };
     case 'PARTIAL': return { ...base, kind, responseService: '43', payload: [0x03], detail: 'truncated' };
     case 'INVALID_RESPONSE': return { ...base, kind, detail: 'malformed' };
     case 'NO_DATA':
@@ -134,6 +135,16 @@ describe('CHECK-MK4 DTC service parser', () => {
     expect(parseDtcServiceEnvelope('03', mismatchedNoData).outcome).toBe('INVALID_RESPONSE');
   });
 
+  it('preserves Response Pending as a distinct non-terminal transport state', () => {
+    const result = parseDtcServiceEnvelope('03', {
+      kind: 'NEGATIVE_RESPONSE', requestService: '03', negativeResponseCode: '78',
+      protocol: 'ISO_14230_KWP', sourceEndpointId: 'ecu-1', provenance: 'fixture:nrc78', observedAt: 102,
+    });
+    expect(result.outcome).toBe('RESPONSE_PENDING');
+    expect(result.negativeResponseCode).toBe('78');
+    expect(result.limitation).toContain('bounded continuation deadline');
+  });
+
   it('rejects malformed lengths and unexpected response services', () => {
     expect(parseDtcServiceEnvelope('03', positive('03', '43', [0x03])).outcome).toBe('INVALID_RESPONSE');
     expect(parseDtcServiceEnvelope('03', positive('03', '47', [0x03, 0x01])).outcome).toBe('INVALID_RESPONSE');
@@ -151,6 +162,7 @@ describe('CHECK-MK4 DTC service parser', () => {
     ['TIMEOUT', 'TIMEOUT'],
     ['DISCONNECTED', 'DISCONNECTED'],
     ['UNSUPPORTED', 'UNSUPPORTED'],
+    ['FAILED', 'FAILED'],
     ['PARTIAL', 'PARTIAL'],
     ['INVALID_RESPONSE', 'INVALID_RESPONSE'],
   ] as const)('preserves %s as a distinct parser outcome', (kind, expected) => {
