@@ -7,6 +7,8 @@ export interface CommandBudget {
   readonly maxBytesPerResponse: number;
   /** Overall elapsed-time ceiling. Concrete values are profile/evidence supplied. */
   readonly maxElapsedMs: number;
+  /** Minimum quiet time between completed commands. Value is evidence/profile supplied. */
+  readonly minInterCommandDelayMs: number;
   readonly provenance: string;
 }
 
@@ -20,7 +22,8 @@ export type CommandBudgetBlockReason =
   | 'COMMAND_BUDGET_EXHAUSTED'
   | 'TOTAL_BYTE_BUDGET_EXHAUSTED'
   | 'RESPONSE_BYTE_CEILING_EXCEEDED'
-  | 'ELAPSED_TIME_BUDGET_EXHAUSTED';
+  | 'ELAPSED_TIME_BUDGET_EXHAUSTED'
+  | 'INTER_COMMAND_DELAY_NOT_SATISFIED';
 
 export type CommandBudgetDecision =
   | { readonly disposition: 'ALLOW' }
@@ -42,6 +45,9 @@ export function assertValidCommandBudget(budget: CommandBudget): void {
   }
   if (!Number.isInteger(budget.maxElapsedMs) || budget.maxElapsedMs < 1) {
     throw new Error('CommandBudget.maxElapsedMs must be a positive integer');
+  }
+  if (!Number.isInteger(budget.minInterCommandDelayMs) || budget.minInterCommandDelayMs < 0) {
+    throw new Error('CommandBudget.minInterCommandDelayMs must be a non-negative integer');
   }
   if (budget.maxBytesPerResponse > budget.maxResponseBytes) {
     throw new Error('CommandBudget.maxBytesPerResponse cannot exceed maxResponseBytes');
@@ -65,6 +71,23 @@ export function evaluateBudgetBeforeCommand(
   }
   if (usage.elapsedMs >= budget.maxElapsedMs) {
     return { disposition: 'BLOCK', reason: 'ELAPSED_TIME_BUDGET_EXHAUSTED' };
+  }
+  return { disposition: 'ALLOW' };
+}
+
+export function evaluateInterCommandPacing(
+  budget: CommandBudget,
+  now: number,
+  lastCommandFinishedAt?: number,
+): CommandBudgetDecision {
+  assertValidCommandBudget(budget);
+  if (!Number.isFinite(now)) throw new Error('now must be finite');
+  if (lastCommandFinishedAt === undefined) return { disposition: 'ALLOW' };
+  if (!Number.isFinite(lastCommandFinishedAt) || lastCommandFinishedAt > now) {
+    throw new Error('lastCommandFinishedAt must be finite and not after now');
+  }
+  if (now - lastCommandFinishedAt < budget.minInterCommandDelayMs) {
+    return { disposition: 'BLOCK', reason: 'INTER_COMMAND_DELAY_NOT_SATISFIED' };
   }
   return { disposition: 'ALLOW' };
 }

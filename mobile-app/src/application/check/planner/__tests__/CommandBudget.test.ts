@@ -1,6 +1,7 @@
 import {
   assertValidCommandBudget,
   evaluateBudgetBeforeCommand,
+  evaluateInterCommandPacing,
   evaluateObservedResponseBytes,
   recordCommandIssued,
   recordObservedResponseBytes,
@@ -11,6 +12,7 @@ const budget = {
   maxResponseBytes: 12,
   maxBytesPerResponse: 8,
   maxElapsedMs: 1000,
+  minInterCommandDelayMs: 50,
   provenance: 'fixture',
 } as const;
 
@@ -26,6 +28,15 @@ describe('CHECK-MK5 CommandBudget', () => {
     expect(evaluateBudgetBeforeCommand(budget, { commandsIssued: 1, responseBytes: 5, elapsedMs: 1000 })).toEqual({
       disposition: 'BLOCK', reason: 'ELAPSED_TIME_BUDGET_EXHAUSTED',
     });
+  });
+
+  it('enforces profile-supplied inter-command pacing without inventing a runtime delay', () => {
+    expect(evaluateInterCommandPacing(budget, 100)).toEqual({ disposition: 'ALLOW' });
+    expect(evaluateInterCommandPacing(budget, 149, 100)).toEqual({
+      disposition: 'BLOCK', reason: 'INTER_COMMAND_DELAY_NOT_SATISFIED',
+    });
+    expect(evaluateInterCommandPacing(budget, 150, 100)).toEqual({ disposition: 'ALLOW' });
+    expect(() => evaluateInterCommandPacing(budget, 90, 100)).toThrow('not after now');
   });
 
   it('caps each response and the accumulated response bytes', () => {
@@ -52,5 +63,6 @@ describe('CHECK-MK5 CommandBudget', () => {
   it('rejects invalid or internally inconsistent budgets', () => {
     expect(() => assertValidCommandBudget({ ...budget, maxCommands: 0 })).toThrow('positive integer');
     expect(() => assertValidCommandBudget({ ...budget, maxBytesPerResponse: 13 })).toThrow('cannot exceed');
+    expect(() => assertValidCommandBudget({ ...budget, minInterCommandDelayMs: -1 })).toThrow('non-negative integer');
   });
 });
