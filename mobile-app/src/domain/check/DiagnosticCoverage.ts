@@ -15,9 +15,20 @@ export interface DiagnosticCoverage {
   readonly limitations: readonly string[];
 }
 
+/**
+ * Complete DTC coverage is bounded by endpoints actually discovered in this scan.
+ * A discovered-but-unscanned endpoint prevents COMPLETE even when every scanned
+ * endpoint completed the requested services.
+ */
 export function hasCompleteDtcCoverage(coverage: DiagnosticCoverage, services: readonly string[]): boolean {
-  if (coverage.scannedEndpointIds.length === 0) return false;
-  return coverage.scannedEndpointIds.every(endpointId =>
+  const discoveredEndpointIds = new Set(coverage.discoveredEndpointIds);
+  const scannedEndpointIds = new Set(coverage.scannedEndpointIds);
+
+  if (discoveredEndpointIds.size === 0 || services.length === 0) return false;
+  if (scannedEndpointIds.size !== discoveredEndpointIds.size) return false;
+  if ([...discoveredEndpointIds].some(endpointId => !scannedEndpointIds.has(endpointId))) return false;
+
+  return [...discoveredEndpointIds].every(endpointId =>
     services.every(service => coverage.services.some(entry =>
       entry.endpointId === endpointId && entry.service === service && entry.outcome === 'COMPLETE',
     )),
