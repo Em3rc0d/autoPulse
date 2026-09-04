@@ -1,0 +1,47 @@
+{
+  "quarry_id": "Q-OBD2-PID-CATALOG-20260904",
+  "status": "MINED_NOT_CANONICAL",
+  "captured_on": "2026-09-04",
+  "scope": "OBD-II standardized PID and DTC reference evidence",
+  "sources": [
+    {
+      "id": "SRC-OBD2-PACK-V5",
+      "kind": "USER_SUPPLIED_ARCHIVE",
+      "name": "OBD2 Data Pack v5 | CSS Electronics",
+      "sha256": "97156b4ea5361f309b49ad14428fe175b0b2614d68e7b0d102007b17a2765c6a",
+      "size_bytes": 100706302,
+      "relevant_member": "obd2-dbc/obd-dbc-files-v4.3.zip",
+      "relevant_member_sha256": "20c946bb1ef86e03b2b8186e422e36ce8a0816608627305c0600a5e290e87bc2",
+      "dbc_member": "obd2-dbc-files/regular-version/OBD-v4.3.dbc",
+      "dbc_sha256": "b85e1417bed177d7b36c40e736001c2216fb8259496f26ec0fb40594554718c1",
+      "notes": "Machine-readable evidence basis for the normalized Mode 01 inventory. Raw MF4 and proprietary manufacturer DBC material is intentionally not committed."
+    },
+    {
+      "id": "SRC-WIKIPEDIA-OBD2-PIDS",
+      "kind": "SECONDARY_REFERENCE",
+      "url": "https://en.wikipedia.org/wiki/OBD-II_PIDs",
+      "role": "Cross-reference for standard services, PID semantics, formulas, supported-PID bitmaps, and the distinction between standardized and manufacturer-defined PIDs."
+    },
+    {
+      "id": "SRC-KBB-OBD2-CODES",
+      "kind": "DTC_LOOKUP_REFERENCE",
+      "url": "https://www.kbb.com/obd-ii/",
+      "role": "Reference for Diagnostic Trouble Code families and human-facing code lookup. DTCs are deliberately not merged into the PID catalog."
+    }
+  ],
+  "normalization": {
+    "service": "01",
+    "unique_pids": 114,
+    "normalized_signals": 145,
+    "raw_dbc_signal_declarations": 580,
+    "existing_autopulse_tier1_pids_present": 10,
+    "existing_autopulse_tier1_pid_count": 10
+  },
+  "boundaries": [
+    "A PID being standardized or present in this quarry does not prove that a specific vehicle supports it.",
+    "Vehicle support must be discovered at runtime from ECU evidence, including supported-PID bitmaps where applicable.",
+    "Manufacturer-specific PIDs and proprietary CAN signals remain outside this standardized Mode 01 catalog.",
+    "DTCs are fault identifiers returned by diagnostic services; they are not live-data PIDs.",
+    "This quarry does not change AutoPulse runtime decoder behavior or certify new vehicle compatibility."
+  ]
+}
