@@ -1,5 +1,5 @@
 import type { DiagnosticSafetyClassification } from '../../../domain/check/DiagnosticSafetyClassification';
-import type { DiagnosticRequestKind } from '../../../domain/diagnostics/DiagnosticConnector';
+import type { DiagnosticProtocol, DiagnosticRequestKind } from '../../../domain/diagnostics/DiagnosticConnector';
 
 export type DiagnosticPlannerStage = 'CAPABILITY_DISCOVERY' | 'DTC_CORE';
 
@@ -20,6 +20,8 @@ export interface DiagnosticRequestDescriptor {
   readonly parserContractId: string;
   readonly stage: DiagnosticPlannerStage;
   readonly safetyClassification: DiagnosticSafetyClassification;
+  /** Parser/envelope combinations already promoted for this exact descriptor. */
+  readonly supportedProtocols: readonly DiagnosticProtocol[];
   readonly provenance: string;
   readonly executionMode: 'SERIAL_ONLY';
 }

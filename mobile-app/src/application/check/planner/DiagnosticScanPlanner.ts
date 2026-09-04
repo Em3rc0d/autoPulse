@@ -28,6 +28,7 @@ export interface PlannedDiagnosticRequest {
   readonly pid?: string;
   readonly subfunction?: string;
   readonly expectedResponseService: string;
+  readonly supportedProtocols: readonly DiagnosticProtocol[];
   readonly targetEndpointId: string | null;
   readonly evidenceTraceId: string;
   readonly rationaleEvidenceIds: readonly string[];
@@ -109,6 +110,7 @@ function plannedFromDescriptor(
     pid: descriptor.pid,
     subfunction: descriptor.subfunction,
     expectedResponseService: descriptor.expectedResponseService,
+    supportedProtocols: Object.freeze([...descriptor.supportedProtocols]),
     targetEndpointId: endpoint,
     evidenceTraceId: `${input.planId}:evidence:${ordinal}:${descriptor.descriptorId}:${targetKey(proposal)}`,
     rationaleEvidenceIds: Object.freeze([...(proposal.rationaleEvidenceIds ?? [])]),
@@ -128,6 +130,35 @@ export function evidenceTraceForPlannedRequest(request: PlannedDiagnosticRequest
   });
 }
 
+function frozenPlan(
+  input: BuildDiagnosticScanPlanInput,
+  status: DiagnosticScanPlan['status'],
+  requests: readonly PlannedDiagnosticRequest[],
+  blocked: readonly DiagnosticPlanBlockedProposal[],
+): DiagnosticScanPlan {
+  return Object.freeze({
+    planId: input.planId,
+    createdAt: input.createdAt,
+    protocol: input.protocol,
+    registryVersion: input.registry.version,
+    safetyPolicyVersion: CHECK_COMMAND_SAFETY_POLICY_VERSION,
+    status,
+    serialExecution: true as const,
+    budget: Object.freeze({ ...input.budget }),
+    retryPolicy: Object.freeze({
+      ...input.retryPolicy,
+      retryableOutcomes: Object.freeze([...input.retryPolicy.retryableOutcomes]),
+      responsePending: Object.freeze({ ...input.retryPolicy.responsePending }),
+    }),
+    deadlinePolicy: Object.freeze({
+      ...input.deadlinePolicy,
+      stageDeadlineMs: Object.freeze({ ...input.deadlinePolicy.stageDeadlineMs }),
+    }),
+    requests: Object.freeze([...requests]),
+    blockedProposals: Object.freeze([...blocked]),
+  });
+}
+
 export function buildDiagnosticScanPlan(input: BuildDiagnosticScanPlanInput): DiagnosticScanPlan {
   if (!input.planId.trim()) throw new Error('Diagnostic plan id must be non-empty');
   if (!Number.isFinite(input.createdAt)) throw new Error('Diagnostic plan createdAt must be finite');
@@ -144,7 +175,7 @@ export function buildDiagnosticScanPlan(input: BuildDiagnosticScanPlanInput): Di
     if (seen.has(dedupeKey)) return;
     seen.add(dedupeKey);
 
-    const decision = authorizeRegisteredDescriptor(input.registry, proposal.semanticId);
+    const decision = authorizeRegisteredDescriptor(input.registry, proposal.semanticId, input.protocol);
     if (decision.disposition === 'BLOCK') {
       blocked.push(Object.freeze({
         semanticId: proposal.semanticId,
@@ -158,20 +189,7 @@ export function buildDiagnosticScanPlan(input: BuildDiagnosticScanPlanInput): Di
   });
 
   if (blocked.some(item => item.required)) {
-    return Object.freeze({
-      planId: input.planId,
-      createdAt: input.createdAt,
-      protocol: input.protocol,
-      registryVersion: input.registry.version,
-      safetyPolicyVersion: CHECK_COMMAND_SAFETY_POLICY_VERSION,
-      status: 'BLOCKED' as const,
-      serialExecution: true as const,
-      budget: Object.freeze({ ...input.budget }),
-      retryPolicy: input.retryPolicy,
-      deadlinePolicy: input.deadlinePolicy,
-      requests: Object.freeze([]),
-      blockedProposals: Object.freeze([...blocked]),
-    });
+    return frozenPlan(input, 'BLOCKED', [], blocked);
   }
 
   authorized.sort((a, b) => {
@@ -189,20 +207,7 @@ export function buildDiagnosticScanPlan(input: BuildDiagnosticScanPlanInput): Di
       targetEndpointId: item.proposal.targetEndpointId ?? null,
       reason: 'PLAN_COMMAND_BUDGET_EXCEEDED' as const,
     })));
-    return Object.freeze({
-      planId: input.planId,
-      createdAt: input.createdAt,
-      protocol: input.protocol,
-      registryVersion: input.registry.version,
-      safetyPolicyVersion: CHECK_COMMAND_SAFETY_POLICY_VERSION,
-      status: 'BLOCKED' as const,
-      serialExecution: true as const,
-      budget: Object.freeze({ ...input.budget }),
-      retryPolicy: input.retryPolicy,
-      deadlinePolicy: input.deadlinePolicy,
-      requests: Object.freeze([]),
-      blockedProposals: Object.freeze([...blocked]),
-    });
+    return frozenPlan(input, 'BLOCKED', [], blocked);
   }
 
   const selected: Array<{ proposal: DiagnosticPlanProposal; descriptor: DiagnosticRequestDescriptor }> = [];
@@ -220,20 +225,7 @@ export function buildDiagnosticScanPlan(input: BuildDiagnosticScanPlanInput): Di
   }
 
   const requests = selected.map((item, index) => plannedFromDescriptor(input, item.descriptor, item.proposal, index));
-  return Object.freeze({
-    planId: input.planId,
-    createdAt: input.createdAt,
-    protocol: input.protocol,
-    registryVersion: input.registry.version,
-    safetyPolicyVersion: CHECK_COMMAND_SAFETY_POLICY_VERSION,
-    status: blocked.length > 0 ? 'LIMITED' as const : 'READY' as const,
-    serialExecution: true as const,
-    budget: Object.freeze({ ...input.budget }),
-    retryPolicy: input.retryPolicy,
-    deadlinePolicy: input.deadlinePolicy,
-    requests: Object.freeze(requests),
-    blockedProposals: Object.freeze([...blocked]),
-  });
+  return frozenPlan(input, blocked.length > 0 ? 'LIMITED' : 'READY', requests, blocked);
 }
 
 export type PlannedRequestGateBlockReason =

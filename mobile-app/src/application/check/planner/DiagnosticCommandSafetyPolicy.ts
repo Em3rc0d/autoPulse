@@ -1,3 +1,4 @@
+import type { DiagnosticProtocol } from '../../../domain/diagnostics/DiagnosticConnector';
 import type { DiagnosticRequestDescriptor } from './DiagnosticRequestDescriptor';
 import type { DiagnosticDescriptorRegistry } from './DiagnosticDescriptorRegistry';
 import { CHECK_MUTATING_OBD_SERVICES, resolveDescriptorBySemanticId } from './DiagnosticDescriptorRegistry';
@@ -8,7 +9,8 @@ export type DiagnosticSafetyBlockReason =
   | 'UNREGISTERED_DESCRIPTOR'
   | 'REQUEST_KIND_NOT_ALLOWED'
   | 'CLASSIFICATION_NOT_PROVEN'
-  | 'MUTATING_SERVICE_BLOCKED';
+  | 'MUTATING_SERVICE_BLOCKED'
+  | 'PROTOCOL_NOT_PROMOTED';
 
 export type DiagnosticSafetyDecision =
   | {
@@ -27,7 +29,10 @@ export type DiagnosticSafetyDecision =
  * Defense-in-depth check. Registry construction already rejects these states,
  * but policy does not trust a caller-provided registry object blindly.
  */
-export function evaluateDescriptorSafety(descriptor: DiagnosticRequestDescriptor | undefined): DiagnosticSafetyDecision {
+export function evaluateDescriptorSafety(
+  descriptor: DiagnosticRequestDescriptor | undefined,
+  protocol: DiagnosticProtocol,
+): DiagnosticSafetyDecision {
   if (!descriptor) {
     return {
       disposition: 'BLOCK',
@@ -63,6 +68,15 @@ export function evaluateDescriptorSafety(descriptor: DiagnosticRequestDescriptor
     };
   }
 
+  if (!descriptor.supportedProtocols.includes(protocol)) {
+    return {
+      disposition: 'BLOCK',
+      policyVersion: CHECK_COMMAND_SAFETY_POLICY_VERSION,
+      reason: 'PROTOCOL_NOT_PROMOTED',
+      descriptor,
+    };
+  }
+
   return {
     disposition: 'ALLOW',
     policyVersion: CHECK_COMMAND_SAFETY_POLICY_VERSION,
@@ -77,6 +91,7 @@ export function evaluateDescriptorSafety(descriptor: DiagnosticRequestDescriptor
 export function authorizeRegisteredDescriptor(
   registry: DiagnosticDescriptorRegistry,
   semanticId: string,
+  protocol: DiagnosticProtocol,
 ): DiagnosticSafetyDecision {
-  return evaluateDescriptorSafety(resolveDescriptorBySemanticId(registry, semanticId));
+  return evaluateDescriptorSafety(resolveDescriptorBySemanticId(registry, semanticId), protocol);
 }

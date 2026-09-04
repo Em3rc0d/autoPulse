@@ -1,3 +1,4 @@
+import type { DiagnosticProtocol } from '../../../domain/diagnostics/DiagnosticConnector';
 import { descriptorAddressKey, DiagnosticRequestDescriptor, normalizeDiagnosticByteHex } from './DiagnosticRequestDescriptor';
 
 export const CHECK_MUTATING_OBD_SERVICES = Object.freeze(['04', '08'] as const);
@@ -9,6 +10,21 @@ export interface DiagnosticDescriptorRegistry {
   readonly byDescriptorId: Readonly<Record<string, DiagnosticRequestDescriptor>>;
   readonly byAddress: Readonly<Record<string, DiagnosticRequestDescriptor>>;
 }
+
+const CORE_STANDARD_PROTOCOLS: readonly DiagnosticProtocol[] = Object.freeze([
+  'ISO_15765_CAN',
+  'ISO_14230_KWP',
+  'ISO_9141_2',
+  'SAE_J1850_PWM',
+  'SAE_J1850_VPW',
+]);
+
+const LEGACY_DTC_PROTOCOLS: readonly DiagnosticProtocol[] = Object.freeze([
+  'ISO_14230_KWP',
+  'ISO_9141_2',
+  'SAE_J1850_PWM',
+  'SAE_J1850_VPW',
+]);
 
 function normalizedDescriptor(descriptor: DiagnosticRequestDescriptor): DiagnosticRequestDescriptor {
   const service = normalizeDiagnosticByteHex(descriptor.service);
@@ -31,6 +47,15 @@ function normalizedDescriptor(descriptor: DiagnosticRequestDescriptor): Diagnost
   if ((CHECK_MUTATING_OBD_SERVICES as readonly string[]).includes(service)) {
     throw new Error(`Diagnostic descriptor ${descriptor.semanticId} targets structurally blocked mutating service ${service}`);
   }
+  if (descriptor.supportedProtocols.length === 0) {
+    throw new Error(`Diagnostic descriptor ${descriptor.semanticId} must declare at least one promoted protocol`);
+  }
+  if (descriptor.supportedProtocols.includes('UNKNOWN') || descriptor.supportedProtocols.includes('UDS')) {
+    throw new Error(`Diagnostic descriptor ${descriptor.semanticId} declares a non-Core/unproven protocol`);
+  }
+  if (new Set(descriptor.supportedProtocols).size !== descriptor.supportedProtocols.length) {
+    throw new Error(`Diagnostic descriptor ${descriptor.semanticId} contains duplicate protocols`);
+  }
 
   return Object.freeze({
     ...descriptor,
@@ -38,6 +63,7 @@ function normalizedDescriptor(descriptor: DiagnosticRequestDescriptor): Diagnost
     expectedResponseService,
     pid,
     subfunction,
+    supportedProtocols: Object.freeze([...descriptor.supportedProtocols]),
     executionMode: 'SERIAL_ONLY' as const,
   });
 }
@@ -48,16 +74,16 @@ export function createDiagnosticDescriptorRegistry(
 ): DiagnosticDescriptorRegistry {
   if (!version.trim()) throw new Error('Diagnostic descriptor registry version must be non-empty');
 
-  const bySemanticId: Record<string, DiagnosticRequestDescriptor> = {};
-  const byDescriptorId: Record<string, DiagnosticRequestDescriptor> = {};
-  const byAddress: Record<string, DiagnosticRequestDescriptor> = {};
+  const bySemanticId = Object.create(null) as Record<string, DiagnosticRequestDescriptor>;
+  const byDescriptorId = Object.create(null) as Record<string, DiagnosticRequestDescriptor>;
+  const byAddress = Object.create(null) as Record<string, DiagnosticRequestDescriptor>;
   const normalized = descriptors.map(normalizedDescriptor);
 
   for (const descriptor of normalized) {
     const address = descriptorAddressKey(descriptor);
-    if (bySemanticId[descriptor.semanticId]) throw new Error(`Duplicate diagnostic semanticId: ${descriptor.semanticId}`);
-    if (byDescriptorId[descriptor.descriptorId]) throw new Error(`Duplicate diagnostic descriptorId: ${descriptor.descriptorId}`);
-    if (byAddress[address]) throw new Error(`Duplicate diagnostic descriptor address: ${address}`);
+    if (Object.prototype.hasOwnProperty.call(bySemanticId, descriptor.semanticId)) throw new Error(`Duplicate diagnostic semanticId: ${descriptor.semanticId}`);
+    if (Object.prototype.hasOwnProperty.call(byDescriptorId, descriptor.descriptorId)) throw new Error(`Duplicate diagnostic descriptorId: ${descriptor.descriptorId}`);
+    if (Object.prototype.hasOwnProperty.call(byAddress, address)) throw new Error(`Duplicate diagnostic descriptor address: ${address}`);
     bySemanticId[descriptor.semanticId] = descriptor;
     byDescriptorId[descriptor.descriptorId] = descriptor;
     byAddress[address] = descriptor;
@@ -76,7 +102,9 @@ export function resolveDescriptorBySemanticId(
   registry: DiagnosticDescriptorRegistry,
   semanticId: string,
 ): DiagnosticRequestDescriptor | undefined {
-  return registry.bySemanticId[semanticId];
+  return Object.prototype.hasOwnProperty.call(registry.bySemanticId, semanticId)
+    ? registry.bySemanticId[semanticId]
+    : undefined;
 }
 
 export function resolveDescriptorByAddress(
@@ -91,12 +119,15 @@ export function resolveDescriptorByAddress(
   const normalizedSubfunction = subfunction === undefined ? undefined : normalizeDiagnosticByteHex(subfunction);
   if (!normalizedService || (pid !== undefined && !normalizedPid) || (subfunction !== undefined && !normalizedSubfunction)) return undefined;
 
-  return registry.byAddress[[
+  const key = [
     requestKind,
     normalizedService,
     normalizedPid ?? '-',
     normalizedSubfunction ?? '-',
-  ].join(':')];
+  ].join(':');
+  return Object.prototype.hasOwnProperty.call(registry.byAddress, key)
+    ? registry.byAddress[key]
+    : undefined;
 }
 
 const descriptor = (
@@ -107,6 +138,7 @@ const descriptor = (
   parserContractId: string,
   stage: DiagnosticRequestDescriptor['stage'],
   provenance: string,
+  supportedProtocols: readonly DiagnosticProtocol[],
   pid?: string,
 ): DiagnosticRequestDescriptor => ({
   descriptorId,
@@ -118,6 +150,7 @@ const descriptor = (
   parserContractId,
   stage,
   safetyClassification: 'READ_ONLY_PROVEN',
+  supportedProtocols,
   provenance,
   executionMode: 'SERIAL_ONLY',
 });
@@ -135,6 +168,7 @@ export const CHECK_CORE_DESCRIPTOR_REGISTRY_V1 = createDiagnosticDescriptorRegis
       'check.mode01.support-bitmap/v1',
       'CAPABILITY_DISCOVERY',
       'Q-CHECK-002 + CHECK-MK4 PidSupportBitmapParser',
+      CORE_STANDARD_PROTOCOLS,
       pid,
     )),
     descriptor(
@@ -145,6 +179,7 @@ export const CHECK_CORE_DESCRIPTOR_REGISTRY_V1 = createDiagnosticDescriptorRegis
       'check.dtc-service/v1',
       'DTC_CORE',
       'Q-CHECK-001 + Q-CHECK-008 + CHECK-MK4 DtcServiceParser',
+      CORE_STANDARD_PROTOCOLS,
     ),
     descriptor(
       'check-core-mode07-pending-dtc',
@@ -153,7 +188,8 @@ export const CHECK_CORE_DESCRIPTOR_REGISTRY_V1 = createDiagnosticDescriptorRegis
       '47',
       'check.dtc-service/v1',
       'DTC_CORE',
-      'Q-CHECK-001 + Q-CHECK-008 + CHECK-MK4 DtcServiceParser',
+      'Q-CHECK-001 + Q-CHECK-008 + CHECK-MK4 DtcServiceParser; CAN envelope not yet fixture-promoted',
+      LEGACY_DTC_PROTOCOLS,
     ),
     descriptor(
       'check-core-mode0a-permanent-dtc',
@@ -162,7 +198,8 @@ export const CHECK_CORE_DESCRIPTOR_REGISTRY_V1 = createDiagnosticDescriptorRegis
       '4A',
       'check.dtc-service/v1',
       'DTC_CORE',
-      'Q-CHECK-001 + Q-CHECK-008 + CHECK-MK4 DtcServiceParser',
+      'Q-CHECK-001 + Q-CHECK-008 + CHECK-MK4 DtcServiceParser; CAN envelope not yet fixture-promoted',
+      LEGACY_DTC_PROTOCOLS,
     ),
   ],
 );

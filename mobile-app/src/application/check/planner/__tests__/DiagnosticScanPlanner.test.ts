@@ -60,6 +60,7 @@ describe('CHECK-MK5 DiagnosticScanPlanner', () => {
     const first = plan.requests[0];
     expect(first.descriptorId).toBe('check-core-mode03-stored-dtc');
     expect(first.parserContractId).toBe('check.dtc-service/v1');
+    expect(first.supportedProtocols).toContain('ISO_14230_KWP');
     expect(first.evidenceTraceId).toContain('plan-1:evidence:0:check-core-mode03-stored-dtc');
     expect(evidenceTraceForPlannedRequest(first)).toEqual(expect.objectContaining({
       planId: 'plan-1',
@@ -95,6 +96,21 @@ describe('CHECK-MK5 DiagnosticScanPlanner', () => {
     expect(plan.requests).toEqual([]);
     expect(plan.blockedProposals).toEqual([
       expect.objectContaining({ semanticId: 'check.obd.mode04.clear-dtc', reason: 'UNREGISTERED_DESCRIPTOR', required: true }),
+    ]);
+  });
+
+  it('fails closed when a descriptor is registered but not parser-promoted for the active protocol', () => {
+    const plan = build({
+      protocol: 'ISO_15765_CAN',
+      proposals: [
+        { semanticId: 'check.obd.mode03.stored-dtc', required: true },
+        { semanticId: 'check.obd.mode07.pending-dtc', required: true },
+      ],
+    });
+    expect(plan.status).toBe('BLOCKED');
+    expect(plan.requests).toEqual([]);
+    expect(plan.blockedProposals).toEqual([
+      expect.objectContaining({ semanticId: 'check.obd.mode07.pending-dtc', reason: 'PROTOCOL_NOT_PROMOTED' }),
     ]);
   });
 
