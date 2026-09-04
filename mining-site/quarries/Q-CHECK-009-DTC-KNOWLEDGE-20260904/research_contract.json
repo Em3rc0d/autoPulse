@@ -1,0 +1,17 @@
+{
+  "quarry_id": "Q-CHECK-009-DTC-KNOWLEDGE-20260904",
+  "status": "SEMANTICS_CLOSED_CATALOG_OPEN",
+  "runtime_authorized": false,
+  "closed": [
+    "observed_code_separate_from_human_meaning",
+    "generic_and_manufacturer_specific_scopes_separate",
+    "event_meaning_and_cause_are_separate_claims",
+    "knowledge_is_versioned_and_provenanced",
+    "missing_description_does_not_block_scan"
+  ],
+  "open_gates": [
+    "reviewed_dtc_catalog",
+    "source_provenance_per_definition",
+    "catalog_regression_tests"
+  ]
+}
