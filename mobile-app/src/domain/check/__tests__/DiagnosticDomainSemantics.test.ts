@@ -3,6 +3,8 @@ import {
   diagnosticTroubleCodeFamily,
   DiagnosticConcern,
   DiagnosticCoverage,
+  DiagnosticFreezeFrame,
+  DiagnosticMonitorResult,
   DiagnosticScan,
   DiagnosticTroubleCode,
   hasCompleteDtcCoverage,
@@ -48,9 +50,16 @@ describe('Check domain semantics', () => {
     expect(scan.protocol).toBe('UNKNOWN');
   });
 
-  it('does not count unsupported service coverage as complete', () => {
+  it('does not count unsupported or discovered-but-unscanned coverage as complete', () => {
     expect(hasCompleteDtcCoverage(coverage, ['03', '07'])).toBe(true);
     expect(hasCompleteDtcCoverage(coverage, ['03', '07', '0A'])).toBe(false);
+
+    const partiallyScanned: DiagnosticCoverage = {
+      ...coverage,
+      discoveredEndpointIds: ['ecu-1', 'ecu-2'],
+      scannedEndpointIds: ['ecu-1'],
+    };
+    expect(hasCompleteDtcCoverage(partiallyScanned, ['03', '07'])).toBe(false);
   });
 
   it('keeps readiness incompletion separate from failure semantics', () => {
@@ -67,6 +76,38 @@ describe('Check domain semantics', () => {
     expect(diagnosticTroubleCodeFamily('B0001')).toBe('BODY');
     expect(diagnosticTroubleCodeFamily('C0035')).toBe('CHASSIS');
     expect(diagnosticTroubleCodeFamily('U0100')).toBe('NETWORK');
+  });
+
+  it('keeps DTC human meaning coupled to provenance', () => {
+    const described: DiagnosticTroubleCode = {
+      ...stored,
+      canonicalMeaning: 'Cylinder 1 misfire detected',
+      meaningProvenance: { sourceId: 'verified-dtc-catalog', sourceVersion: '1' },
+    };
+    expect(described.canonicalMeaning).toBe('Cylinder 1 misfire detected');
+    expect(described.meaningProvenance.sourceId).toBe('verified-dtc-catalog');
+  });
+
+  it('preserves raw Mode 06 evidence independently from decoded meaning', () => {
+    const result: DiagnosticMonitorResult = {
+      monitorResultId: 'm06-1', sourceEndpointId: 'ecu-1', monitorId: 'MID-01',
+      rawValue: [0x12, 0x34], outcome: 'UNKNOWN', provenance: 'fixture:mode06-raw',
+      evidenceIds: ['e-mode06'], observedAt: 12,
+    };
+    expect(result.rawValue).toEqual([0x12, 0x34]);
+    expect(result.meaning).toBeUndefined();
+  });
+
+  it('preserves sub-signal identity for compound freeze-frame PIDs', () => {
+    const frame: DiagnosticFreezeFrame = {
+      freezeFrameId: 'ff-1', frameNumber: 0, state: 'FRAME_OBSERVED', sourceEndpointId: 'ecu-1',
+      capturedAt: 'ECU_EVENT_TIME_UNKNOWN', observedAt: 13, evidenceIds: ['e-ff'],
+      values: [
+        { pid: '14', signalId: 'OxySensor1_Volt', value: 0.72, unit: 'V' },
+        { pid: '14', signalId: 'OxySensor1_STFT', value: 3.1, unit: '%' },
+      ],
+    };
+    expect(frame.values.map(value => value.signalId)).toEqual(['OxySensor1_Volt', 'OxySensor1_STFT']);
   });
 
   it('seals a deeply immutable terminal report with all version axes', () => {
