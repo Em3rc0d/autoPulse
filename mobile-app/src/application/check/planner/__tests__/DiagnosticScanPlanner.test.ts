@@ -85,6 +85,49 @@ describe('CHECK-MK5 DiagnosticScanPlanner', () => {
     expect(plan.requests.map(item => item.stage)).toEqual(['CAPABILITY_DISCOVERY', 'DTC_CORE']);
   });
 
+  it('never blind-plans a later support bitmap without endpoint advertisement evidence', () => {
+    const blocked = build({
+      proposals: [
+        { semanticId: 'check.obd.mode01.support.20', required: true, targetEndpointId: 'ecu-a' },
+      ],
+    });
+    expect(blocked.status).toBe('BLOCKED');
+    expect(blocked.requests).toEqual([]);
+    expect(blocked.blockedProposals[0]).toEqual(expect.objectContaining({
+      semanticId: 'check.obd.mode01.support.20',
+      reason: 'DESCRIPTOR_PRECONDITION_NOT_MET',
+    }));
+
+    const allowed = build({
+      proposals: [
+        { semanticId: 'check.obd.mode01.support.20', required: true, targetEndpointId: 'ecu-a' },
+      ],
+      endpointAdvertisedCapabilities: [{
+        endpointId: 'ecu-a',
+        advertisedPids: ['0101', '0120'],
+        evidenceIds: ['evidence-0100-ecu-a'],
+      }],
+    });
+    expect(allowed.status).toBe('READY');
+    expect(allowed.requests[0].semanticId).toBe('check.obd.mode01.support.20');
+    expect(allowed.requests[0].rationaleEvidenceIds).toContain('evidence-0100-ecu-a');
+  });
+
+  it('does not borrow bitmap advertisement from a different endpoint', () => {
+    const plan = build({
+      proposals: [
+        { semanticId: 'check.obd.mode01.support.20', required: true, targetEndpointId: 'ecu-b' },
+      ],
+      endpointAdvertisedCapabilities: [{
+        endpointId: 'ecu-a',
+        advertisedPids: ['0120'],
+        evidenceIds: ['evidence-ecu-a'],
+      }],
+    });
+    expect(plan.status).toBe('BLOCKED');
+    expect(plan.blockedProposals[0].reason).toBe('DESCRIPTOR_PRECONDITION_NOT_MET');
+  });
+
   it('fails the whole plan closed when a required descriptor is unregistered', () => {
     const plan = build({
       proposals: [

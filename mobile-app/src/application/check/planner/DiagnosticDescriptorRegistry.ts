@@ -1,5 +1,11 @@
 import type { DiagnosticProtocol } from '../../../domain/diagnostics/DiagnosticConnector';
-import { descriptorAddressKey, DiagnosticRequestDescriptor, normalizeDiagnosticByteHex } from './DiagnosticRequestDescriptor';
+import {
+  descriptorAddressKey,
+  DiagnosticDescriptorActivationCondition,
+  DiagnosticRequestDescriptor,
+  normalizeDiagnosticByteHex,
+  normalizeDiagnosticCommandHex,
+} from './DiagnosticRequestDescriptor';
 
 export const CHECK_MUTATING_OBD_SERVICES = Object.freeze(['04', '08'] as const);
 
@@ -25,6 +31,20 @@ const LEGACY_DTC_PROTOCOLS: readonly DiagnosticProtocol[] = Object.freeze([
   'SAE_J1850_PWM',
   'SAE_J1850_VPW',
 ]);
+
+function normalizedActivationCondition(
+  descriptor: DiagnosticRequestDescriptor,
+): DiagnosticDescriptorActivationCondition {
+  if (descriptor.activationCondition.kind === 'ALWAYS') return Object.freeze({ kind: 'ALWAYS' as const });
+  const advertisedPid = normalizeDiagnosticCommandHex(descriptor.activationCondition.advertisedPid);
+  if (!advertisedPid) {
+    throw new Error(`Diagnostic descriptor ${descriptor.semanticId} has an invalid advertised-PID precondition`);
+  }
+  return Object.freeze({
+    kind: 'REQUIRES_ENDPOINT_ADVERTISEMENT' as const,
+    advertisedPid,
+  });
+}
 
 function normalizedDescriptor(descriptor: DiagnosticRequestDescriptor): DiagnosticRequestDescriptor {
   const service = normalizeDiagnosticByteHex(descriptor.service);
@@ -64,6 +84,7 @@ function normalizedDescriptor(descriptor: DiagnosticRequestDescriptor): Diagnost
     pid,
     subfunction,
     supportedProtocols: Object.freeze([...descriptor.supportedProtocols]),
+    activationCondition: normalizedActivationCondition(descriptor),
     executionMode: 'SERIAL_ONLY' as const,
   });
 }
@@ -140,6 +161,7 @@ const descriptor = (
   provenance: string,
   supportedProtocols: readonly DiagnosticProtocol[],
   pid?: string,
+  activationCondition: DiagnosticDescriptorActivationCondition = { kind: 'ALWAYS' },
 ): DiagnosticRequestDescriptor => ({
   descriptorId,
   semanticId,
@@ -151,6 +173,7 @@ const descriptor = (
   stage,
   safetyClassification: 'READ_ONLY_PROVEN',
   supportedProtocols,
+  activationCondition,
   provenance,
   executionMode: 'SERIAL_ONLY',
 });
@@ -160,7 +183,7 @@ const MODE01_BITMAP_PIDS = ['00', '20', '40', '60', '80', 'A0', 'C0'] as const;
 export const CHECK_CORE_DESCRIPTOR_REGISTRY_V1 = createDiagnosticDescriptorRegistry(
   'check-core-descriptors/v1',
   [
-    ...MODE01_BITMAP_PIDS.map(pid => descriptor(
+    ...MODE01_BITMAP_PIDS.map((pid, index) => descriptor(
       `check-core-mode01-support-${pid.toLowerCase()}`,
       `check.obd.mode01.support.${pid}`,
       '01',
@@ -170,6 +193,9 @@ export const CHECK_CORE_DESCRIPTOR_REGISTRY_V1 = createDiagnosticDescriptorRegis
       'Q-CHECK-002 + CHECK-MK4 PidSupportBitmapParser',
       CORE_STANDARD_PROTOCOLS,
       pid,
+      index === 0
+        ? { kind: 'ALWAYS' }
+        : { kind: 'REQUIRES_ENDPOINT_ADVERTISEMENT', advertisedPid: `01${pid}` },
     )),
     descriptor(
       'check-core-mode03-stored-dtc',

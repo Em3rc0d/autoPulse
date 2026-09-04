@@ -3,6 +3,14 @@ import type { DiagnosticProtocol, DiagnosticRequestKind } from '../../../domain/
 
 export type DiagnosticPlannerStage = 'CAPABILITY_DISCOVERY' | 'DTC_CORE';
 
+export type DiagnosticDescriptorActivationCondition =
+  | { readonly kind: 'ALWAYS' }
+  | {
+      readonly kind: 'REQUIRES_ENDPOINT_ADVERTISEMENT';
+      /** Full standard command identity such as 0120, as emitted by bitmap evidence. */
+      readonly advertisedPid: string;
+    };
+
 /**
  * Declarative identity for one exact diagnostic operation.
  *
@@ -22,6 +30,7 @@ export interface DiagnosticRequestDescriptor {
   readonly safetyClassification: DiagnosticSafetyClassification;
   /** Parser/envelope combinations already promoted for this exact descriptor. */
   readonly supportedProtocols: readonly DiagnosticProtocol[];
+  readonly activationCondition: DiagnosticDescriptorActivationCondition;
   readonly provenance: string;
   readonly executionMode: 'SERIAL_ONLY';
 }
@@ -29,6 +38,11 @@ export interface DiagnosticRequestDescriptor {
 export function normalizeDiagnosticByteHex(value: string): string | null {
   const normalized = value.trim().toUpperCase();
   return /^[0-9A-F]{2}$/.test(normalized) ? normalized : null;
+}
+
+export function normalizeDiagnosticCommandHex(value: string): string | null {
+  const normalized = value.trim().toUpperCase();
+  return /^[0-9A-F]{4}$/.test(normalized) ? normalized : null;
 }
 
 export function descriptorAddressKey(descriptor: Pick<

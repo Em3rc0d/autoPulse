@@ -13,6 +13,13 @@ export interface DiagnosticPlanProposal {
   readonly rationaleEvidenceIds?: readonly string[];
 }
 
+export interface EndpointAdvertisedCapabilityEvidence {
+  readonly endpointId: string;
+  /** Full command identities emitted by support-bitmap evidence, e.g. 0120. */
+  readonly advertisedPids: readonly string[];
+  readonly evidenceIds: readonly string[];
+}
+
 export interface PlannedDiagnosticRequest {
   readonly planRequestId: string;
   readonly planId: string;
@@ -35,11 +42,16 @@ export interface PlannedDiagnosticRequest {
   readonly executionMode: 'SERIAL_ONLY';
 }
 
+export type DiagnosticPlanBlockedReason =
+  | DiagnosticSafetyBlockReason
+  | 'DESCRIPTOR_PRECONDITION_NOT_MET'
+  | 'PLAN_COMMAND_BUDGET_EXCEEDED';
+
 export interface DiagnosticPlanBlockedProposal {
   readonly semanticId: string;
   readonly required: boolean;
   readonly targetEndpointId: string | null;
-  readonly reason: DiagnosticSafetyBlockReason | 'PLAN_COMMAND_BUDGET_EXCEEDED';
+  readonly reason: DiagnosticPlanBlockedReason;
 }
 
 export interface DiagnosticScanPlan {
@@ -73,6 +85,7 @@ export interface BuildDiagnosticScanPlanInput {
   readonly protocol: DiagnosticProtocol;
   readonly registry: DiagnosticDescriptorRegistry;
   readonly proposals: readonly DiagnosticPlanProposal[];
+  readonly endpointAdvertisedCapabilities?: readonly EndpointAdvertisedCapabilityEvidence[];
   readonly budget: CommandBudget;
   readonly retryPolicy: RetryPolicy;
   readonly deadlinePolicy: StageDeadlinePolicy;
@@ -85,6 +98,26 @@ const STAGE_ORDER: Readonly<Record<DiagnosticPlannerStage, number>> = {
 
 function targetKey(proposal: DiagnosticPlanProposal): string {
   return proposal.targetEndpointId ?? 'FUNCTIONAL_OR_UNATTRIBUTED';
+}
+
+function unique(values: readonly string[]): string[] {
+  return [...new Set(values)];
+}
+
+function evaluateActivationCondition(
+  input: BuildDiagnosticScanPlanInput,
+  descriptor: DiagnosticRequestDescriptor,
+  proposal: DiagnosticPlanProposal,
+): { readonly allowed: true; readonly evidenceIds: readonly string[] } | { readonly allowed: false } {
+  if (descriptor.activationCondition.kind === 'ALWAYS') return { allowed: true, evidenceIds: [] };
+  const endpointId = proposal.targetEndpointId;
+  if (!endpointId) return { allowed: false };
+
+  const evidence = input.endpointAdvertisedCapabilities?.find(item => item.endpointId === endpointId);
+  if (!evidence) return { allowed: false };
+  const advertised = evidence.advertisedPids.map(value => value.trim().toUpperCase());
+  if (!advertised.includes(descriptor.activationCondition.advertisedPid)) return { allowed: false };
+  return { allowed: true, evidenceIds: evidence.evidenceIds };
 }
 
 function plannedFromDescriptor(
@@ -185,7 +218,26 @@ export function buildDiagnosticScanPlan(input: BuildDiagnosticScanPlanInput): Di
       }));
       return;
     }
-    authorized.push({ proposal, descriptor: decision.descriptor, inputIndex });
+
+    const activation = evaluateActivationCondition(input, decision.descriptor, proposal);
+    if (!activation.allowed) {
+      blocked.push(Object.freeze({
+        semanticId: proposal.semanticId,
+        required: proposal.required,
+        targetEndpointId: proposal.targetEndpointId ?? null,
+        reason: 'DESCRIPTOR_PRECONDITION_NOT_MET' as const,
+      }));
+      return;
+    }
+
+    authorized.push({
+      proposal: {
+        ...proposal,
+        rationaleEvidenceIds: unique([...(proposal.rationaleEvidenceIds ?? []), ...activation.evidenceIds]),
+      },
+      descriptor: decision.descriptor,
+      inputIndex,
+    });
   });
 
   if (blocked.some(item => item.required)) {

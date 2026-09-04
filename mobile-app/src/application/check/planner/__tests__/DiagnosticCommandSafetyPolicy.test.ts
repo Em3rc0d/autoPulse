@@ -12,6 +12,7 @@ const forged = (overrides: Partial<DiagnosticRequestDescriptor> = {}): Diagnosti
   stage: 'DTC_CORE',
   safetyClassification: 'READ_ONLY_PROVEN',
   supportedProtocols: ['ISO_14230_KWP'],
+  activationCondition: { kind: 'ALWAYS' },
   provenance: 'fixture',
   executionMode: 'SERIAL_ONLY',
   ...overrides,

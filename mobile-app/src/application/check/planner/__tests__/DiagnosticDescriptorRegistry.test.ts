@@ -16,6 +16,7 @@ const baseDescriptor = (overrides: Partial<DiagnosticRequestDescriptor> = {}): D
   stage: 'DTC_CORE',
   safetyClassification: 'READ_ONLY_PROVEN',
   supportedProtocols: ['ISO_14230_KWP'],
+  activationCondition: { kind: 'ALWAYS' },
   provenance: 'fixture',
   executionMode: 'SERIAL_ONLY',
   ...overrides,
@@ -37,6 +38,18 @@ describe('CHECK-MK5 DiagnosticDescriptorRegistry', () => {
     expect(resolveDescriptorBySemanticId(CHECK_CORE_DESCRIPTOR_REGISTRY_V1, 'check.obd.mode03.stored-dtc')?.supportedProtocols).toContain('ISO_15765_CAN');
     expect(resolveDescriptorBySemanticId(CHECK_CORE_DESCRIPTOR_REGISTRY_V1, 'check.obd.mode07.pending-dtc')?.supportedProtocols).not.toContain('ISO_15765_CAN');
     expect(resolveDescriptorBySemanticId(CHECK_CORE_DESCRIPTOR_REGISTRY_V1, 'check.obd.mode0a.permanent-dtc')?.supportedProtocols).not.toContain('ISO_15765_CAN');
+  });
+
+  it('requires endpoint advertisement before later Mode 01 support blocks', () => {
+    expect(resolveDescriptorBySemanticId(CHECK_CORE_DESCRIPTOR_REGISTRY_V1, 'check.obd.mode01.support.00')?.activationCondition).toEqual({ kind: 'ALWAYS' });
+    expect(resolveDescriptorBySemanticId(CHECK_CORE_DESCRIPTOR_REGISTRY_V1, 'check.obd.mode01.support.20')?.activationCondition).toEqual({
+      kind: 'REQUIRES_ENDPOINT_ADVERTISEMENT',
+      advertisedPid: '0120',
+    });
+    expect(resolveDescriptorBySemanticId(CHECK_CORE_DESCRIPTOR_REGISTRY_V1, 'check.obd.mode01.support.C0')?.activationCondition).toEqual({
+      kind: 'REQUIRES_ENDPOINT_ADVERTISEMENT',
+      advertisedPid: '01C0',
+    });
   });
 
   it('rejects mutating, non-Core and unproven descriptors at registry construction', () => {
@@ -63,6 +76,12 @@ describe('CHECK-MK5 DiagnosticDescriptorRegistry', () => {
     expect(() => createDiagnosticDescriptorRegistry('fixture', [
       baseDescriptor({ supportedProtocols: ['ISO_14230_KWP', 'ISO_14230_KWP'] }),
     ])).toThrow('duplicate protocols');
+  });
+
+  it('rejects invalid chained-advertisement identities', () => {
+    expect(() => createDiagnosticDescriptorRegistry('fixture', [
+      baseDescriptor({ activationCondition: { kind: 'REQUIRES_ENDPOINT_ADVERTISEMENT', advertisedPid: '120' } }),
+    ])).toThrow('invalid advertised-PID precondition');
   });
 
   it('rejects duplicate semantic, descriptor and exact address identities', () => {
