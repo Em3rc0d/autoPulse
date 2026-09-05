@@ -1,5 +1,6 @@
-import type { DiagnosticScanTerminalState } from '../../../domain/check/DiagnosticScanState';
 import type { Mode01CapabilityCommand } from '../../../domain/acquisition/Mode01CapabilityDiscovery';
+import type { DiagnosticScanTerminalState } from '../../../domain/check/DiagnosticScanState';
+import type { DiagnosticProtocol } from '../../../domain/diagnostics/DiagnosticConnector';
 import type { DiagnosticServiceEnvelope } from '../parsers/DiagnosticServiceEnvelope';
 import { DtcRequestService, DtcServiceParseResult, parseDtcServiceEnvelope } from '../parsers/DtcServiceParser';
 import { parsePidSupportBitmap, PidSupportBitmapParseResult } from '../parsers/PidSupportBitmapParser';
@@ -18,7 +19,7 @@ import {
 } from '../planner/DiagnosticScanPlanner';
 import type { PlannedDiagnosticExecutionReceipt, PlannedDiagnosticExecutor } from './DiagnosticExecutionPort';
 
-export const CHECK_SCAN_ENGINE_VERSION = 'check-scan-engine/v3' as const;
+export const CHECK_SCAN_ENGINE_VERSION = 'check-scan-engine/v4' as const;
 
 export interface DiagnosticScanAttemptRecord {
   readonly planRequestId: string;
@@ -39,6 +40,14 @@ export interface DiagnosticScanAttemptRecord {
   readonly finishedAt: number;
 }
 
+/** Mode 01 capability is endpoint-scoped evidence, never a vehicle-global union. */
+export interface DiagnosticPidSupportObservation extends PidSupportBitmapParseResult {
+  readonly sourceEndpointId: string | null;
+  readonly protocol: DiagnosticProtocol;
+  readonly provenance: string;
+  readonly observedAt: number;
+}
+
 export interface DiagnosticScanEngineResult {
   readonly engineVersion: typeof CHECK_SCAN_ENGINE_VERSION;
   readonly planId: string;
@@ -48,7 +57,7 @@ export interface DiagnosticScanEngineResult {
   readonly endedAt: number;
   readonly attempts: readonly DiagnosticScanAttemptRecord[];
   readonly dtcResults: readonly DtcServiceParseResult[];
-  readonly pidSupportResults: readonly PidSupportBitmapParseResult[];
+  readonly pidSupportResults: readonly DiagnosticPidSupportObservation[];
   readonly usage: CommandBudgetUsage;
   readonly limitations: readonly string[];
 }
@@ -63,7 +72,7 @@ export interface RunDiagnosticScanInput {
 interface ParsedAttempt {
   readonly outcome: DiagnosticAttemptOutcome;
   readonly dtcResult?: DtcServiceParseResult;
-  readonly pidSupportResult?: PidSupportBitmapParseResult;
+  readonly pidSupportResult?: DiagnosticPidSupportObservation;
 }
 
 function envelopeOutcome(envelope: DiagnosticServiceEnvelope): DiagnosticAttemptOutcome {
@@ -101,29 +110,27 @@ function parseAttempt(request: PlannedDiagnosticRequest, envelope: DiagnosticSer
 
     const command = `${request.service}${request.pid}`.toUpperCase() as Mode01CapabilityCommand;
     const result = parsePidSupportBitmap(command, envelope.payload.slice(1));
-    return { outcome: result.outcome === 'VALID' ? 'SUCCESS' : 'INVALID_RESPONSE', pidSupportResult: result };
+    const observation: DiagnosticPidSupportObservation = Object.freeze({
+      ...result,
+      sourceEndpointId: envelope.sourceEndpointId,
+      protocol: envelope.protocol,
+      provenance: envelope.provenance,
+      observedAt: envelope.observedAt,
+    });
+    return { outcome: result.outcome === 'VALID' ? 'SUCCESS' : 'INVALID_RESPONSE', pidSupportResult: observation };
   }
 
   return { outcome: 'INVALID_RESPONSE' };
 }
 
-/**
- * A functional OBD request may yield several ECU responses. Retry decisions
- * are made for the command transaction, not by silently choosing one ECU.
- */
 function aggregateResponderOutcomes(parsed: readonly ParsedAttempt[]): DiagnosticAttemptOutcome {
   if (parsed.length === 0) return 'INVALID_RESPONSE';
   const values = parsed.map(item => item.outcome);
   if (values.every(value => value === values[0])) return values[0];
   if (values.includes('DISCONNECTED')) return 'DISCONNECTED';
-  // If every responder is either complete or still pending, the semantic
-  // command remains in-flight. Good evidence is retained and only pending
-  // responders continue; no second command is issued.
   if (values.includes('RESPONSE_PENDING') && values.every(value => value === 'SUCCESS' || value === 'RESPONSE_PENDING')) {
     return 'RESPONSE_PENDING';
   }
-  // Other mixed responder outcomes are real partial coverage and must not
-  // become SUCCESS or trigger a hidden retry that duplicates good evidence.
   return 'PARTIAL';
 }
 
@@ -137,8 +144,6 @@ function observeReceiptBytes(
   for (const response of receipt.responses) {
     const decision = evaluateObservedResponseBytes(plan.budget, next, response.observedResponseBytes);
     if (!firstBlock && decision.disposition === 'BLOCK') firstBlock = decision;
-    // Budget rejection means the bytes cannot be accepted as diagnostic
-    // evidence, not that they magically disappeared from the transport.
     next = recordObservedResponseBytes(next, response.observedResponseBytes);
   }
   return { decision: firstBlock ?? { disposition: 'ALLOW' }, usage: next };
@@ -214,7 +219,7 @@ function frozenResult(
   endedAt: number,
   attempts: readonly DiagnosticScanAttemptRecord[],
   dtcResults: readonly DtcServiceParseResult[],
-  pidSupportResults: readonly PidSupportBitmapParseResult[],
+  pidSupportResults: readonly DiagnosticPidSupportObservation[],
   usage: CommandBudgetUsage,
   limitations: readonly string[],
 ): DiagnosticScanEngineResult {
@@ -237,10 +242,6 @@ function cancellationRequested(cancelRequestedAt: number | undefined, now: numbe
   return cancelRequestedAt !== undefined && now >= cancelRequestedAt;
 }
 
-/**
- * Structural scan engine. It consumes only an MK5 plan and a descriptor-only
- * executor port. This module contains no BLE/ELM/DB imports.
- */
 export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<DiagnosticScanEngineResult> {
   const { plan, executor } = input;
   const startedAt = plan.createdAt;
@@ -251,7 +252,7 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
   let usage: CommandBudgetUsage = { commandsIssued: 0, responseBytes: 0, elapsedMs: 0 };
   const attempts: DiagnosticScanAttemptRecord[] = [];
   const dtcResults: DtcServiceParseResult[] = [];
-  const pidSupportResults: PidSupportBitmapParseResult[] = [];
+  const pidSupportResults: DiagnosticPidSupportObservation[] = [];
   const limitations: string[] = [];
   let limited = plan.status === 'LIMITED';
 
@@ -333,16 +334,13 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
       const receiptProblem = validateExecutionReceipt(plan, request, executionStartedAt, receipt);
       if (receiptProblem) {
         limitations.push(`executor:${request.semanticId}:${receiptProblem}`);
-        return frozenResult(plan, 'FAILED', startedAt, Math.max(now, receipt.finishedAt), attempts, dtcResults, pidSupportResults, usage, limitations);
+        const safeEndedAt = Number.isFinite(receipt.finishedAt) ? Math.max(now, receipt.finishedAt) : now;
+        return frozenResult(plan, 'FAILED', startedAt, safeEndedAt, attempts, dtcResults, pidSupportResults, usage, limitations);
       }
 
       now = receipt.finishedAt;
       lastTransactionFinishedAt = receipt.finishedAt;
-      const observed = observeReceiptBytes(
-        plan,
-        { ...usage, elapsedMs: receipt.finishedAt - startedAt },
-        receipt,
-      );
+      const observed = observeReceiptBytes(plan, { ...usage, elapsedMs: receipt.finishedAt - startedAt }, receipt);
       usage = Object.freeze({ ...observed.usage, elapsedMs: now - startedAt });
 
       if (observed.decision.disposition === 'BLOCK') {
@@ -368,9 +366,6 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
       });
       appendAttemptRecords(request, receipt, parsedResponses, undefined, pendingContinuation, commandAttemptIndex, pendingExtensionsUsed, attempts);
 
-      // A cancellation that arrives while a request is already in-flight cannot
-      // erase the response that actually arrived, but it must prevent any retry,
-      // continuation or next command.
       if (cancellationRequested(input.cancelRequestedAt, now)) {
         limitations.push(`cancelled-after-response:${request.semanticId}`);
         return frozenResult(plan, 'CANCELLED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
