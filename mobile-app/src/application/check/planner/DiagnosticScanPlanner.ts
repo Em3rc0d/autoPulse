@@ -76,6 +76,29 @@ export function normalizeEndpointAdvertisedCapabilities(
   return Object.freeze(normalized);
 }
 
+function normalizeProposal(proposal: DiagnosticPlanProposal, inputIndex: number): DiagnosticPlanProposal {
+  const semanticId = proposal.semanticId.trim();
+  if (!semanticId) throw new Error(`Diagnostic proposal ${inputIndex} semanticId must be non-empty`);
+
+  let targetEndpointId = proposal.targetEndpointId;
+  if (typeof targetEndpointId === 'string') {
+    targetEndpointId = targetEndpointId.trim();
+    if (!targetEndpointId) throw new Error(`Diagnostic proposal ${semanticId} targetEndpointId must be non-empty when attributed`);
+  }
+
+  const rationaleEvidenceIds = (proposal.rationaleEvidenceIds ?? []).map(value => value.trim());
+  if (rationaleEvidenceIds.some(value => value.length === 0)) {
+    throw new Error(`Diagnostic proposal ${semanticId} rationaleEvidenceIds contains an empty identifier`);
+  }
+
+  return {
+    ...proposal,
+    semanticId,
+    targetEndpointId,
+    rationaleEvidenceIds: unique(rationaleEvidenceIds),
+  };
+}
+
 function evaluateActivationCondition(
   endpointAdvertisedCapabilities: readonly EndpointAdvertisedCapabilityEvidence[],
   descriptor: DiagnosticRequestDescriptor,
@@ -84,7 +107,7 @@ function evaluateActivationCondition(
   if (descriptor.activationCondition.kind === 'ALWAYS') return { allowed: true, evidenceIds: [] };
   const endpointId = proposal.targetEndpointId;
   if (!endpointId) return { allowed: false };
-  const evidence = endpointAdvertisedCapabilities.find(item => item.endpointId === endpointId.trim());
+  const evidence = endpointAdvertisedCapabilities.find(item => item.endpointId === endpointId);
   if (!evidence) return { allowed: false };
   if (!evidence.advertisedPids.includes(descriptor.activationCondition.advertisedPid)) return { allowed: false };
   return { allowed: true, evidenceIds: evidence.evidenceIds };
@@ -115,15 +138,19 @@ function frozenPlan(input: BuildDiagnosticScanPlanInput, status: DiagnosticScanP
 
 function consolidateProposals(proposals: readonly DiagnosticPlanProposal[]): Array<{ proposal: DiagnosticPlanProposal; inputIndex: number }> {
   const byKey = new Map<string, { proposal: DiagnosticPlanProposal; inputIndex: number }>();
-  proposals.forEach((proposal, inputIndex) => {
+  proposals.forEach((rawProposal, inputIndex) => {
+    const proposal = normalizeProposal(rawProposal, inputIndex);
     const key = `${proposal.semanticId}:${targetKey(proposal)}`;
     const existing = byKey.get(key);
     if (!existing) {
-      byKey.set(key, { proposal: { ...proposal, rationaleEvidenceIds: unique(proposal.rationaleEvidenceIds ?? []) }, inputIndex });
+      byKey.set(key, { proposal, inputIndex });
       return;
     }
-    existing.proposal = { ...existing.proposal, required: existing.proposal.required || proposal.required,
-      rationaleEvidenceIds: unique([...(existing.proposal.rationaleEvidenceIds ?? []), ...(proposal.rationaleEvidenceIds ?? [])]) };
+    existing.proposal = {
+      ...existing.proposal,
+      required: existing.proposal.required || proposal.required,
+      rationaleEvidenceIds: unique([...(existing.proposal.rationaleEvidenceIds ?? []), ...(proposal.rationaleEvidenceIds ?? [])]),
+    };
   });
   return [...byKey.values()];
 }
