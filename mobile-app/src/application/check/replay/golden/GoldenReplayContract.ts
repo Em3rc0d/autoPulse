@@ -130,21 +130,6 @@ export function assertValidGoldenReplayCase(candidate: GoldenReplayCase): void {
     }
   }
 
-  const promoted = PROMOTION_RANK[candidate.promotionState] >= PROMOTION_RANK.GOLDEN;
-  if (promoted) {
-    if (candidate.evidence.length === 0) {
-      throw new Error(`Golden replay ${candidate.caseId} cannot be GOLDEN without evidence`);
-    }
-    for (const claim of candidate.claims) {
-      const independentlySupported = candidate.evidence.some(
-        item => item.independentFromParserOutput && item.supports.includes(claim),
-      );
-      if (!independentlySupported) {
-        throw new Error(`Golden replay ${candidate.caseId} claim ${claim} lacks independent supporting evidence`);
-      }
-    }
-  }
-
   const physicalClaims = candidate.claims.filter(
     claim => claim === 'PHYSICAL_TRANSPORT' || claim === 'PHYSICAL_TIMING',
   );
@@ -167,6 +152,21 @@ export function assertValidGoldenReplayCase(candidate: GoldenReplayCase): void {
         item => item.kind === 'PHYSICAL_RAW_CAPTURE' && item.independentFromParserOutput && item.supports.includes(claim),
       )) {
         throw new Error(`Golden replay ${candidate.caseId} physical claim ${claim} lacks independent raw capture evidence`);
+      }
+    }
+  }
+
+  const promoted = PROMOTION_RANK[candidate.promotionState] >= PROMOTION_RANK.GOLDEN;
+  if (promoted) {
+    if (candidate.evidence.length === 0) {
+      throw new Error(`Golden replay ${candidate.caseId} cannot be GOLDEN without evidence`);
+    }
+    for (const claim of candidate.claims) {
+      const independentlySupported = candidate.evidence.some(
+        item => item.independentFromParserOutput && item.supports.includes(claim),
+      );
+      if (!independentlySupported) {
+        throw new Error(`Golden replay ${candidate.caseId} claim ${claim} lacks independent supporting evidence`);
       }
     }
   }
