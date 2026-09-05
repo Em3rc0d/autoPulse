@@ -1,7 +1,7 @@
 import { certifyGoldenReplayCorpus } from '../GoldenReplayCertification';
 import { CHECK_GOLDEN_REPLAY_CERTIFICATION_CORPUS_V1 } from '../GoldenReplayCertificationCorpusV1';
 
-describe('CHECK-MK7 golden replay certification', () => {
+describe('CHECK-MK9 golden replay certification', () => {
   it('certifies every promoted V1 replay case against independently reviewed expectations', async () => {
     const receipt = await certifyGoldenReplayCorpus(CHECK_GOLDEN_REPLAY_CERTIFICATION_CORPUS_V1);
 
@@ -29,7 +29,7 @@ describe('CHECK-MK7 golden replay certification', () => {
       'golden-mode01-support-bitmap-reference',
       'golden-multiple-stored-dtcs',
       'golden-duplicate-dtc-normalization',
-      'golden-positive-empty-dtc-list',
+      'golden-positive-empty-dtc-fails-closed',
       'golden-partial-dtc-remains-partial',
       'golden-unsupported-dtc-is-not-zero',
       'golden-attributed-single-responder',
