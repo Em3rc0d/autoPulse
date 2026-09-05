@@ -6,10 +6,11 @@ import {
   assertValidGoldenReplayCase,
   GoldenReplayCase,
   GoldenReplayExpectedDtcObservation,
+  GoldenReplayExpectedPidSupportObservation,
   isReplayCertificationEligible,
 } from './GoldenReplayContract';
 
-export const CHECK_GOLDEN_REPLAY_CERTIFIER_VERSION = 'check-golden-replay-certifier/v3' as const;
+export const CHECK_GOLDEN_REPLAY_CERTIFIER_VERSION = 'check-golden-replay-certifier/v4' as const;
 
 export interface GoldenReplayCaseReceipt {
   readonly caseId: string;
@@ -55,6 +56,25 @@ function compareDtcObservation(
     } else if (actualCode.occurrenceCount !== occurrence.count) {
       mismatches.push(`dtc[${index}].occurrence ${occurrence.code} expected ${occurrence.count} got ${actualCode.occurrenceCount}`);
     }
+  }
+}
+
+function comparePidSupport(
+  actual: {
+    readonly command: string;
+    readonly advertisedPids: readonly string[];
+    readonly continuationCommand: string | null;
+    readonly sourceEndpointId: string | null;
+  },
+  expected: GoldenReplayExpectedPidSupportObservation,
+  label: string,
+  mismatches: string[],
+): void {
+  if (actual.command !== expected.command) mismatches.push(`${label}.command expected ${expected.command} got ${actual.command}`);
+  if (!sameArray(actual.advertisedPids, expected.advertisedPids)) mismatches.push(`${label}.advertisedPids mismatch`);
+  if (actual.continuationCommand !== expected.continuationCommand) mismatches.push(`${label}.continuation expected ${expected.continuationCommand} got ${actual.continuationCommand}`);
+  if (Object.prototype.hasOwnProperty.call(expected, 'sourceEndpointId') && actual.sourceEndpointId !== expected.sourceEndpointId) {
+    mismatches.push(`${label}.sourceEndpointId expected ${String(expected.sourceEndpointId)} got ${String(actual.sourceEndpointId)}`);
   }
 }
 
@@ -122,13 +142,18 @@ export async function certifyGoldenReplayCase(candidate: GoldenReplayCase): Prom
 
   if (candidate.expected.pidSupport) {
     const actual = result.pidSupportResults[0];
-    if (!actual) {
-      mismatches.push('pidSupport expected but no result produced');
-    } else {
-      if (actual.command !== candidate.expected.pidSupport.command) mismatches.push(`pidSupport.command expected ${candidate.expected.pidSupport.command} got ${actual.command}`);
-      if (!sameArray(actual.advertisedPids, candidate.expected.pidSupport.advertisedPids)) mismatches.push('pidSupport.advertisedPids mismatch');
-      if (actual.continuationCommand !== candidate.expected.pidSupport.continuationCommand) mismatches.push(`pidSupport.continuation expected ${candidate.expected.pidSupport.continuationCommand} got ${actual.continuationCommand}`);
+    if (!actual) mismatches.push('pidSupport expected but no result produced');
+    else comparePidSupport(actual, candidate.expected.pidSupport, 'pidSupport', mismatches);
+  }
+
+  if (candidate.expected.pidSupportObservations) {
+    if (result.pidSupportResults.length !== candidate.expected.pidSupportObservations.length) {
+      mismatches.push(`pidSupportResults length expected ${candidate.expected.pidSupportObservations.length} got ${result.pidSupportResults.length}`);
     }
+    candidate.expected.pidSupportObservations.forEach((expected, index) => {
+      const actual = result.pidSupportResults[index];
+      if (actual) comparePidSupport(actual, expected, `pidSupport[${index}]`, mismatches);
+    });
   }
 
   try {
