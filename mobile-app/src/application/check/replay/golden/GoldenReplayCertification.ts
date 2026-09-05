@@ -9,7 +9,7 @@ import {
   isReplayCertificationEligible,
 } from './GoldenReplayContract';
 
-export const CHECK_GOLDEN_REPLAY_CERTIFIER_VERSION = 'check-golden-replay-certifier/v2' as const;
+export const CHECK_GOLDEN_REPLAY_CERTIFIER_VERSION = 'check-golden-replay-certifier/v3' as const;
 
 export interface GoldenReplayCaseReceipt {
   readonly caseId: string;
@@ -97,7 +97,8 @@ export async function certifyGoldenReplayCase(candidate: GoldenReplayCase): Prom
     },
   });
 
-  const result = await runDiagnosticScan({ plan, executor: new DiagnosticReplayExecutor(candidate.fixture) });
+  const executor = new DiagnosticReplayExecutor(candidate.fixture);
+  const result = await runDiagnosticScan({ plan, executor });
   const mismatches: string[] = [];
   if (result.state !== candidate.expected.terminalState) mismatches.push(`terminalState expected ${candidate.expected.terminalState} got ${result.state}`);
   if (result.usage.commandsIssued !== candidate.expected.commandsIssued) mismatches.push(`commandsIssued expected ${candidate.expected.commandsIssued} got ${result.usage.commandsIssued}`);
@@ -130,10 +131,20 @@ export async function certifyGoldenReplayCase(candidate: GoldenReplayCase): Prom
     }
   }
 
+  try {
+    executor.assertFullyConsumed();
+  } catch (error) {
+    mismatches.push(`fixture-consumption:${error instanceof Error ? error.message : String(error)}`);
+  }
+
   return Object.freeze({ caseId: candidate.caseId, promotionState: candidate.promotionState, eligible: true, passed: mismatches.length === 0, mismatches: Object.freeze([...mismatches]) });
 }
 
 export async function certifyGoldenReplayCorpus(cases: readonly GoldenReplayCase[]): Promise<GoldenReplayCertificationReceipt> {
+  const ids = cases.map(candidate => candidate.caseId.trim());
+  if (ids.some(id => id.length === 0)) throw new Error('Golden replay corpus contains an empty caseId');
+  if (new Set(ids).size !== ids.length) throw new Error('Golden replay corpus contains duplicate caseIds');
+
   const receipts = await Promise.all(cases.map(certifyGoldenReplayCase));
   const eligible = receipts.filter(item => item.eligible);
   const passed = eligible.filter(item => item.passed);
