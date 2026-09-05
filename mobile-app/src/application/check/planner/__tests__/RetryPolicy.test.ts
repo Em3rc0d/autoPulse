@@ -46,9 +46,9 @@ describe('CHECK-MK5 RetryPolicy', () => {
     })).toEqual({ action: 'STOP', reason: 'PENDING_WOULD_CROSS_DEADLINE' });
   });
 
-  it('completes successful DTC outcomes without retrying', () => {
+  it('treats parser-agnostic SUCCESS as terminal for every diagnostic service family', () => {
     expect(decideRetry(policy, {
-      outcome: 'SUCCESS_ZERO_CODES', retriesUsed: 0, pendingExtensionsUsed: 0, remainingMs: 1000,
+      outcome: 'SUCCESS', retriesUsed: 0, pendingExtensionsUsed: 0, remainingMs: 1000,
     })).toEqual({ action: 'COMPLETE', reason: 'SUCCESS' });
   });
 });
