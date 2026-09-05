@@ -6,12 +6,23 @@ export const CHECK_REPLAY_CORPUS_VERSION = 'check-replay-corpus/synthetic-v1' as
 
 const START = 1000;
 
+type ReplayEnvelopeBody =
+  | { readonly kind: 'POSITIVE_RESPONSE'; readonly responseService: string; readonly payload: readonly number[]; readonly rawText?: string }
+  | { readonly kind: 'NEGATIVE_RESPONSE'; readonly negativeResponseCode: string; readonly rawText?: string }
+  | { readonly kind: 'NO_DATA'; readonly rawText?: string }
+  | { readonly kind: 'TIMEOUT'; readonly rawText?: string }
+  | { readonly kind: 'DISCONNECTED'; readonly rawText?: string }
+  | { readonly kind: 'UNSUPPORTED'; readonly rawText?: string }
+  | { readonly kind: 'FAILED'; readonly detail?: string; readonly rawText?: string }
+  | { readonly kind: 'PARTIAL'; readonly responseService?: string; readonly payload?: readonly number[]; readonly detail?: string; readonly rawText?: string }
+  | { readonly kind: 'INVALID_RESPONSE'; readonly detail?: string; readonly rawText?: string };
+
 const envelope = (
   protocol: DiagnosticProtocol,
   requestService: string,
   sourceEndpointId: string | null,
   observedAt: number,
-  body: Omit<DiagnosticServiceEnvelope, 'protocol' | 'requestService' | 'sourceEndpointId' | 'observedAt' | 'provenance'>,
+  body: ReplayEnvelopeBody,
 ): DiagnosticServiceEnvelope => ({
   ...body,
   protocol,
