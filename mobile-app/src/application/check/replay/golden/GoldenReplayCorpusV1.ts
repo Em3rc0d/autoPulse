@@ -10,15 +10,35 @@ import {
   CHECK_REPLAY_TIMEOUT_THEN_SUCCESS_KWP,
   CHECK_REPLAY_ZERO_DTC_KWP,
 } from '../fixtures/DiagnosticReplayCorpusV1';
-import type { GoldenReplayCase, GoldenReplayEvidenceRef } from './GoldenReplayContract';
+import type {
+  GoldenReplayCase,
+  GoldenReplayClaimScope,
+  GoldenReplayEvidenceRef,
+} from './GoldenReplayContract';
 
 export const CHECK_GOLDEN_REPLAY_CORPUS_VERSION = 'check-golden-replay-corpus/v1' as const;
+
+type EnvelopeBaseKey =
+  | 'protocol'
+  | 'requestService'
+  | 'sourceEndpointId'
+  | 'observedAt'
+  | 'provenance';
+
+type StripEnvelopeBase<T> = T extends DiagnosticServiceEnvelope
+  ? Omit<T, EnvelopeBaseKey>
+  : never;
+
+type DiagnosticEnvelopeBody = StripEnvelopeBase<DiagnosticServiceEnvelope>;
+
+const scopes = (...values: GoldenReplayClaimScope[]): readonly GoldenReplayClaimScope[] =>
+  Object.freeze(values);
 
 const ELM327_DTC_REFERENCE: GoldenReplayEvidenceRef = Object.freeze({
   evidenceId: 'SRC-ELM327-DATASHEET-DTC-P34',
   kind: 'VENDOR_TECHNICAL_REFERENCE',
   locator: 'ELM327DS.pdf p.35 (PDF index p34): Mode 03 request has no PID; example 43 01 33 00 00 00 00; DTC bytes are paired; 0000 is padding; CAN adds a DTC-count byte.',
-  supports: Object.freeze(['SERVICE_SEMANTICS', 'TRANSPORT_ENVELOPE'] as const),
+  supports: scopes('SERVICE_SEMANTICS', 'TRANSPORT_ENVELOPE'),
   independentFromParserOutput: true,
 });
 
@@ -26,7 +46,7 @@ const ELM327_PENDING_REFERENCE: GoldenReplayEvidenceRef = Object.freeze({
   evidenceId: 'SRC-ELM327-DATASHEET-RESPONSE-PENDING-P45',
   kind: 'VENDOR_TECHNICAL_REFERENCE',
   locator: 'ELM327DS.pdf p.46 (PDF index p45): KWP/CAN Response Pending has form 7F xx 78 and extends waiting rather than issuing a new semantic request.',
-  supports: Object.freeze(['ENGINE_CONTROL_FLOW', 'TRANSPORT_ENVELOPE'] as const),
+  supports: scopes('ENGINE_CONTROL_FLOW', 'TRANSPORT_ENVELOPE'),
   independentFromParserOutput: true,
 });
 
@@ -34,7 +54,7 @@ const ELM327_NO_DATA_REFERENCE: GoldenReplayEvidenceRef = Object.freeze({
   evidenceId: 'SRC-ELM327-DATASHEET-NO-DATA',
   kind: 'VENDOR_TECHNICAL_REFERENCE',
   locator: 'ELM327DS.pdf pp.27/89: NO DATA is emitted after the configured wait when no acceptable vehicle response is detected; it is not numeric zero.',
-  supports: Object.freeze(['SERVICE_SEMANTICS', 'ENGINE_CONTROL_FLOW'] as const),
+  supports: scopes('SERVICE_SEMANTICS', 'ENGINE_CONTROL_FLOW'),
   independentFromParserOutput: true,
 });
 
@@ -42,7 +62,7 @@ const ELM327_MODE01_SUPPORT_REFERENCE: GoldenReplayEvidenceRef = Object.freeze({
   evidenceId: 'SRC-ELM327-DATASHEET-0100-P31',
   kind: 'VENDOR_TECHNICAL_REFERENCE',
   locator: 'ELM327DS.pdf p.32 (PDF index p31): 01 00 example response 41 00 BE 1F B8 10; 00 echoes the requested PID and the next four bytes are the supported-PID bitmap.',
-  supports: Object.freeze(['SERVICE_SEMANTICS'] as const),
+  supports: scopes('SERVICE_SEMANTICS'),
   independentFromParserOutput: true,
 });
 
@@ -50,7 +70,7 @@ const CHECK_DTC_CONTRACT: GoldenReplayEvidenceRef = Object.freeze({
   evidenceId: 'Q-CHECK-001-SEMANTIC-CONTRACT',
   kind: 'REPOSITORY_CONTRACT',
   locator: 'mining-site/quarries/Q-CHECK-001-OBD-DTC-SERVICES-20260904/README.md — semantic boundary closed before MK4 parser implementation.',
-  supports: Object.freeze(['SERVICE_SEMANTICS', 'PARSER_FAILURE_SEMANTICS', 'ENDPOINT_ATTRIBUTION'] as const),
+  supports: scopes('SERVICE_SEMANTICS', 'PARSER_FAILURE_SEMANTICS', 'ENDPOINT_ATTRIBUTION'),
   independentFromParserOutput: true,
 });
 
@@ -61,7 +81,7 @@ const envelope = (
   requestService: string,
   sourceEndpointId: string | null,
   observedAt: number,
-  body: Omit<DiagnosticServiceEnvelope, 'protocol' | 'requestService' | 'sourceEndpointId' | 'observedAt' | 'provenance'>,
+  body: DiagnosticEnvelopeBody,
 ): DiagnosticServiceEnvelope => ({
   ...body,
   protocol,
@@ -87,7 +107,7 @@ const oneEvent = (
   semanticId: string,
   protocol: DiagnosticProtocol,
   requestService: string,
-  body: Omit<DiagnosticServiceEnvelope, 'protocol' | 'requestService' | 'sourceEndpointId' | 'observedAt' | 'provenance'>,
+  body: DiagnosticEnvelopeBody,
   observedResponseBytes: number,
 ): DiagnosticReplayScript => ({
   semanticId,
@@ -145,12 +165,12 @@ const profile = (
   minInterCommandDelayMs: 0,
 });
 
-export const CHECK_GOLDEN_REPLAY_CASES_V1: readonly GoldenReplayCase[] = Object.freeze([
+const cases: GoldenReplayCase[] = [
   {
     caseId: 'golden-legacy-mode03-p0133',
     sourceType: 'SYNTHETIC_EDGE_CASE',
     promotionState: 'GOLDEN',
-    claims: Object.freeze(['SERVICE_SEMANTICS']),
+    claims: scopes('SERVICE_SEMANTICS'),
     evidence: Object.freeze([ELM327_DTC_REFERENCE, CHECK_DTC_CONTRACT]),
     fixture: CHECK_REPLAY_STORED_SINGLE_KWP,
     semanticIds: Object.freeze(['check.obd.mode03.stored-dtc']),
@@ -167,7 +187,7 @@ export const CHECK_GOLDEN_REPLAY_CASES_V1: readonly GoldenReplayCase[] = Object.
     caseId: 'golden-zero-dtc-core',
     sourceType: 'SYNTHETIC_EDGE_CASE',
     promotionState: 'GOLDEN',
-    claims: Object.freeze(['SERVICE_SEMANTICS', 'PARSER_FAILURE_SEMANTICS']),
+    claims: scopes('SERVICE_SEMANTICS', 'PARSER_FAILURE_SEMANTICS'),
     evidence: Object.freeze([ELM327_DTC_REFERENCE, CHECK_DTC_CONTRACT]),
     fixture: CHECK_REPLAY_ZERO_DTC_KWP,
     semanticIds: Object.freeze(['check.obd.mode03.stored-dtc', 'check.obd.mode07.pending-dtc', 'check.obd.mode0a.permanent-dtc']),
@@ -188,7 +208,7 @@ export const CHECK_GOLDEN_REPLAY_CASES_V1: readonly GoldenReplayCase[] = Object.
     caseId: 'golden-pending-only',
     sourceType: 'SYNTHETIC_EDGE_CASE',
     promotionState: 'GOLDEN',
-    claims: Object.freeze(['SERVICE_SEMANTICS']),
+    claims: scopes('SERVICE_SEMANTICS'),
     evidence: Object.freeze([CHECK_DTC_CONTRACT]),
     fixture: PENDING_ONLY_KWP,
     semanticIds: Object.freeze(['check.obd.mode07.pending-dtc']),
@@ -205,7 +225,7 @@ export const CHECK_GOLDEN_REPLAY_CASES_V1: readonly GoldenReplayCase[] = Object.
     caseId: 'golden-permanent-only',
     sourceType: 'SYNTHETIC_EDGE_CASE',
     promotionState: 'GOLDEN',
-    claims: Object.freeze(['SERVICE_SEMANTICS']),
+    claims: scopes('SERVICE_SEMANTICS'),
     evidence: Object.freeze([CHECK_DTC_CONTRACT]),
     fixture: PERMANENT_ONLY_KWP,
     semanticIds: Object.freeze(['check.obd.mode0a.permanent-dtc']),
@@ -222,7 +242,7 @@ export const CHECK_GOLDEN_REPLAY_CASES_V1: readonly GoldenReplayCase[] = Object.
     caseId: 'golden-same-code-multi-status',
     sourceType: 'SYNTHETIC_EDGE_CASE',
     promotionState: 'GOLDEN',
-    claims: Object.freeze(['SERVICE_SEMANTICS']),
+    claims: scopes('SERVICE_SEMANTICS'),
     evidence: Object.freeze([CHECK_DTC_CONTRACT]),
     fixture: CHECK_REPLAY_MULTI_STATUS_KWP,
     semanticIds: Object.freeze(['check.obd.mode03.stored-dtc', 'check.obd.mode07.pending-dtc', 'check.obd.mode0a.permanent-dtc']),
@@ -243,7 +263,7 @@ export const CHECK_GOLDEN_REPLAY_CASES_V1: readonly GoldenReplayCase[] = Object.
     caseId: 'golden-no-data-is-not-zero',
     sourceType: 'VERIFIED_REFERENCE',
     promotionState: 'GOLDEN',
-    claims: Object.freeze(['SERVICE_SEMANTICS', 'ENGINE_CONTROL_FLOW']),
+    claims: scopes('SERVICE_SEMANTICS', 'ENGINE_CONTROL_FLOW'),
     evidence: Object.freeze([ELM327_NO_DATA_REFERENCE, CHECK_DTC_CONTRACT]),
     fixture: NO_DATA_KWP,
     semanticIds: Object.freeze(['check.obd.mode03.stored-dtc']),
@@ -260,7 +280,7 @@ export const CHECK_GOLDEN_REPLAY_CASES_V1: readonly GoldenReplayCase[] = Object.
     caseId: 'golden-negative-response-distinct',
     sourceType: 'SYNTHETIC_EDGE_CASE',
     promotionState: 'GOLDEN',
-    claims: Object.freeze(['PARSER_FAILURE_SEMANTICS']),
+    claims: scopes('PARSER_FAILURE_SEMANTICS'),
     evidence: Object.freeze([ELM327_PENDING_REFERENCE, CHECK_DTC_CONTRACT]),
     fixture: NEGATIVE_RESPONSE_KWP,
     semanticIds: Object.freeze(['check.obd.mode03.stored-dtc']),
@@ -277,7 +297,7 @@ export const CHECK_GOLDEN_REPLAY_CASES_V1: readonly GoldenReplayCase[] = Object.
     caseId: 'golden-malformed-odd-dtc-fails-closed',
     sourceType: 'SYNTHETIC_EDGE_CASE',
     promotionState: 'GOLDEN',
-    claims: Object.freeze(['PARSER_FAILURE_SEMANTICS']),
+    claims: scopes('PARSER_FAILURE_SEMANTICS'),
     evidence: Object.freeze([ELM327_DTC_REFERENCE, CHECK_DTC_CONTRACT]),
     fixture: MALFORMED_ODD_DTC_KWP,
     semanticIds: Object.freeze(['check.obd.mode03.stored-dtc']),
@@ -294,7 +314,7 @@ export const CHECK_GOLDEN_REPLAY_CASES_V1: readonly GoldenReplayCase[] = Object.
     caseId: 'golden-timeout-bounded-retry',
     sourceType: 'SYNTHETIC_EDGE_CASE',
     promotionState: 'GOLDEN',
-    claims: Object.freeze(['ENGINE_CONTROL_FLOW']),
+    claims: scopes('ENGINE_CONTROL_FLOW'),
     evidence: Object.freeze([ELM327_NO_DATA_REFERENCE, CHECK_DTC_CONTRACT]),
     fixture: CHECK_REPLAY_TIMEOUT_THEN_SUCCESS_KWP,
     semanticIds: Object.freeze(['check.obd.mode03.stored-dtc']),
@@ -314,7 +334,7 @@ export const CHECK_GOLDEN_REPLAY_CASES_V1: readonly GoldenReplayCase[] = Object.
     caseId: 'golden-response-pending-continuation',
     sourceType: 'VERIFIED_REFERENCE',
     promotionState: 'GOLDEN',
-    claims: Object.freeze(['ENGINE_CONTROL_FLOW', 'TRANSPORT_ENVELOPE']),
+    claims: scopes('ENGINE_CONTROL_FLOW', 'TRANSPORT_ENVELOPE'),
     evidence: Object.freeze([ELM327_PENDING_REFERENCE, ELM327_DTC_REFERENCE]),
     fixture: CHECK_REPLAY_RESPONSE_PENDING_KWP,
     semanticIds: Object.freeze(['check.obd.mode03.stored-dtc']),
@@ -334,7 +354,7 @@ export const CHECK_GOLDEN_REPLAY_CASES_V1: readonly GoldenReplayCase[] = Object.
     caseId: 'golden-disconnect-preserves-terminal-truth',
     sourceType: 'SYNTHETIC_EDGE_CASE',
     promotionState: 'GOLDEN',
-    claims: Object.freeze(['ENGINE_CONTROL_FLOW']),
+    claims: scopes('ENGINE_CONTROL_FLOW'),
     evidence: Object.freeze([CHECK_DTC_CONTRACT]),
     fixture: CHECK_REPLAY_DISCONNECT_KWP,
     semanticIds: Object.freeze(['check.obd.mode03.stored-dtc']),
@@ -348,7 +368,7 @@ export const CHECK_GOLDEN_REPLAY_CASES_V1: readonly GoldenReplayCase[] = Object.
     caseId: 'golden-can-mode03-count-byte',
     sourceType: 'VERIFIED_REFERENCE',
     promotionState: 'GOLDEN',
-    claims: Object.freeze(['SERVICE_SEMANTICS', 'TRANSPORT_ENVELOPE']),
+    claims: scopes('SERVICE_SEMANTICS', 'TRANSPORT_ENVELOPE'),
     evidence: Object.freeze([ELM327_DTC_REFERENCE]),
     fixture: CHECK_REPLAY_STORED_SINGLE_CAN,
     semanticIds: Object.freeze(['check.obd.mode03.stored-dtc']),
@@ -365,7 +385,7 @@ export const CHECK_GOLDEN_REPLAY_CASES_V1: readonly GoldenReplayCase[] = Object.
     caseId: 'golden-mode01-support-bitmap-reference',
     sourceType: 'SYNTHETIC_EDGE_CASE',
     promotionState: 'GOLDEN',
-    claims: Object.freeze(['SERVICE_SEMANTICS']),
+    claims: scopes('SERVICE_SEMANTICS'),
     evidence: Object.freeze([ELM327_MODE01_SUPPORT_REFERENCE]),
     fixture: MODE01_SUPPORT_REFERENCE_KWP,
     semanticIds: Object.freeze(['check.obd.mode01.support.00']),
@@ -382,4 +402,6 @@ export const CHECK_GOLDEN_REPLAY_CASES_V1: readonly GoldenReplayCase[] = Object.
     reviewMethod: 'Raw data bytes are copied from the ELM327 vendor example and decoded independently from the current parser contract; KWP protocol selection is only a replay carrier.',
     limitations: Object.freeze(['The ELM example does not identify the vehicle transport as KWP; no physical KWP support claim is made.']),
   },
-]);
+];
+
+export const CHECK_GOLDEN_REPLAY_CASES_V1: readonly GoldenReplayCase[] = Object.freeze(cases);
