@@ -9,7 +9,7 @@ import { assertValidStageDeadlinePolicy, evaluateStageGate, StageDeadlinePolicy,
 export interface DiagnosticPlanProposal { readonly semanticId: string; readonly required: boolean; readonly targetEndpointId?: string | null; readonly rationaleEvidenceIds?: readonly string[]; }
 export interface EndpointAdvertisedCapabilityEvidence { readonly endpointId: string; readonly advertisedPids: readonly string[]; readonly evidenceIds: readonly string[]; }
 export interface PlannedDiagnosticRequest {
-  readonly planRequestId: string; readonly planId: string; readonly ordinal: number; readonly descriptorId: string; readonly semanticId: string;
+  readonly planRequestId: string; readonly planId: string; readonly ordinal: number; readonly descriptorId: string; readonly semanticId: string; readonly required: boolean;
   readonly registryVersion: string; readonly safetyPolicyVersion: typeof CHECK_COMMAND_SAFETY_POLICY_VERSION; readonly parserContractId: string;
   readonly descriptorProvenance: string; readonly stage: DiagnosticPlannerStage; readonly service: string; readonly pid?: string; readonly subfunction?: string;
   readonly expectedResponseService: string; readonly supportedProtocols: readonly DiagnosticProtocol[]; readonly targetEndpointId: string | null;
@@ -47,7 +47,7 @@ function evaluateActivationCondition(input: BuildDiagnosticScanPlanInput, descri
 function plannedFromDescriptor(input: BuildDiagnosticScanPlanInput, descriptor: DiagnosticRequestDescriptor, proposal: DiagnosticPlanProposal, ordinal: number): PlannedDiagnosticRequest {
   const endpoint = proposal.targetEndpointId ?? null;
   const planRequestId = `${input.planId}:request:${ordinal}:${descriptor.descriptorId}:${targetKey(proposal)}`;
-  return Object.freeze({ planRequestId, planId: input.planId, ordinal, descriptorId: descriptor.descriptorId, semanticId: descriptor.semanticId,
+  return Object.freeze({ planRequestId, planId: input.planId, ordinal, descriptorId: descriptor.descriptorId, semanticId: descriptor.semanticId, required: proposal.required,
     registryVersion: input.registry.version, safetyPolicyVersion: CHECK_COMMAND_SAFETY_POLICY_VERSION, parserContractId: descriptor.parserContractId,
     descriptorProvenance: descriptor.provenance, stage: descriptor.stage, service: descriptor.service, pid: descriptor.pid, subfunction: descriptor.subfunction,
     expectedResponseService: descriptor.expectedResponseService, supportedProtocols: Object.freeze([...descriptor.supportedProtocols]), targetEndpointId: endpoint,
