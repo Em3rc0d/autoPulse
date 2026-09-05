@@ -27,8 +27,8 @@ describe('CHECK-MK7 GoldenReplayContract', () => {
     expect(() => assertValidGoldenReplayCase({
       ...first,
       caseId: 'unbacked-claim-invalid',
-      claims: ['SERVICE_SEMANTICS', 'PHYSICAL_TIMING'],
-    })).toThrow('cannot make a physical claim');
+      claims: ['SERVICE_SEMANTICS', 'ENGINE_CONTROL_FLOW'],
+    })).toThrow('claim ENGINE_CONTROL_FLOW lacks independent supporting evidence');
   });
 
   it('rejects physical claims from a reference or synthetic case', () => {
