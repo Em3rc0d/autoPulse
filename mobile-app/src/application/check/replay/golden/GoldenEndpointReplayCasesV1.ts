@@ -9,6 +9,10 @@ import type {
   GoldenReplayExpectedDtcObservation,
 } from './GoldenReplayContract';
 
+type EnvelopeBaseKey = 'protocol' | 'requestService' | 'sourceEndpointId' | 'observedAt' | 'provenance';
+type StripEnvelopeBase<T> = T extends DiagnosticServiceEnvelope ? Omit<T, EnvelopeBaseKey> : never;
+type DiagnosticEnvelopeBody = StripEnvelopeBase<DiagnosticServiceEnvelope>;
+
 const START = 3000;
 const SEMANTIC = 'check.obd.mode03.stored-dtc';
 const scopes = (...values: GoldenReplayClaimScope[]): readonly GoldenReplayClaimScope[] => Object.freeze(values);
@@ -36,7 +40,7 @@ const TRANSPORT_CONTRACT: GoldenReplayEvidenceRef = Object.freeze({
 
 function response(
   sourceEndpointId: string | null,
-  body: Pick<DiagnosticServiceEnvelope, 'kind'> & Partial<DiagnosticServiceEnvelope>,
+  body: DiagnosticEnvelopeBody,
   bytes: number,
   provenance: string,
 ): DiagnosticReplayObservedResponse {
