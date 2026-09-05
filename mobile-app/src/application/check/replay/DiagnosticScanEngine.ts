@@ -1,34 +1,21 @@
 import type { DiagnosticScanTerminalState } from '../../../domain/check/DiagnosticScanState';
 import type { Mode01CapabilityCommand } from '../../../domain/acquisition/Mode01CapabilityDiscovery';
 import type { DiagnosticServiceEnvelope } from '../parsers/DiagnosticServiceEnvelope';
-import {
-  DtcRequestService,
-  DtcServiceParseResult,
-  parseDtcServiceEnvelope,
-} from '../parsers/DtcServiceParser';
-import {
-  parsePidSupportBitmap,
-  PidSupportBitmapParseResult,
-} from '../parsers/PidSupportBitmapParser';
+import { DtcRequestService, DtcServiceParseResult, parseDtcServiceEnvelope } from '../parsers/DtcServiceParser';
+import { parsePidSupportBitmap, PidSupportBitmapParseResult } from '../parsers/PidSupportBitmapParser';
 import {
   CommandBudgetUsage,
   evaluateObservedResponseBytes,
   recordCommandIssued,
   recordObservedResponseBytes,
 } from '../planner/CommandBudget';
-import {
-  DiagnosticAttemptOutcome,
-  decideRetry,
-} from '../planner/RetryPolicy';
+import { DiagnosticAttemptOutcome, decideRetry } from '../planner/RetryPolicy';
 import {
   DiagnosticScanPlan,
   evaluatePlannedRequestGate,
   PlannedDiagnosticRequest,
 } from '../planner/DiagnosticScanPlanner';
-import type {
-  PlannedDiagnosticExecutionReceipt,
-  PlannedDiagnosticExecutor,
-} from './DiagnosticExecutionPort';
+import type { PlannedDiagnosticExecutionReceipt, PlannedDiagnosticExecutor } from './DiagnosticExecutionPort';
 
 export const CHECK_SCAN_ENGINE_VERSION = 'check-scan-engine/v1' as const;
 
@@ -106,16 +93,11 @@ function parseAttempt(request: PlannedDiagnosticRequest, envelope: DiagnosticSer
 
     const observedPid = envelope.payload[0];
     const expectedPid = Number.parseInt(request.pid, 16);
-    if (!Number.isInteger(expectedPid) || observedPid !== expectedPid) {
-      return { outcome: 'INVALID_RESPONSE' };
-    }
+    if (!Number.isInteger(expectedPid) || observedPid !== expectedPid) return { outcome: 'INVALID_RESPONSE' };
 
     const command = `${request.service}${request.pid}`.toUpperCase() as Mode01CapabilityCommand;
     const result = parsePidSupportBitmap(command, envelope.payload.slice(1));
-    return {
-      outcome: result.outcome === 'VALID' ? 'SUCCESS' : 'INVALID_RESPONSE',
-      pidSupportResult: result,
-    };
+    return { outcome: result.outcome === 'VALID' ? 'SUCCESS' : 'INVALID_RESPONSE', pidSupportResult: result };
   }
 
   return { outcome: 'INVALID_RESPONSE' };
@@ -161,7 +143,9 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
   let now = startedAt;
   let stageStartedAt = startedAt;
   let currentStage = plan.requests[0]?.stage;
-  let lastCommandFinishedAt: number | undefined;
+  // Safety pacing is anchored to the final observed response/continuation of
+  // the preceding diagnostic transaction, not merely the first response byte.
+  let lastTransactionFinishedAt: number | undefined;
   let usage: CommandBudgetUsage = { commandsIssued: 0, responseBytes: 0, elapsedMs: 0 };
   const attempts: DiagnosticScanAttemptRecord[] = [];
   const dtcResults: DtcServiceParseResult[] = [];
@@ -187,8 +171,8 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
     let requestComplete = false;
 
     while (!requestComplete) {
-      if (!pendingContinuation && lastCommandFinishedAt !== undefined) {
-        now = Math.max(now, lastCommandFinishedAt + plan.budget.minInterCommandDelayMs);
+      if (!pendingContinuation && lastTransactionFinishedAt !== undefined) {
+        now = Math.max(now, lastTransactionFinishedAt + plan.budget.minInterCommandDelayMs);
       }
 
       if (cancellationRequested(input.cancelRequestedAt, now)) {
@@ -223,7 +207,7 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
             stageStartedAt,
             now,
             cancelRequested: false,
-            lastCommandFinishedAt,
+            lastCommandFinishedAt: lastTransactionFinishedAt,
             budgetUsage: usage,
           });
           if (gate.disposition === 'BLOCK') {
@@ -237,7 +221,6 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
           usage = recordCommandIssued({ ...usage, elapsedMs: now - startedAt });
           receipt = await executor.executeCommand(request, commandAttemptIndex, now);
           commandAttemptIndex += 1;
-          lastCommandFinishedAt = receipt.finishedAt;
         }
       } catch (error) {
         limitations.push(`executor:${request.semanticId}:${error instanceof Error ? error.message : String(error)}`);
@@ -250,6 +233,10 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
         receipt.observedResponseBytes,
       );
       now = receipt.finishedAt;
+      // The transaction remains active across NRC 0x78. Once any response or
+      // pending continuation is observed, the next command must pace from this
+      // latest boundary.
+      lastTransactionFinishedAt = receipt.finishedAt;
       if (responseBudget.disposition === 'BLOCK') {
         limitations.push(`response-budget:${request.semanticId}:${responseBudget.reason}`);
         if (request.required) {
