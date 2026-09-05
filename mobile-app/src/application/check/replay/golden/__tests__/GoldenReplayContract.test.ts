@@ -20,7 +20,15 @@ describe('CHECK-MK7 GoldenReplayContract', () => {
       ...first,
       caseId: 'self-certified-invalid',
       evidence: first.evidence.map(item => ({ ...item, independentFromParserOutput: false })),
-    })).toThrow('cannot be GOLDEN without an independent expected-result source');
+    })).toThrow('claim SERVICE_SEMANTICS lacks independent supporting evidence');
+  });
+
+  it('requires independent evidence for every bounded GOLDEN claim', () => {
+    expect(() => assertValidGoldenReplayCase({
+      ...first,
+      caseId: 'unbacked-claim-invalid',
+      claims: ['SERVICE_SEMANTICS', 'ENGINE_CONTROL_FLOW'],
+    })).toThrow('claim ENGINE_CONTROL_FLOW lacks independent supporting evidence');
   });
 
   it('rejects physical claims from a reference or synthetic case', () => {
