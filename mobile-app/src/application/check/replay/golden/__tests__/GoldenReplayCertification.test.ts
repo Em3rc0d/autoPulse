@@ -13,7 +13,6 @@ describe('CHECK-MK7 golden replay certification', () => {
 
   it('covers the Core replay semantics required before a physical pilot can be considered', () => {
     const ids = new Set(CHECK_GOLDEN_REPLAY_CASES_V1.map(item => item.caseId));
-    expect(ids).toEqual(expect.objectContaining ? ids : ids);
 
     for (const required of [
       'golden-legacy-mode03-p0133',
