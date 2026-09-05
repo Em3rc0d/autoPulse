@@ -26,22 +26,24 @@ const deadlinePolicy = {
   provenance: 'mk9:endpoint-capability-validation',
 } as const;
 
-const buildSupport20 = (endpointAdvertisedCapabilities: Parameters<typeof buildDiagnosticScanPlan>[0]['endpointAdvertisedCapabilities']) =>
-  buildDiagnosticScanPlan({
-    planId: 'mk9-capability-plan',
-    createdAt: 1000,
-    protocol: 'ISO_14230_KWP',
-    registry: CHECK_CORE_DESCRIPTOR_REGISTRY_V1,
-    proposals: [{
-      semanticId: 'check.obd.mode01.support.20',
-      required: true,
-      targetEndpointId: 'ecu-a',
-    }],
-    endpointAdvertisedCapabilities,
-    budget,
-    retryPolicy,
-    deadlinePolicy,
-  });
+const buildSupport20 = (
+  endpointAdvertisedCapabilities: Parameters<typeof buildDiagnosticScanPlan>[0]['endpointAdvertisedCapabilities'],
+  targetEndpointId: string | null = 'ecu-a',
+) => buildDiagnosticScanPlan({
+  planId: 'mk9-capability-plan',
+  createdAt: 1000,
+  protocol: 'ISO_14230_KWP',
+  registry: CHECK_CORE_DESCRIPTOR_REGISTRY_V1,
+  proposals: [{
+    semanticId: 'check.obd.mode01.support.20',
+    required: true,
+    targetEndpointId,
+  }],
+  endpointAdvertisedCapabilities,
+  budget,
+  retryPolicy,
+  deadlinePolicy,
+});
 
 describe('CHECK-MK9 endpoint advertised capability evidence', () => {
   it('normalizes endpoint, Mode 01 command and evidence identities before planning', () => {
@@ -61,8 +63,9 @@ describe('CHECK-MK9 endpoint advertised capability evidence', () => {
       endpointId: ' ecu-a ',
       advertisedPids: [' 0120 '],
       evidenceIds: [' evidence-0100-ecu-a '],
-    }]);
+    }], ' ecu-a ');
     expect(plan.status).toBe('READY');
+    expect(plan.requests[0].targetEndpointId).toBe('ecu-a');
     expect(plan.requests[0].rationaleEvidenceIds).toContain('evidence-0100-ecu-a');
   });
 
@@ -101,6 +104,12 @@ describe('CHECK-MK9 endpoint advertised capability evidence', () => {
     expect(() => buildSupport20([
       { endpointId: 'ecu-a', advertisedPids: ['0120'], evidenceIds: ['   '] },
     ])).toThrow('contains an empty identifier');
+  });
+
+  it('rejects blank attributed proposal endpoint identities', () => {
+    expect(() => buildSupport20([
+      { endpointId: 'ecu-a', advertisedPids: ['0120'], evidenceIds: ['e-a'] },
+    ], '   ')).toThrow('targetEndpointId must be non-empty when attributed');
   });
 
   it('keeps continuation authorization endpoint-local even with multiple validated rows', () => {
