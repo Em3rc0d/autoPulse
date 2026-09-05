@@ -1,6 +1,5 @@
 export type DiagnosticAttemptOutcome =
-  | 'SUCCESS_WITH_CODES'
-  | 'SUCCESS_ZERO_CODES'
+  | 'SUCCESS'
   | 'NO_DATA'
   | 'TIMEOUT'
   | 'INVALID_RESPONSE'
@@ -76,7 +75,7 @@ export function decideRetry(
     throw new Error('remainingMs must be a finite non-negative number');
   }
 
-  if (context.outcome === 'SUCCESS_WITH_CODES' || context.outcome === 'SUCCESS_ZERO_CODES') {
+  if (context.outcome === 'SUCCESS') {
     return { action: 'COMPLETE', reason: 'SUCCESS' };
   }
 
