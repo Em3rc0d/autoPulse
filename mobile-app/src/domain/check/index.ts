@@ -1,5 +1,6 @@
 export * from './DiagnosticConcern';
 export * from './DiagnosticCoverage';
+export * from './DiagnosticDomainValidation';
 export * from './DiagnosticEndpoint';
 export * from './DiagnosticEvidence';
 export * from './DiagnosticFreezeFrame';
