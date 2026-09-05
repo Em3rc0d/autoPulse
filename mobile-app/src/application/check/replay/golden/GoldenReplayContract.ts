@@ -27,7 +27,6 @@ export interface GoldenReplayEvidenceRef {
   readonly kind: 'VENDOR_TECHNICAL_REFERENCE' | 'REPOSITORY_CONTRACT' | 'PHYSICAL_RAW_CAPTURE';
   readonly locator: string;
   readonly supports: readonly GoldenReplayClaimScope[];
-  /** Must be true when the expected result was established independently of the parser under test. */
   readonly independentFromParserOutput: boolean;
 }
 
@@ -46,6 +45,8 @@ export interface GoldenReplayExpectedDtcObservation {
     | 'FAILED'
     | 'PARTIAL';
   readonly codes: readonly string[];
+  /** Optional exact occurrence counts after duplicate-code normalization. */
+  readonly codeOccurrences?: readonly { readonly code: string; readonly count: number }[];
   /** Omit when attribution is outside the case claim; null explicitly asserts UNATTRIBUTED. */
   readonly sourceEndpointId?: string | null;
 }
