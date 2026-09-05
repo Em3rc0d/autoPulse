@@ -49,9 +49,8 @@ react {
     // codegenDir = file("../node_modules/@react-native/codegen")
 
     /* Variants */
-    //   The list of variants to that are debuggable. For those we're going to
-    //   skip the bundling of the JS bundle and the assets. By default is just 'debug'.
-    //   If you add flavors like lite, prod, etc. you'll have to list your debuggableVariants.
+    //   The list of variants that are debuggable. CHECK QA deliberately remains
+    //   non-debuggable so the standalone JS bundle is packaged into the APK.
     // debuggableVariants = ["liteDebug", "prodDebug"]
 
     /* Bundling */
@@ -68,7 +67,7 @@ react {
     //   The entry file for bundle generation. Default is 'index.android.js' or 'index.js'
     // entryFile = file("../js/MyApplication.android.js")
     //
-    //   A list of extra flags to pass to the 'bundle' commands.
+    //   A list of extra flags to pass to the `bundle` commands.
     //   See https://github.com/react-native-community/cli/blob/main/docs/commands.md#bundle
     // extraPackagerArgs = []
 
@@ -92,14 +91,6 @@ def enableProguardInReleaseBuilds = (findProperty('android.enableProguardInRelea
 
 /**
  * The preferred build flavor of JavaScriptCore (JSC)
- *
- * For example, to use the international variant, you can use:
- * `def jscFlavor = 'org.webkit:android-jsc-intl:+'`
- *
- * The international variant includes ICU i18n library and necessary data
- * allowing to use e.g. `Date.toLocaleString` and `String.localeCompare` that
- * give correct results when using with locales other than en-US. Note that
- * this variant is about 6MiB larger per architecture than default.
  */
 def jscFlavor = 'org.webkit:android-jsc:+'
 
@@ -138,6 +129,15 @@ android {
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
             crunchPngs (findProperty('android.enablePngCrunchInReleaseBuilds')?.toBoolean() ?: true)
         }
+        checkqa {
+            // Build-only QA variant. It installs alongside normal AutoPulse so a
+            // tester never has to uninstall or overwrite an existing app/data set.
+            initWith release
+            applicationIdSuffix ".checkqa"
+            versionNameSuffix "-checkqa"
+            signingConfig signingConfigs.debug
+            matchingFallbacks = ['release']
+        }
     }
     packagingOptions {
         jniLibs {
@@ -147,19 +147,13 @@ android {
 }
 
 // Apply static values from `gradle.properties` to the `android.packagingOptions`
-// Accepts values in comma delimited lists, example:
-// android.packagingOptions.pickFirsts=/LICENSE,**/picasa.ini
 ["pickFirsts", "excludes", "merges", "doNotStrip"].each { prop ->
-    // Split option: 'foo,bar' -> ['foo', 'bar']
     def options = (findProperty("android.packagingOptions.$prop") ?: "").split(",");
-    // Trim all elements in place.
     for (i in 0..<options.size()) options[i] = options[i].trim();
-    // `[] - ""` is essentially `[""].filter(Boolean)` removing all empty strings.
     options -= ""
 
     if (options.length > 0) {
         println "android.packagingOptions.$prop += $options ($options.length)"
-        // Ex: android.packagingOptions.pickFirsts += '**/SCCS/**'
         options.each {
             android.packagingOptions[prop] += it
         }
@@ -167,7 +161,6 @@ android {
 }
 
 dependencies {
-    // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
@@ -175,15 +168,12 @@ dependencies {
     def isWebpAnimatedEnabled = (findProperty('expo.webp.animated') ?: "") == "true";
 
     if (isGifEnabled) {
-        // For animated gif support
         implementation("com.facebook.fresco:animated-gif:${reactAndroidLibs.versions.fresco.get()}")
     }
 
     if (isWebpEnabled) {
-        // For webp support
         implementation("com.facebook.fresco:webpsupport:${reactAndroidLibs.versions.fresco.get()}")
         if (isWebpAnimatedEnabled) {
-            // Animated webp support
             implementation("com.facebook.fresco:animated-webp:${reactAndroidLibs.versions.fresco.get()}")
         }
     }
