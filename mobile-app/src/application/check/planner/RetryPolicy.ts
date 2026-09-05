@@ -2,6 +2,7 @@ export type DiagnosticAttemptOutcome =
   | 'SUCCESS'
   | 'NO_DATA'
   | 'TIMEOUT'
+  | 'DEADLINE_EXCEEDED'
   | 'INVALID_RESPONSE'
   | 'NEGATIVE_RESPONSE'
   | 'RESPONSE_PENDING'

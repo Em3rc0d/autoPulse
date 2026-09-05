@@ -12,13 +12,17 @@ const makePlan = (options: {
   maxBytesPerResponse?: number;
   minInterCommandDelayMs?: number;
   retryTimeout?: boolean;
-} = {}) => buildDiagnosticScanPlan({
-  planId: 'mk6-safety-gates', createdAt: 1000, protocol: 'ISO_14230_KWP', registry: CHECK_CORE_DESCRIPTOR_REGISTRY_V1,
-  proposals: (options.semanticIds ?? ['check.obd.mode03.stored-dtc']).map(semanticId => ({ semanticId, required: true, targetEndpointId: 'ecu-engine' })),
-  budget: { maxCommands: options.maxCommands ?? 4, maxResponseBytes: 100, maxBytesPerResponse: options.maxBytesPerResponse ?? 50, maxElapsedMs: 5000, minInterCommandDelayMs: options.minInterCommandDelayMs ?? 0, provenance: 'mk6-safety-test' },
-  retryPolicy: { maxRetries: options.retryTimeout ? 1 : 0, retryableOutcomes: options.retryTimeout ? ['TIMEOUT'] : [], responsePending: { maxExtensions: 1, extensionMs: 100 }, provenance: 'mk6-safety-test' },
-  deadlinePolicy: { overallDeadlineMs: 5000, stageDeadlineMs: { CAPABILITY_DISCOVERY: 1000, DTC_CORE: 4000 }, provenance: 'mk6-safety-test' },
-});
+  targetEndpointId?: string | null;
+} = {}) => {
+  const targetEndpointId = options.targetEndpointId === undefined ? 'ecu-engine' : options.targetEndpointId;
+  return buildDiagnosticScanPlan({
+    planId: 'mk6-safety-gates', createdAt: 1000, protocol: 'ISO_14230_KWP', registry: CHECK_CORE_DESCRIPTOR_REGISTRY_V1,
+    proposals: (options.semanticIds ?? ['check.obd.mode03.stored-dtc']).map(semanticId => ({ semanticId, required: true, targetEndpointId })),
+    budget: { maxCommands: options.maxCommands ?? 4, maxResponseBytes: 100, maxBytesPerResponse: options.maxBytesPerResponse ?? 50, maxElapsedMs: 5000, minInterCommandDelayMs: options.minInterCommandDelayMs ?? 0, provenance: 'mk6-safety-test' },
+    retryPolicy: { maxRetries: options.retryTimeout ? 1 : 0, retryableOutcomes: options.retryTimeout ? ['TIMEOUT'] : [], responsePending: { maxExtensions: 1, extensionMs: 100 }, provenance: 'mk6-safety-test' },
+    deadlinePolicy: { overallDeadlineMs: 5000, stageDeadlineMs: { CAPABILITY_DISCOVERY: 1000, DTC_CORE: 4000 }, provenance: 'mk6-safety-test' },
+  });
+};
 
 const noDataFixture = (observedResponseBytes = 0): DiagnosticReplayFixture => ({
   fixtureId: 'mk6-no-data-safety', protocol: 'ISO_14230_KWP', provenance: 'SYNTHETIC_NOT_PHYSICAL_CERTIFICATION', startedAt: 1000,
@@ -94,10 +98,13 @@ describe('CHECK-MK6/7 execution safety gates', () => {
   });
 
   it('enforces the byte ceiling per responder while also enforcing the total response budget', async () => {
-    const plan = makePlan({ maxBytesPerResponse: 4 });
+    // This is a functional request on purpose: one semantic request may yield
+    // several ECU responders. It must not pretend to target a synthetic
+    // "ecu-engine" and then accept unrelated responders.
+    const plan = makePlan({ maxBytesPerResponse: 4, targetEndpointId: null });
     const fixture: DiagnosticReplayFixture = {
       fixtureId: 'multi-byte-budget', protocol: 'ISO_14230_KWP', provenance: 'test', startedAt: 1000,
-      scripts: [{ semanticId: 'check.obd.mode03.stored-dtc', targetEndpointId: 'ecu-engine', events: [{ kind: 'COMMAND_RESPONSE', durationMs: 10, responses: [
+      scripts: [{ semanticId: 'check.obd.mode03.stored-dtc', targetEndpointId: null, events: [{ kind: 'COMMAND_RESPONSE', durationMs: 10, responses: [
         { observedResponseBytes: 3, envelope: { kind: 'POSITIVE_RESPONSE', requestService: '03', responseService: '43', payload: [0x01, 0x33], protocol: 'ISO_14230_KWP', sourceEndpointId: 'ecu-a', provenance: 'test', observedAt: 1010 } },
         { observedResponseBytes: 3, envelope: { kind: 'POSITIVE_RESPONSE', requestService: '03', responseService: '43', payload: [0x04, 0x20], protocol: 'ISO_14230_KWP', sourceEndpointId: 'ecu-b', provenance: 'test', observedAt: 1010 } },
       ] }] }],

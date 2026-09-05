@@ -100,6 +100,11 @@ function normalizeCodes(pairs: readonly ReturnType<typeof decodeDtcPair>[]): Par
 
 function decodeLegacyPayload(payload: readonly number[]): { codes?: ParsedDtcCode[]; error?: string } {
   if (!areDiagnosticBytes(payload)) return { error: 'DTC payload contains an invalid byte' };
+  // A bare positive service byte proves that a positive response was seen, but
+  // it does not prove an explicit zero-code list. Legacy zero-DTC promotion
+  // requires at least one complete 0000 padding pair (or equivalent promoted
+  // transport evidence), otherwise we fail closed instead of fabricating zero.
+  if (payload.length === 0) return { error: 'Legacy DTC positive response has no DTC pair or padding evidence' };
   if (payload.length % 2 !== 0) return { error: 'Legacy DTC payload has an odd byte count' };
 
   const pairs: Array<ReturnType<typeof decodeDtcPair>> = [];

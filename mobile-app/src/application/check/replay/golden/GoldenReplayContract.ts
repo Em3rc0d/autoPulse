@@ -1,6 +1,9 @@
 import type { DiagnosticAttemptOutcome } from '../../planner/RetryPolicy';
 import type { DiagnosticScanTerminalState } from '../../../../domain/check/DiagnosticScanState';
-import type { DiagnosticReplayFixture } from '../DiagnosticReplayFixture';
+import {
+  assertValidDiagnosticReplayFixture,
+  type DiagnosticReplayFixture,
+} from '../DiagnosticReplayFixture';
 
 export type GoldenReplaySourceType =
   | 'VERIFIED_REFERENCE'
@@ -45,9 +48,15 @@ export interface GoldenReplayExpectedDtcObservation {
     | 'FAILED'
     | 'PARTIAL';
   readonly codes: readonly string[];
-  /** Optional exact occurrence counts after duplicate-code normalization. */
   readonly codeOccurrences?: readonly { readonly code: string; readonly count: number }[];
-  /** Omit when attribution is outside the case claim; null explicitly asserts UNATTRIBUTED. */
+  readonly sourceEndpointId?: string | null;
+}
+
+export interface GoldenReplayExpectedPidSupportObservation {
+  readonly command: string;
+  readonly advertisedPids: readonly string[];
+  readonly continuationCommand: string | null;
+  /** Omit when attribution is outside the claim; null explicitly asserts UNATTRIBUTED. */
   readonly sourceEndpointId?: string | null;
 }
 
@@ -57,11 +66,10 @@ export interface GoldenReplayExpectation {
   readonly attemptOutcomes: readonly DiagnosticAttemptOutcome[];
   readonly dtcObservations?: readonly GoldenReplayExpectedDtcObservation[];
   readonly limitationsContain?: readonly string[];
-  readonly pidSupport?: {
-    readonly command: string;
-    readonly advertisedPids: readonly string[];
-    readonly continuationCommand: string | null;
-  };
+  /** Backwards-compatible single-result expectation. */
+  readonly pidSupport?: GoldenReplayExpectedPidSupportObservation;
+  /** Endpoint-aware capability expectations for one functional multi-responder command. */
+  readonly pidSupportObservations?: readonly GoldenReplayExpectedPidSupportObservation[];
 }
 
 export interface GoldenReplayExecutionProfile {
@@ -98,34 +106,91 @@ function nonEmpty(value: string, label: string): void {
   if (!value.trim()) throw new Error(`${label} must be non-empty`);
 }
 
+function uniqueNonEmpty(values: readonly string[], label: string): void {
+  values.forEach(value => nonEmpty(value, label));
+  if (new Set(values.map(value => value.trim())).size !== values.length) {
+    throw new Error(`${label} contains duplicates`);
+  }
+}
+
+function assertExpectedObservation(candidate: GoldenReplayCase, index: number, observation: GoldenReplayExpectedDtcObservation): void {
+  uniqueNonEmpty(observation.codes, `Golden replay ${candidate.caseId} dtc[${index}] codes`);
+  if (observation.sourceEndpointId !== undefined && observation.sourceEndpointId !== null) {
+    nonEmpty(observation.sourceEndpointId, `Golden replay ${candidate.caseId} dtc[${index}] sourceEndpointId`);
+  }
+  if (observation.codeOccurrences) {
+    const occurrenceCodes = observation.codeOccurrences.map(item => item.code);
+    uniqueNonEmpty(occurrenceCodes, `Golden replay ${candidate.caseId} dtc[${index}] occurrence codes`);
+    for (const occurrence of observation.codeOccurrences) {
+      if (!Number.isInteger(occurrence.count) || occurrence.count < 1) {
+        throw new Error(`Golden replay ${candidate.caseId} dtc[${index}] occurrence count must be a positive integer`);
+      }
+      if (!observation.codes.includes(occurrence.code)) {
+        throw new Error(`Golden replay ${candidate.caseId} dtc[${index}] occurrence ${occurrence.code} is not in expected codes`);
+      }
+    }
+  }
+}
+
+function assertExpectedPidSupport(
+  candidate: GoldenReplayCase,
+  observation: GoldenReplayExpectedPidSupportObservation,
+  label: string,
+): void {
+  nonEmpty(observation.command, `Golden replay ${candidate.caseId} ${label} command`);
+  uniqueNonEmpty(observation.advertisedPids, `Golden replay ${candidate.caseId} ${label} advertisedPids`);
+  if (observation.continuationCommand !== null) nonEmpty(observation.continuationCommand, `Golden replay ${candidate.caseId} ${label} continuationCommand`);
+  if (observation.sourceEndpointId !== undefined && observation.sourceEndpointId !== null) {
+    nonEmpty(observation.sourceEndpointId, `Golden replay ${candidate.caseId} ${label} sourceEndpointId`);
+  }
+}
+
 export function assertValidGoldenReplayCase(candidate: GoldenReplayCase): void {
   nonEmpty(candidate.caseId, 'Golden replay caseId');
   nonEmpty(candidate.reviewedBy, `Golden replay ${candidate.caseId} reviewedBy`);
   nonEmpty(candidate.reviewMethod, `Golden replay ${candidate.caseId} reviewMethod`);
+  assertValidDiagnosticReplayFixture(candidate.fixture);
 
   if (candidate.semanticIds.length === 0) throw new Error(`Golden replay ${candidate.caseId} must declare at least one semanticId`);
-  if (new Set(candidate.semanticIds).size !== candidate.semanticIds.length) throw new Error(`Golden replay ${candidate.caseId} contains duplicate semanticIds`);
+  uniqueNonEmpty(candidate.semanticIds, `Golden replay ${candidate.caseId} semanticIds`);
   if (candidate.claims.length === 0) throw new Error(`Golden replay ${candidate.caseId} must declare at least one bounded claim`);
   if (new Set(candidate.claims).size !== candidate.claims.length) throw new Error(`Golden replay ${candidate.caseId} contains duplicate claims`);
 
   if (!Number.isInteger(candidate.executionProfile.maxRetries) || candidate.executionProfile.maxRetries < 0) throw new Error(`Golden replay ${candidate.caseId} maxRetries must be a non-negative integer`);
   if (!Number.isInteger(candidate.executionProfile.maxPendingExtensions) || candidate.executionProfile.maxPendingExtensions < 0) throw new Error(`Golden replay ${candidate.caseId} maxPendingExtensions must be a non-negative integer`);
   if (!Number.isInteger(candidate.executionProfile.minInterCommandDelayMs) || candidate.executionProfile.minInterCommandDelayMs < 0) throw new Error(`Golden replay ${candidate.caseId} minInterCommandDelayMs must be a non-negative integer`);
+  if (!Number.isInteger(candidate.expected.commandsIssued) || candidate.expected.commandsIssued < 0) throw new Error(`Golden replay ${candidate.caseId} expected commandsIssued must be a non-negative integer`);
+  candidate.expected.dtcObservations?.forEach((observation, index) => assertExpectedObservation(candidate, index, observation));
+  if (candidate.expected.pidSupport && candidate.expected.pidSupportObservations) {
+    throw new Error(`Golden replay ${candidate.caseId} cannot declare both pidSupport and pidSupportObservations`);
+  }
+  if (candidate.expected.pidSupport) assertExpectedPidSupport(candidate, candidate.expected.pidSupport, 'pidSupport');
+  candidate.expected.pidSupportObservations?.forEach((observation, index) => assertExpectedPidSupport(candidate, observation, `pidSupport[${index}]`));
 
+  const evidenceIds = candidate.evidence.map(item => item.evidenceId);
+  uniqueNonEmpty(evidenceIds, `Golden replay ${candidate.caseId} evidence IDs`);
   for (const evidence of candidate.evidence) {
-    nonEmpty(evidence.evidenceId, `Golden replay ${candidate.caseId} evidenceId`);
     nonEmpty(evidence.locator, `Golden replay ${candidate.caseId} evidence locator`);
     if (evidence.supports.length === 0) throw new Error(`Golden replay ${candidate.caseId} evidence ${evidence.evidenceId} must declare bounded support`);
+    if (new Set(evidence.supports).size !== evidence.supports.length) throw new Error(`Golden replay ${candidate.caseId} evidence ${evidence.evidenceId} contains duplicate support claims`);
+  }
+
+  if (candidate.rawEvidenceSha256 !== undefined && !/^[a-f0-9]{64}$/i.test(candidate.rawEvidenceSha256)) {
+    throw new Error(`Golden replay ${candidate.caseId} rawEvidenceSha256 must be a 64-character hexadecimal SHA-256 digest`);
   }
 
   const physicalClaims = candidate.claims.filter(claim => claim === 'PHYSICAL_TRANSPORT' || claim === 'PHYSICAL_TIMING');
   if (physicalClaims.length > 0 && candidate.sourceType !== 'PHYSICAL_CAPTURE') {
     throw new Error(`Golden replay ${candidate.caseId} cannot make a physical claim from ${candidate.sourceType}`);
   }
+  if (physicalClaims.length > 0 && candidate.promotionState !== 'PHYSICALLY_CERTIFIED') {
+    throw new Error(`Golden replay ${candidate.caseId} physical claims require PHYSICALLY_CERTIFIED promotion`);
+  }
 
   if (candidate.promotionState === 'PHYSICALLY_CERTIFIED') {
     if (candidate.sourceType !== 'PHYSICAL_CAPTURE') throw new Error(`Golden replay ${candidate.caseId} physical certification requires PHYSICAL_CAPTURE`);
-    if (!candidate.rawEvidenceSha256?.match(/^[a-f0-9]{64}$/i)) throw new Error(`Golden replay ${candidate.caseId} physical certification requires a SHA-256 raw evidence digest`);
+    if (physicalClaims.length === 0) throw new Error(`Golden replay ${candidate.caseId} PHYSICALLY_CERTIFIED requires at least one physical claim`);
+    if (!candidate.rawEvidenceSha256) throw new Error(`Golden replay ${candidate.caseId} physical certification requires a SHA-256 raw evidence digest`);
     if (!candidate.evidence.some(item => item.kind === 'PHYSICAL_RAW_CAPTURE')) throw new Error(`Golden replay ${candidate.caseId} physical certification requires physical raw capture evidence`);
     for (const claim of physicalClaims) {
       if (!candidate.evidence.some(item => item.kind === 'PHYSICAL_RAW_CAPTURE' && item.independentFromParserOutput && item.supports.includes(claim))) {

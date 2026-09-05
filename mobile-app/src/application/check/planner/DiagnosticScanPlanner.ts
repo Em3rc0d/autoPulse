@@ -2,7 +2,7 @@ import type { DiagnosticProtocol } from '../../../domain/diagnostics/DiagnosticC
 import { authorizeRegisteredDescriptor, CHECK_COMMAND_SAFETY_POLICY_VERSION, DiagnosticSafetyBlockReason } from './DiagnosticCommandSafetyPolicy';
 import { assertValidCommandBudget, CommandBudget, CommandBudgetUsage, evaluateBudgetBeforeCommand, evaluateInterCommandPacing } from './CommandBudget';
 import type { DiagnosticDescriptorRegistry } from './DiagnosticDescriptorRegistry';
-import type { DiagnosticPlannerStage, DiagnosticRequestDescriptor } from './DiagnosticRequestDescriptor';
+import { normalizeDiagnosticCommandHex, type DiagnosticPlannerStage, type DiagnosticRequestDescriptor } from './DiagnosticRequestDescriptor';
 import { assertValidRetryPolicy, RetryPolicy } from './RetryPolicy';
 import { assertValidStageDeadlinePolicy, evaluateStageGate, StageDeadlinePolicy, StageGateBlockReason } from './StageDeadlinePolicy';
 
@@ -34,13 +34,82 @@ const STAGE_ORDER: Readonly<Record<DiagnosticPlannerStage, number>> = { CAPABILI
 const targetKey = (proposal: DiagnosticPlanProposal): string => proposal.targetEndpointId ?? 'FUNCTIONAL_OR_UNATTRIBUTED';
 const unique = (values: readonly string[]): string[] => [...new Set(values)];
 
-function evaluateActivationCondition(input: BuildDiagnosticScanPlanInput, descriptor: DiagnosticRequestDescriptor, proposal: DiagnosticPlanProposal): { readonly allowed: true; readonly evidenceIds: readonly string[] } | { readonly allowed: false } {
+/**
+ * Endpoint capability evidence is security/coverage input to the planner, so it
+ * cannot be accepted as a loose bag of strings. Normalize once, reject
+ * ambiguity, and keep every advertised PID scoped to exactly one endpoint.
+ */
+export function normalizeEndpointAdvertisedCapabilities(
+  capabilities: readonly EndpointAdvertisedCapabilityEvidence[] | undefined,
+): readonly EndpointAdvertisedCapabilityEvidence[] {
+  if (!capabilities) return Object.freeze([]);
+
+  const endpointIds = new Set<string>();
+  const normalized = capabilities.map((capability, index) => {
+    const endpointId = capability.endpointId.trim();
+    if (!endpointId) throw new Error(`Endpoint advertised capability ${index} endpointId must be non-empty`);
+    if (endpointIds.has(endpointId)) throw new Error(`Duplicate endpoint advertised capability evidence for ${endpointId}`);
+    endpointIds.add(endpointId);
+
+    const advertisedPids = capability.advertisedPids.map((value, pidIndex) => {
+      const command = normalizeDiagnosticCommandHex(value);
+      if (!command) throw new Error(`Endpoint ${endpointId} advertised PID ${pidIndex} must be a four-hex command`);
+      if (!command.startsWith('01')) throw new Error(`Endpoint ${endpointId} advertised PID ${command} is not Mode 01 capability evidence`);
+      return command;
+    });
+    if (new Set(advertisedPids).size !== advertisedPids.length) {
+      throw new Error(`Endpoint ${endpointId} advertisedPids contains duplicates`);
+    }
+
+    const evidenceIds = capability.evidenceIds.map(value => value.trim());
+    if (evidenceIds.length === 0) throw new Error(`Endpoint ${endpointId} advertised capabilities require evidenceIds`);
+    if (evidenceIds.some(value => value.length === 0)) throw new Error(`Endpoint ${endpointId} advertised capability evidenceIds contains an empty identifier`);
+    if (new Set(evidenceIds).size !== evidenceIds.length) throw new Error(`Endpoint ${endpointId} advertised capability evidenceIds contains duplicates`);
+
+    return Object.freeze({
+      endpointId,
+      advertisedPids: Object.freeze(advertisedPids),
+      evidenceIds: Object.freeze(evidenceIds),
+    });
+  });
+
+  return Object.freeze(normalized);
+}
+
+function normalizeProposal(proposal: DiagnosticPlanProposal, inputIndex: number): DiagnosticPlanProposal {
+  const semanticId = proposal.semanticId.trim();
+  if (!semanticId) throw new Error(`Diagnostic proposal ${inputIndex} semanticId must be non-empty`);
+
+  let targetEndpointId = proposal.targetEndpointId;
+  if (typeof targetEndpointId === 'string') {
+    targetEndpointId = targetEndpointId.trim();
+    if (!targetEndpointId) throw new Error(`Diagnostic proposal ${semanticId} targetEndpointId must be non-empty when attributed`);
+  }
+
+  const rationaleEvidenceIds = (proposal.rationaleEvidenceIds ?? []).map(value => value.trim());
+  if (rationaleEvidenceIds.some(value => value.length === 0)) {
+    throw new Error(`Diagnostic proposal ${semanticId} rationaleEvidenceIds contains an empty identifier`);
+  }
+
+  return {
+    ...proposal,
+    semanticId,
+    targetEndpointId,
+    rationaleEvidenceIds: unique(rationaleEvidenceIds),
+  };
+}
+
+function evaluateActivationCondition(
+  endpointAdvertisedCapabilities: readonly EndpointAdvertisedCapabilityEvidence[],
+  descriptor: DiagnosticRequestDescriptor,
+  proposal: DiagnosticPlanProposal,
+): { readonly allowed: true; readonly evidenceIds: readonly string[] } | { readonly allowed: false } {
   if (descriptor.activationCondition.kind === 'ALWAYS') return { allowed: true, evidenceIds: [] };
   const endpointId = proposal.targetEndpointId;
   if (!endpointId) return { allowed: false };
-  const evidence = input.endpointAdvertisedCapabilities?.find(item => item.endpointId === endpointId);
+  const evidence = endpointAdvertisedCapabilities.find(item => item.endpointId === endpointId);
   if (!evidence) return { allowed: false };
-  if (!evidence.advertisedPids.map(value => value.trim().toUpperCase()).includes(descriptor.activationCondition.advertisedPid)) return { allowed: false };
+  if (!evidence.advertisedPids.includes(descriptor.activationCondition.advertisedPid)) return { allowed: false };
   return { allowed: true, evidenceIds: evidence.evidenceIds };
 }
 
@@ -69,15 +138,19 @@ function frozenPlan(input: BuildDiagnosticScanPlanInput, status: DiagnosticScanP
 
 function consolidateProposals(proposals: readonly DiagnosticPlanProposal[]): Array<{ proposal: DiagnosticPlanProposal; inputIndex: number }> {
   const byKey = new Map<string, { proposal: DiagnosticPlanProposal; inputIndex: number }>();
-  proposals.forEach((proposal, inputIndex) => {
+  proposals.forEach((rawProposal, inputIndex) => {
+    const proposal = normalizeProposal(rawProposal, inputIndex);
     const key = `${proposal.semanticId}:${targetKey(proposal)}`;
     const existing = byKey.get(key);
     if (!existing) {
-      byKey.set(key, { proposal: { ...proposal, rationaleEvidenceIds: unique(proposal.rationaleEvidenceIds ?? []) }, inputIndex });
+      byKey.set(key, { proposal, inputIndex });
       return;
     }
-    existing.proposal = { ...existing.proposal, required: existing.proposal.required || proposal.required,
-      rationaleEvidenceIds: unique([...(existing.proposal.rationaleEvidenceIds ?? []), ...(proposal.rationaleEvidenceIds ?? [])]) };
+    existing.proposal = {
+      ...existing.proposal,
+      required: existing.proposal.required || proposal.required,
+      rationaleEvidenceIds: unique([...(existing.proposal.rationaleEvidenceIds ?? []), ...(proposal.rationaleEvidenceIds ?? [])]),
+    };
   });
   return [...byKey.values()];
 }
@@ -86,13 +159,14 @@ export function buildDiagnosticScanPlan(input: BuildDiagnosticScanPlanInput): Di
   if (!input.planId.trim()) throw new Error('Diagnostic plan id must be non-empty');
   if (!Number.isFinite(input.createdAt)) throw new Error('Diagnostic plan createdAt must be finite');
   assertValidCommandBudget(input.budget); assertValidRetryPolicy(input.retryPolicy); assertValidStageDeadlinePolicy(input.deadlinePolicy);
+  const endpointAdvertisedCapabilities = normalizeEndpointAdvertisedCapabilities(input.endpointAdvertisedCapabilities);
   const blocked: DiagnosticPlanBlockedProposal[] = [];
   const authorized: Array<{ proposal: DiagnosticPlanProposal; descriptor: DiagnosticRequestDescriptor; inputIndex: number }> = [];
 
   for (const { proposal, inputIndex } of consolidateProposals(input.proposals)) {
     const decision = authorizeRegisteredDescriptor(input.registry, proposal.semanticId, input.protocol);
     if (decision.disposition === 'BLOCK') { blocked.push(Object.freeze({ semanticId: proposal.semanticId, required: proposal.required, targetEndpointId: proposal.targetEndpointId ?? null, reason: decision.reason })); continue; }
-    const activation = evaluateActivationCondition(input, decision.descriptor, proposal);
+    const activation = evaluateActivationCondition(endpointAdvertisedCapabilities, decision.descriptor, proposal);
     if (!activation.allowed) { blocked.push(Object.freeze({ semanticId: proposal.semanticId, required: proposal.required, targetEndpointId: proposal.targetEndpointId ?? null, reason: 'DESCRIPTOR_PRECONDITION_NOT_MET' as const })); continue; }
     authorized.push({ proposal: { ...proposal, rationaleEvidenceIds: unique([...(proposal.rationaleEvidenceIds ?? []), ...activation.evidenceIds]) }, descriptor: decision.descriptor, inputIndex });
   }

@@ -32,6 +32,24 @@ export class DiagnosticReplayExecutor implements PlannedDiagnosticExecutor {
     this.cursors.clear();
   }
 
+  /**
+   * Certification guard: a passing scan may not silently ignore scripted
+   * evidence. Every script/event in the candidate fixture must be consumed.
+   */
+  assertFullyConsumed(): void {
+    const leftovers: string[] = [];
+    for (const script of this.fixture.scripts) {
+      const key = diagnosticReplayScriptKey(script.semanticId, script.targetEndpointId);
+      const cursor = this.cursors.get(key) ?? 0;
+      if (cursor !== script.events.length) {
+        leftovers.push(`${key}:${cursor}/${script.events.length}`);
+      }
+    }
+    if (leftovers.length > 0) {
+      throw new DiagnosticReplayFixtureError(`Replay fixture contains unconsumed evidence: ${leftovers.join(', ')}`);
+    }
+  }
+
   async executeCommand(
     request: PlannedDiagnosticRequest,
     _attemptIndex: number,

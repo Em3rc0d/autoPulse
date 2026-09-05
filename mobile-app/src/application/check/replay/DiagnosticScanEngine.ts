@@ -1,5 +1,6 @@
-import type { DiagnosticScanTerminalState } from '../../../domain/check/DiagnosticScanState';
 import type { Mode01CapabilityCommand } from '../../../domain/acquisition/Mode01CapabilityDiscovery';
+import type { DiagnosticScanTerminalState } from '../../../domain/check/DiagnosticScanState';
+import type { DiagnosticProtocol } from '../../../domain/diagnostics/DiagnosticConnector';
 import type { DiagnosticServiceEnvelope } from '../parsers/DiagnosticServiceEnvelope';
 import { DtcRequestService, DtcServiceParseResult, parseDtcServiceEnvelope } from '../parsers/DtcServiceParser';
 import { parsePidSupportBitmap, PidSupportBitmapParseResult } from '../parsers/PidSupportBitmapParser';
@@ -18,7 +19,7 @@ import {
 } from '../planner/DiagnosticScanPlanner';
 import type { PlannedDiagnosticExecutionReceipt, PlannedDiagnosticExecutor } from './DiagnosticExecutionPort';
 
-export const CHECK_SCAN_ENGINE_VERSION = 'check-scan-engine/v2' as const;
+export const CHECK_SCAN_ENGINE_VERSION = 'check-scan-engine/v4' as const;
 
 export interface DiagnosticScanAttemptRecord {
   readonly planRequestId: string;
@@ -39,6 +40,14 @@ export interface DiagnosticScanAttemptRecord {
   readonly finishedAt: number;
 }
 
+/** Mode 01 capability is endpoint-scoped evidence, never a vehicle-global union. */
+export interface DiagnosticPidSupportObservation extends PidSupportBitmapParseResult {
+  readonly sourceEndpointId: string | null;
+  readonly protocol: DiagnosticProtocol;
+  readonly provenance: string;
+  readonly observedAt: number;
+}
+
 export interface DiagnosticScanEngineResult {
   readonly engineVersion: typeof CHECK_SCAN_ENGINE_VERSION;
   readonly planId: string;
@@ -48,7 +57,7 @@ export interface DiagnosticScanEngineResult {
   readonly endedAt: number;
   readonly attempts: readonly DiagnosticScanAttemptRecord[];
   readonly dtcResults: readonly DtcServiceParseResult[];
-  readonly pidSupportResults: readonly PidSupportBitmapParseResult[];
+  readonly pidSupportResults: readonly DiagnosticPidSupportObservation[];
   readonly usage: CommandBudgetUsage;
   readonly limitations: readonly string[];
 }
@@ -63,7 +72,7 @@ export interface RunDiagnosticScanInput {
 interface ParsedAttempt {
   readonly outcome: DiagnosticAttemptOutcome;
   readonly dtcResult?: DtcServiceParseResult;
-  readonly pidSupportResult?: PidSupportBitmapParseResult;
+  readonly pidSupportResult?: DiagnosticPidSupportObservation;
 }
 
 function envelopeOutcome(envelope: DiagnosticServiceEnvelope): DiagnosticAttemptOutcome {
@@ -101,38 +110,106 @@ function parseAttempt(request: PlannedDiagnosticRequest, envelope: DiagnosticSer
 
     const command = `${request.service}${request.pid}`.toUpperCase() as Mode01CapabilityCommand;
     const result = parsePidSupportBitmap(command, envelope.payload.slice(1));
-    return { outcome: result.outcome === 'VALID' ? 'SUCCESS' : 'INVALID_RESPONSE', pidSupportResult: result };
+    const observation: DiagnosticPidSupportObservation = Object.freeze({
+      ...result,
+      sourceEndpointId: envelope.sourceEndpointId,
+      protocol: envelope.protocol,
+      provenance: envelope.provenance,
+      observedAt: envelope.observedAt,
+    });
+    return { outcome: result.outcome === 'VALID' ? 'SUCCESS' : 'INVALID_RESPONSE', pidSupportResult: observation };
   }
 
   return { outcome: 'INVALID_RESPONSE' };
 }
 
-/**
- * A functional OBD request may yield several ECU responses. Retry decisions
- * are made for the command transaction, not by silently choosing one ECU.
- */
 function aggregateResponderOutcomes(parsed: readonly ParsedAttempt[]): DiagnosticAttemptOutcome {
   if (parsed.length === 0) return 'INVALID_RESPONSE';
   const values = parsed.map(item => item.outcome);
   if (values.every(value => value === values[0])) return values[0];
   if (values.includes('DISCONNECTED')) return 'DISCONNECTED';
-  // Mixed pending/success or success/failure is real partial coverage and must
-  // not become SUCCESS or trigger a hidden retry that duplicates good evidence.
+  if (values.includes('RESPONSE_PENDING') && values.every(value => value === 'SUCCESS' || value === 'RESPONSE_PENDING')) {
+    return 'RESPONSE_PENDING';
+  }
   return 'PARTIAL';
 }
 
-function acceptReceiptBytes(
+function observeReceiptBytes(
   plan: DiagnosticScanPlan,
   usage: CommandBudgetUsage,
   receipt: PlannedDiagnosticExecutionReceipt,
 ): { readonly decision: CommandBudgetDecision; readonly usage: CommandBudgetUsage } {
   let next = usage;
+  let firstBlock: CommandBudgetDecision | undefined;
   for (const response of receipt.responses) {
     const decision = evaluateObservedResponseBytes(plan.budget, next, response.observedResponseBytes);
-    if (decision.disposition === 'BLOCK') return { decision, usage };
+    if (!firstBlock && decision.disposition === 'BLOCK') firstBlock = decision;
     next = recordObservedResponseBytes(next, response.observedResponseBytes);
   }
-  return { decision: { disposition: 'ALLOW' }, usage: next };
+  return { decision: firstBlock ?? { disposition: 'ALLOW' }, usage: next };
+}
+
+function validateExecutionReceipt(
+  plan: DiagnosticScanPlan,
+  request: PlannedDiagnosticRequest,
+  expectedStartedAt: number,
+  receipt: PlannedDiagnosticExecutionReceipt,
+): string | undefined {
+  if (!Number.isFinite(receipt.startedAt) || !Number.isFinite(receipt.finishedAt)) return 'NON_FINITE_RECEIPT_TIME';
+  if (receipt.startedAt !== expectedStartedAt) return 'RECEIPT_START_MISMATCH';
+  if (receipt.finishedAt < receipt.startedAt) return 'RECEIPT_FINISH_PRECEDES_START';
+  if (receipt.responses.length === 0) return 'EMPTY_RESPONSE_SET';
+
+  const responders = new Set<string>();
+  for (const response of receipt.responses) {
+    if (!Number.isInteger(response.observedResponseBytes) || response.observedResponseBytes < 0) return 'INVALID_OBSERVED_RESPONSE_BYTES';
+    const envelope = response.envelope;
+    if (envelope.protocol !== plan.protocol) return 'RESPONSE_PROTOCOL_MISMATCH';
+    if (!Number.isFinite(envelope.observedAt) || envelope.observedAt < receipt.startedAt || envelope.observedAt > receipt.finishedAt) {
+      return 'RESPONSE_OBSERVED_AT_OUTSIDE_RECEIPT';
+    }
+    if (!envelope.provenance.trim()) return 'RESPONSE_PROVENANCE_MISSING';
+    if (envelope.sourceEndpointId !== null) {
+      const source = envelope.sourceEndpointId.trim();
+      if (!source) return 'EMPTY_ATTRIBUTED_RESPONDER';
+      if (responders.has(source)) return 'DUPLICATE_NORMALIZED_RESPONDER';
+      responders.add(source);
+      if (request.targetEndpointId !== null && source !== request.targetEndpointId) return 'TARGET_RESPONDER_MISMATCH';
+    }
+  }
+  return undefined;
+}
+
+function appendAttemptRecords(
+  request: PlannedDiagnosticRequest,
+  receipt: PlannedDiagnosticExecutionReceipt,
+  parsedResponses: readonly ParsedAttempt[] | undefined,
+  overrideOutcome: DiagnosticAttemptOutcome | undefined,
+  pendingContinuation: boolean,
+  commandAttemptIndex: number,
+  pendingExtensionsUsed: number,
+  attempts: DiagnosticScanAttemptRecord[],
+): void {
+  receipt.responses.forEach((response, responderIndex) => {
+    const parsed = parsedResponses?.[responderIndex];
+    attempts.push(Object.freeze({
+      planRequestId: request.planRequestId,
+      semanticId: request.semanticId,
+      descriptorId: request.descriptorId,
+      evidenceTraceId: request.evidenceTraceId,
+      targetEndpointId: request.targetEndpointId,
+      sourceEndpointId: response.envelope.sourceEndpointId,
+      responderIndex,
+      eventKind: pendingContinuation ? 'PENDING_CONTINUATION' : 'COMMAND_RESPONSE',
+      commandAttemptIndex: Math.max(0, commandAttemptIndex - 1),
+      pendingExtensionIndex: pendingExtensionsUsed,
+      responseKind: response.envelope.kind,
+      outcome: overrideOutcome ?? parsed?.outcome ?? 'INVALID_RESPONSE',
+      observedResponseBytes: response.observedResponseBytes,
+      startedAt: receipt.startedAt,
+      finishedAt: receipt.finishedAt,
+    }));
+  });
 }
 
 function frozenResult(
@@ -142,7 +219,7 @@ function frozenResult(
   endedAt: number,
   attempts: readonly DiagnosticScanAttemptRecord[],
   dtcResults: readonly DtcServiceParseResult[],
-  pidSupportResults: readonly PidSupportBitmapParseResult[],
+  pidSupportResults: readonly DiagnosticPidSupportObservation[],
   usage: CommandBudgetUsage,
   limitations: readonly string[],
 ): DiagnosticScanEngineResult {
@@ -165,10 +242,6 @@ function cancellationRequested(cancelRequestedAt: number | undefined, now: numbe
   return cancelRequestedAt !== undefined && now >= cancelRequestedAt;
 }
 
-/**
- * Structural scan engine. It consumes only an MK5 plan and a descriptor-only
- * executor port. This module contains no BLE/ELM/DB imports.
- */
 export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<DiagnosticScanEngineResult> {
   const { plan, executor } = input;
   const startedAt = plan.createdAt;
@@ -179,7 +252,7 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
   let usage: CommandBudgetUsage = { commandsIssued: 0, responseBytes: 0, elapsedMs: 0 };
   const attempts: DiagnosticScanAttemptRecord[] = [];
   const dtcResults: DtcServiceParseResult[] = [];
-  const pidSupportResults: PidSupportBitmapParseResult[] = [];
+  const pidSupportResults: DiagnosticPidSupportObservation[] = [];
   const limitations: string[] = [];
   let limited = plan.status === 'LIMITED';
 
@@ -212,6 +285,7 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
 
       let receipt: PlannedDiagnosticExecutionReceipt;
       let gateRemainingMs: number;
+      const executionStartedAt = now;
       try {
         if (pendingContinuation) {
           const overallRemaining = Math.max(0, plan.deadlinePolicy.overallDeadlineMs - (now - startedAt));
@@ -257,54 +331,45 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
         return frozenResult(plan, 'FAILED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
       }
 
-      now = receipt.finishedAt;
-      lastTransactionFinishedAt = receipt.finishedAt;
-      if (receipt.responses.length === 0) {
-        limitations.push(`executor:${request.semanticId}:EMPTY_RESPONSE_SET`);
-        return frozenResult(plan, 'FAILED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
+      const receiptProblem = validateExecutionReceipt(plan, request, executionStartedAt, receipt);
+      if (receiptProblem) {
+        limitations.push(`executor:${request.semanticId}:${receiptProblem}`);
+        const safeEndedAt = Number.isFinite(receipt.finishedAt) ? Math.max(now, receipt.finishedAt) : now;
+        return frozenResult(plan, 'FAILED', startedAt, safeEndedAt, attempts, dtcResults, pidSupportResults, usage, limitations);
       }
 
-      const accepted = acceptReceiptBytes(
-        plan,
-        { ...usage, elapsedMs: receipt.finishedAt - startedAt },
-        receipt,
-      );
-      if (accepted.decision.disposition === 'BLOCK') {
-        limitations.push(`response-budget:${request.semanticId}:${accepted.decision.reason}`);
-        if (request.required) {
-          return frozenResult(plan, 'FAILED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
-        }
-        limited = true;
-        break;
+      now = receipt.finishedAt;
+      lastTransactionFinishedAt = receipt.finishedAt;
+      const observed = observeReceiptBytes(plan, { ...usage, elapsedMs: receipt.finishedAt - startedAt }, receipt);
+      usage = Object.freeze({ ...observed.usage, elapsedMs: now - startedAt });
+
+      if (observed.decision.disposition === 'BLOCK') {
+        limitations.push(`response-budget:${request.semanticId}:${observed.decision.reason}`);
+        appendAttemptRecords(request, receipt, undefined, 'FAILED', pendingContinuation, commandAttemptIndex, pendingExtensionsUsed, attempts);
+        return frozenResult(plan, request.required ? 'FAILED' : 'LIMITED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
       }
-      usage = Object.freeze({ ...accepted.usage, elapsedMs: now - startedAt });
+
+      const elapsedThisReceipt = receipt.finishedAt - receipt.startedAt;
+      const deadlineExceeded = elapsedThisReceipt > gateRemainingMs;
+      const elapsedBudgetExceeded = now - startedAt > plan.budget.maxElapsedMs;
+      if (deadlineExceeded || elapsedBudgetExceeded) {
+        const reason = deadlineExceeded ? 'DEADLINE_EXCEEDED' : 'ELAPSED_TIME_BUDGET_EXHAUSTED';
+        limitations.push(`post-response-deadline:${request.semanticId}:${reason}`);
+        appendAttemptRecords(request, receipt, undefined, 'DEADLINE_EXCEEDED', pendingContinuation, commandAttemptIndex, pendingExtensionsUsed, attempts);
+        return frozenResult(plan, request.required ? 'FAILED' : 'LIMITED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
+      }
 
       const parsedResponses = receipt.responses.map(response => parseAttempt(request, response.envelope));
       parsedResponses.forEach(parsed => {
         if (parsed.dtcResult) dtcResults.push(parsed.dtcResult);
         if (parsed.pidSupportResult) pidSupportResults.push(parsed.pidSupportResult);
       });
+      appendAttemptRecords(request, receipt, parsedResponses, undefined, pendingContinuation, commandAttemptIndex, pendingExtensionsUsed, attempts);
 
-      receipt.responses.forEach((response, responderIndex) => {
-        const parsed = parsedResponses[responderIndex];
-        attempts.push(Object.freeze({
-          planRequestId: request.planRequestId,
-          semanticId: request.semanticId,
-          descriptorId: request.descriptorId,
-          evidenceTraceId: request.evidenceTraceId,
-          targetEndpointId: request.targetEndpointId,
-          sourceEndpointId: response.envelope.sourceEndpointId,
-          responderIndex,
-          eventKind: pendingContinuation ? 'PENDING_CONTINUATION' : 'COMMAND_RESPONSE',
-          commandAttemptIndex: Math.max(0, commandAttemptIndex - 1),
-          pendingExtensionIndex: pendingExtensionsUsed,
-          responseKind: response.envelope.kind,
-          outcome: parsed.outcome,
-          observedResponseBytes: response.observedResponseBytes,
-          startedAt: receipt.startedAt,
-          finishedAt: receipt.finishedAt,
-        }));
-      });
+      if (cancellationRequested(input.cancelRequestedAt, now)) {
+        limitations.push(`cancelled-after-response:${request.semanticId}`);
+        return frozenResult(plan, 'CANCELLED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
+      }
 
       const transactionOutcome = aggregateResponderOutcomes(parsedResponses);
       if (transactionOutcome === 'DISCONNECTED') {
@@ -319,7 +384,7 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
         outcome: transactionOutcome,
         retriesUsed,
         pendingExtensionsUsed,
-        remainingMs: Math.max(0, gateRemainingMs - (receipt.finishedAt - receipt.startedAt)),
+        remainingMs: Math.max(0, gateRemainingMs - elapsedThisReceipt),
       });
 
       if (decision.action === 'COMPLETE') {
