@@ -4,6 +4,7 @@ import type { DiagnosticServiceEnvelope } from '../parsers/DiagnosticServiceEnve
 import { DtcRequestService, DtcServiceParseResult, parseDtcServiceEnvelope } from '../parsers/DtcServiceParser';
 import { parsePidSupportBitmap, PidSupportBitmapParseResult } from '../parsers/PidSupportBitmapParser';
 import {
+  CommandBudgetDecision,
   CommandBudgetUsage,
   evaluateObservedResponseBytes,
   recordCommandIssued,
@@ -17,7 +18,7 @@ import {
 } from '../planner/DiagnosticScanPlanner';
 import type { PlannedDiagnosticExecutionReceipt, PlannedDiagnosticExecutor } from './DiagnosticExecutionPort';
 
-export const CHECK_SCAN_ENGINE_VERSION = 'check-scan-engine/v1' as const;
+export const CHECK_SCAN_ENGINE_VERSION = 'check-scan-engine/v2' as const;
 
 export interface DiagnosticScanAttemptRecord {
   readonly planRequestId: string;
@@ -25,6 +26,9 @@ export interface DiagnosticScanAttemptRecord {
   readonly descriptorId: string;
   readonly evidenceTraceId: string;
   readonly targetEndpointId: string | null;
+  /** Actual responder identity; null means unattributed rather than guessed. */
+  readonly sourceEndpointId: string | null;
+  readonly responderIndex: number;
   readonly eventKind: 'COMMAND_RESPONSE' | 'PENDING_CONTINUATION';
   readonly commandAttemptIndex: number;
   readonly pendingExtensionIndex: number;
@@ -103,6 +107,34 @@ function parseAttempt(request: PlannedDiagnosticRequest, envelope: DiagnosticSer
   return { outcome: 'INVALID_RESPONSE' };
 }
 
+/**
+ * A functional OBD request may yield several ECU responses. Retry decisions
+ * are made for the command transaction, not by silently choosing one ECU.
+ */
+function aggregateResponderOutcomes(parsed: readonly ParsedAttempt[]): DiagnosticAttemptOutcome {
+  if (parsed.length === 0) return 'INVALID_RESPONSE';
+  const values = parsed.map(item => item.outcome);
+  if (values.every(value => value === values[0])) return values[0];
+  if (values.includes('DISCONNECTED')) return 'DISCONNECTED';
+  // Mixed pending/success or success/failure is real partial coverage and must
+  // not become SUCCESS or trigger a hidden retry that duplicates good evidence.
+  return 'PARTIAL';
+}
+
+function acceptReceiptBytes(
+  plan: DiagnosticScanPlan,
+  usage: CommandBudgetUsage,
+  receipt: PlannedDiagnosticExecutionReceipt,
+): { readonly decision: CommandBudgetDecision; readonly usage: CommandBudgetUsage } {
+  let next = usage;
+  for (const response of receipt.responses) {
+    const decision = evaluateObservedResponseBytes(plan.budget, next, response.observedResponseBytes);
+    if (decision.disposition === 'BLOCK') return { decision, usage };
+    next = recordObservedResponseBytes(next, response.observedResponseBytes);
+  }
+  return { decision: { disposition: 'ALLOW' }, usage: next };
+}
+
 function frozenResult(
   plan: DiagnosticScanPlan,
   state: DiagnosticScanTerminalState,
@@ -134,8 +166,8 @@ function cancellationRequested(cancelRequestedAt: number | undefined, now: numbe
 }
 
 /**
- * CHECK-MK6 structural scan engine. It consumes only an MK5 plan and a
- * descriptor-only executor port. This module contains no BLE/ELM/DB imports.
+ * Structural scan engine. It consumes only an MK5 plan and a descriptor-only
+ * executor port. This module contains no BLE/ELM/DB imports.
  */
 export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<DiagnosticScanEngineResult> {
   const { plan, executor } = input;
@@ -143,8 +175,6 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
   let now = startedAt;
   let stageStartedAt = startedAt;
   let currentStage = plan.requests[0]?.stage;
-  // Safety pacing is anchored to the final observed response/continuation of
-  // the preceding diagnostic transaction, not merely the first response byte.
   let lastTransactionFinishedAt: number | undefined;
   let usage: CommandBudgetUsage = { commandsIssued: 0, responseBytes: 0, elapsedMs: 0 };
   const attempts: DiagnosticScanAttemptRecord[] = [];
@@ -227,55 +257,66 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
         return frozenResult(plan, 'FAILED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
       }
 
-      const responseBudget = evaluateObservedResponseBytes(
-        plan.budget,
-        { ...usage, elapsedMs: receipt.finishedAt - startedAt },
-        receipt.observedResponseBytes,
-      );
       now = receipt.finishedAt;
-      // The transaction remains active across NRC 0x78. Once any response or
-      // pending continuation is observed, the next command must pace from this
-      // latest boundary.
       lastTransactionFinishedAt = receipt.finishedAt;
-      if (responseBudget.disposition === 'BLOCK') {
-        limitations.push(`response-budget:${request.semanticId}:${responseBudget.reason}`);
+      if (receipt.responses.length === 0) {
+        limitations.push(`executor:${request.semanticId}:EMPTY_RESPONSE_SET`);
+        return frozenResult(plan, 'FAILED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
+      }
+
+      const accepted = acceptReceiptBytes(
+        plan,
+        { ...usage, elapsedMs: receipt.finishedAt - startedAt },
+        receipt,
+      );
+      if (accepted.decision.disposition === 'BLOCK') {
+        limitations.push(`response-budget:${request.semanticId}:${accepted.decision.reason}`);
         if (request.required) {
           return frozenResult(plan, 'FAILED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
         }
         limited = true;
         break;
       }
-      usage = recordObservedResponseBytes(
-        { ...usage, elapsedMs: now - startedAt },
-        receipt.observedResponseBytes,
-      );
+      usage = Object.freeze({ ...accepted.usage, elapsedMs: now - startedAt });
 
-      const parsed = parseAttempt(request, receipt.envelope);
-      if (parsed.dtcResult) dtcResults.push(parsed.dtcResult);
-      if (parsed.pidSupportResult) pidSupportResults.push(parsed.pidSupportResult);
-      attempts.push(Object.freeze({
-        planRequestId: request.planRequestId,
-        semanticId: request.semanticId,
-        descriptorId: request.descriptorId,
-        evidenceTraceId: request.evidenceTraceId,
-        targetEndpointId: request.targetEndpointId,
-        eventKind: pendingContinuation ? 'PENDING_CONTINUATION' : 'COMMAND_RESPONSE',
-        commandAttemptIndex: Math.max(0, commandAttemptIndex - 1),
-        pendingExtensionIndex: pendingExtensionsUsed,
-        responseKind: receipt.envelope.kind,
-        outcome: parsed.outcome,
-        observedResponseBytes: receipt.observedResponseBytes,
-        startedAt: receipt.startedAt,
-        finishedAt: receipt.finishedAt,
-      }));
+      const parsedResponses = receipt.responses.map(response => parseAttempt(request, response.envelope));
+      parsedResponses.forEach(parsed => {
+        if (parsed.dtcResult) dtcResults.push(parsed.dtcResult);
+        if (parsed.pidSupportResult) pidSupportResults.push(parsed.pidSupportResult);
+      });
 
-      if (parsed.outcome === 'DISCONNECTED') {
+      receipt.responses.forEach((response, responderIndex) => {
+        const parsed = parsedResponses[responderIndex];
+        attempts.push(Object.freeze({
+          planRequestId: request.planRequestId,
+          semanticId: request.semanticId,
+          descriptorId: request.descriptorId,
+          evidenceTraceId: request.evidenceTraceId,
+          targetEndpointId: request.targetEndpointId,
+          sourceEndpointId: response.envelope.sourceEndpointId,
+          responderIndex,
+          eventKind: pendingContinuation ? 'PENDING_CONTINUATION' : 'COMMAND_RESPONSE',
+          commandAttemptIndex: Math.max(0, commandAttemptIndex - 1),
+          pendingExtensionIndex: pendingExtensionsUsed,
+          responseKind: response.envelope.kind,
+          outcome: parsed.outcome,
+          observedResponseBytes: response.observedResponseBytes,
+          startedAt: receipt.startedAt,
+          finishedAt: receipt.finishedAt,
+        }));
+      });
+
+      const transactionOutcome = aggregateResponderOutcomes(parsedResponses);
+      if (transactionOutcome === 'DISCONNECTED') {
         limitations.push(`disconnected:${request.semanticId}`);
         return frozenResult(plan, 'DISCONNECTED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
       }
+      if (transactionOutcome === 'PARTIAL' && receipt.responses.length > 1) {
+        limitations.push(`mixed-responder-outcomes:${request.semanticId}`);
+      }
 
       const decision = decideRetry(plan.retryPolicy, {
-        outcome: parsed.outcome,
+        outcome: transactionOutcome,
         retriesUsed,
         pendingExtensionsUsed,
         remainingMs: Math.max(0, gateRemainingMs - (receipt.finishedAt - receipt.startedAt)),
@@ -297,7 +338,7 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
         continue;
       }
 
-      limitations.push(`${request.semanticId}:${parsed.outcome}:${decision.reason}`);
+      limitations.push(`${request.semanticId}:${transactionOutcome}:${decision.reason}`);
       limited = true;
       requestComplete = true;
     }
