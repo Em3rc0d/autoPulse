@@ -48,9 +48,15 @@ export interface GoldenReplayExpectedDtcObservation {
     | 'FAILED'
     | 'PARTIAL';
   readonly codes: readonly string[];
-  /** Optional exact occurrence counts after duplicate-code normalization. */
   readonly codeOccurrences?: readonly { readonly code: string; readonly count: number }[];
-  /** Omit when attribution is outside the case claim; null explicitly asserts UNATTRIBUTED. */
+  readonly sourceEndpointId?: string | null;
+}
+
+export interface GoldenReplayExpectedPidSupportObservation {
+  readonly command: string;
+  readonly advertisedPids: readonly string[];
+  readonly continuationCommand: string | null;
+  /** Omit when attribution is outside the claim; null explicitly asserts UNATTRIBUTED. */
   readonly sourceEndpointId?: string | null;
 }
 
@@ -60,11 +66,10 @@ export interface GoldenReplayExpectation {
   readonly attemptOutcomes: readonly DiagnosticAttemptOutcome[];
   readonly dtcObservations?: readonly GoldenReplayExpectedDtcObservation[];
   readonly limitationsContain?: readonly string[];
-  readonly pidSupport?: {
-    readonly command: string;
-    readonly advertisedPids: readonly string[];
-    readonly continuationCommand: string | null;
-  };
+  /** Backwards-compatible single-result expectation. */
+  readonly pidSupport?: GoldenReplayExpectedPidSupportObservation;
+  /** Endpoint-aware capability expectations for one functional multi-responder command. */
+  readonly pidSupportObservations?: readonly GoldenReplayExpectedPidSupportObservation[];
 }
 
 export interface GoldenReplayExecutionProfile {
@@ -127,6 +132,19 @@ function assertExpectedObservation(candidate: GoldenReplayCase, index: number, o
   }
 }
 
+function assertExpectedPidSupport(
+  candidate: GoldenReplayCase,
+  observation: GoldenReplayExpectedPidSupportObservation,
+  label: string,
+): void {
+  nonEmpty(observation.command, `Golden replay ${candidate.caseId} ${label} command`);
+  uniqueNonEmpty(observation.advertisedPids, `Golden replay ${candidate.caseId} ${label} advertisedPids`);
+  if (observation.continuationCommand !== null) nonEmpty(observation.continuationCommand, `Golden replay ${candidate.caseId} ${label} continuationCommand`);
+  if (observation.sourceEndpointId !== undefined && observation.sourceEndpointId !== null) {
+    nonEmpty(observation.sourceEndpointId, `Golden replay ${candidate.caseId} ${label} sourceEndpointId`);
+  }
+}
+
 export function assertValidGoldenReplayCase(candidate: GoldenReplayCase): void {
   nonEmpty(candidate.caseId, 'Golden replay caseId');
   nonEmpty(candidate.reviewedBy, `Golden replay ${candidate.caseId} reviewedBy`);
@@ -143,6 +161,11 @@ export function assertValidGoldenReplayCase(candidate: GoldenReplayCase): void {
   if (!Number.isInteger(candidate.executionProfile.minInterCommandDelayMs) || candidate.executionProfile.minInterCommandDelayMs < 0) throw new Error(`Golden replay ${candidate.caseId} minInterCommandDelayMs must be a non-negative integer`);
   if (!Number.isInteger(candidate.expected.commandsIssued) || candidate.expected.commandsIssued < 0) throw new Error(`Golden replay ${candidate.caseId} expected commandsIssued must be a non-negative integer`);
   candidate.expected.dtcObservations?.forEach((observation, index) => assertExpectedObservation(candidate, index, observation));
+  if (candidate.expected.pidSupport && candidate.expected.pidSupportObservations) {
+    throw new Error(`Golden replay ${candidate.caseId} cannot declare both pidSupport and pidSupportObservations`);
+  }
+  if (candidate.expected.pidSupport) assertExpectedPidSupport(candidate, candidate.expected.pidSupport, 'pidSupport');
+  candidate.expected.pidSupportObservations?.forEach((observation, index) => assertExpectedPidSupport(candidate, observation, `pidSupport[${index}]`));
 
   const evidenceIds = candidate.evidence.map(item => item.evidenceId);
   uniqueNonEmpty(evidenceIds, `Golden replay ${candidate.caseId} evidence IDs`);
