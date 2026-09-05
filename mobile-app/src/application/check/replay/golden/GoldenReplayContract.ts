@@ -108,6 +108,9 @@ export function assertValidGoldenReplayCase(candidate: GoldenReplayCase): void {
   if (candidate.claims.length === 0) {
     throw new Error(`Golden replay ${candidate.caseId} must declare at least one bounded claim`);
   }
+  if (new Set(candidate.claims).size !== candidate.claims.length) {
+    throw new Error(`Golden replay ${candidate.caseId} contains duplicate claims`);
+  }
 
   if (!Number.isInteger(candidate.executionProfile.maxRetries) || candidate.executionProfile.maxRetries < 0) {
     throw new Error(`Golden replay ${candidate.caseId} maxRetries must be a non-negative integer`);
@@ -119,16 +122,6 @@ export function assertValidGoldenReplayCase(candidate: GoldenReplayCase): void {
     throw new Error(`Golden replay ${candidate.caseId} minInterCommandDelayMs must be a non-negative integer`);
   }
 
-  const promoted = PROMOTION_RANK[candidate.promotionState] >= PROMOTION_RANK.GOLDEN;
-  if (promoted) {
-    if (candidate.evidence.length === 0) {
-      throw new Error(`Golden replay ${candidate.caseId} cannot be GOLDEN without evidence`);
-    }
-    if (!candidate.evidence.some(item => item.independentFromParserOutput)) {
-      throw new Error(`Golden replay ${candidate.caseId} cannot be GOLDEN without an independent expected-result source`);
-    }
-  }
-
   for (const evidence of candidate.evidence) {
     nonEmpty(evidence.evidenceId, `Golden replay ${candidate.caseId} evidenceId`);
     nonEmpty(evidence.locator, `Golden replay ${candidate.caseId} evidence locator`);
@@ -137,8 +130,25 @@ export function assertValidGoldenReplayCase(candidate: GoldenReplayCase): void {
     }
   }
 
-  const physicalClaim = candidate.claims.includes('PHYSICAL_TRANSPORT') || candidate.claims.includes('PHYSICAL_TIMING');
-  if (physicalClaim && candidate.sourceType !== 'PHYSICAL_CAPTURE') {
+  const promoted = PROMOTION_RANK[candidate.promotionState] >= PROMOTION_RANK.GOLDEN;
+  if (promoted) {
+    if (candidate.evidence.length === 0) {
+      throw new Error(`Golden replay ${candidate.caseId} cannot be GOLDEN without evidence`);
+    }
+    for (const claim of candidate.claims) {
+      const independentlySupported = candidate.evidence.some(
+        item => item.independentFromParserOutput && item.supports.includes(claim),
+      );
+      if (!independentlySupported) {
+        throw new Error(`Golden replay ${candidate.caseId} claim ${claim} lacks independent supporting evidence`);
+      }
+    }
+  }
+
+  const physicalClaims = candidate.claims.filter(
+    claim => claim === 'PHYSICAL_TRANSPORT' || claim === 'PHYSICAL_TIMING',
+  );
+  if (physicalClaims.length > 0 && candidate.sourceType !== 'PHYSICAL_CAPTURE') {
     throw new Error(`Golden replay ${candidate.caseId} cannot make a physical claim from ${candidate.sourceType}`);
   }
 
@@ -151,6 +161,13 @@ export function assertValidGoldenReplayCase(candidate: GoldenReplayCase): void {
     }
     if (!candidate.evidence.some(item => item.kind === 'PHYSICAL_RAW_CAPTURE')) {
       throw new Error(`Golden replay ${candidate.caseId} physical certification requires physical raw capture evidence`);
+    }
+    for (const claim of physicalClaims) {
+      if (!candidate.evidence.some(
+        item => item.kind === 'PHYSICAL_RAW_CAPTURE' && item.independentFromParserOutput && item.supports.includes(claim),
+      )) {
+        throw new Error(`Golden replay ${candidate.caseId} physical claim ${claim} lacks independent raw capture evidence`);
+      }
     }
   }
 }
