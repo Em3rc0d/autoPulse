@@ -11,7 +11,7 @@ describe('CHECK-MK9 golden replay certification', () => {
     expect(receipt.cases.every(item => item.eligible && item.passed)).toBe(true);
   });
 
-  it('covers the Core replay semantics and endpoint truth required before a physical pilot', () => {
+  it('covers Core replay semantics, responder truth and endpoint-scoped PID capability before a physical pilot', () => {
     const ids = new Set(CHECK_GOLDEN_REPLAY_CERTIFICATION_CORPUS_V1.map(item => item.caseId));
     for (const required of [
       'golden-legacy-mode03-p0133',
@@ -37,6 +37,8 @@ describe('CHECK-MK9 golden replay certification', () => {
       'golden-unattributed-response',
       'golden-source-ambiguity-stays-unattributed',
       'golden-mixed-responder-outcomes-limited',
+      'golden-pid-support-multi-endpoint',
+      'golden-pid-support-unattributed-stays-unattributed',
     ]) {
       expect(ids.has(required)).toBe(true);
     }
