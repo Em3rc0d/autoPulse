@@ -3,13 +3,37 @@ import type { DiagnosticServiceEnvelope } from '../parsers/DiagnosticServiceEnve
 
 export type DiagnosticReplayEventKind = 'COMMAND_RESPONSE' | 'PENDING_CONTINUATION';
 
-export interface DiagnosticReplayEvent {
-  readonly kind: DiagnosticReplayEventKind;
-  /** Deterministic elapsed time between event start and observed envelope. */
-  readonly durationMs: number;
+export interface DiagnosticReplayObservedResponse {
   readonly observedResponseBytes: number;
   readonly envelope: DiagnosticServiceEnvelope;
 }
+
+interface DiagnosticReplayEventBase {
+  readonly kind: DiagnosticReplayEventKind;
+  /** Deterministic elapsed time between event start and the completed response set. */
+  readonly durationMs: number;
+}
+
+export interface DiagnosticReplaySingleResponseEvent extends DiagnosticReplayEventBase {
+  readonly observedResponseBytes: number;
+  readonly envelope: DiagnosticServiceEnvelope;
+  readonly responses?: never;
+}
+
+export interface DiagnosticReplayMultiResponseEvent extends DiagnosticReplayEventBase {
+  /**
+   * Normalized complete responses produced by one semantic request. This is
+   * how functional OBD multi-ECU replies are represented without issuing
+   * hidden additional commands.
+   */
+  readonly responses: readonly DiagnosticReplayObservedResponse[];
+  readonly observedResponseBytes?: never;
+  readonly envelope?: never;
+}
+
+export type DiagnosticReplayEvent =
+  | DiagnosticReplaySingleResponseEvent
+  | DiagnosticReplayMultiResponseEvent;
 
 export interface DiagnosticReplayScript {
   readonly semanticId: string;
@@ -30,6 +54,18 @@ export function diagnosticReplayScriptKey(
   targetEndpointId: string | null,
 ): string {
   return `${semanticId.trim()}::${targetEndpointId ?? 'FUNCTIONAL_OR_UNATTRIBUTED'}`;
+}
+
+export function diagnosticReplayEventResponses(
+  event: DiagnosticReplayEvent,
+): readonly DiagnosticReplayObservedResponse[] {
+  if ('responses' in event && event.responses !== undefined) {
+    return event.responses;
+  }
+  return Object.freeze([{
+    envelope: event.envelope,
+    observedResponseBytes: event.observedResponseBytes,
+  }]);
 }
 
 export function assertValidDiagnosticReplayFixture(fixture: DiagnosticReplayFixture): void {
@@ -53,14 +89,20 @@ export function assertValidDiagnosticReplayFixture(fixture: DiagnosticReplayFixt
       if (!Number.isInteger(event.durationMs) || event.durationMs < 0) {
         throw new Error(`Replay event durationMs must be a non-negative integer for ${key}`);
       }
-      if (!Number.isInteger(event.observedResponseBytes) || event.observedResponseBytes < 0) {
-        throw new Error(`Replay observedResponseBytes must be a non-negative integer for ${key}`);
+      const responses = diagnosticReplayEventResponses(event);
+      if (responses.length === 0) {
+        throw new Error(`Replay event must preserve at least one response for ${key}`);
       }
-      if (event.envelope.protocol !== fixture.protocol) {
-        throw new Error(`Replay envelope protocol mismatch for ${key}`);
-      }
-      if (!event.envelope.provenance.trim()) {
-        throw new Error(`Replay envelope provenance must be non-empty for ${key}`);
+      for (const response of responses) {
+        if (!Number.isInteger(response.observedResponseBytes) || response.observedResponseBytes < 0) {
+          throw new Error(`Replay observedResponseBytes must be a non-negative integer for ${key}`);
+        }
+        if (response.envelope.protocol !== fixture.protocol) {
+          throw new Error(`Replay envelope protocol mismatch for ${key}`);
+        }
+        if (!response.envelope.provenance.trim()) {
+          throw new Error(`Replay envelope provenance must be non-empty for ${key}`);
+        }
       }
     }
   }
