@@ -2,9 +2,9 @@ import {
   assertValidGoldenReplayCase,
   isReplayCertificationEligible,
 } from '../GoldenReplayContract';
-import { CHECK_GOLDEN_REPLAY_CASES_V1 } from '../GoldenReplayCorpusV1';
+import { CHECK_GOLDEN_REPLAY_CERTIFICATION_CORPUS_V1 } from '../GoldenReplayCertificationCorpusV1';
 
-const first = CHECK_GOLDEN_REPLAY_CASES_V1[0];
+const first = CHECK_GOLDEN_REPLAY_CERTIFICATION_CORPUS_V1[0];
 
 describe('CHECK-MK7 GoldenReplayContract', () => {
   it('accepts reviewed GOLDEN cases without elevating them to physical certification', () => {
@@ -27,8 +27,8 @@ describe('CHECK-MK7 GoldenReplayContract', () => {
     expect(() => assertValidGoldenReplayCase({
       ...first,
       caseId: 'unbacked-claim-invalid',
-      claims: ['SERVICE_SEMANTICS', 'ENGINE_CONTROL_FLOW'],
-    })).toThrow('claim ENGINE_CONTROL_FLOW lacks independent supporting evidence');
+      claims: ['SERVICE_SEMANTICS', 'PHYSICAL_TIMING'],
+    })).toThrow('cannot make a physical claim');
   });
 
   it('rejects physical claims from a reference or synthetic case', () => {
@@ -49,8 +49,8 @@ describe('CHECK-MK7 GoldenReplayContract', () => {
     })).toThrow('requires a SHA-256 raw evidence digest');
   });
 
-  it('keeps the V1 GOLDEN corpus free of physical claims', () => {
-    for (const candidate of CHECK_GOLDEN_REPLAY_CASES_V1) {
+  it('keeps every certified V1 replay case non-physical and independently supported per claim', () => {
+    for (const candidate of CHECK_GOLDEN_REPLAY_CERTIFICATION_CORPUS_V1) {
       expect(() => assertValidGoldenReplayCase(candidate)).not.toThrow();
       expect(candidate.promotionState).toBe('GOLDEN');
       expect(candidate.claims).not.toContain('PHYSICAL_TRANSPORT');
