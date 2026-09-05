@@ -76,7 +76,7 @@ const base = {
   evidence: Object.freeze([DTC_CONTRACT, ELM_DTC_REFERENCE]),
   semanticIds: Object.freeze([SEMANTIC]),
   executionProfile: Object.freeze({ retryableOutcomes: Object.freeze([]), maxRetries: 0, maxPendingExtensions: 1, minInterCommandDelayMs: 0 }),
-  reviewedBy: 'CHECK-MK7 DTC edge evidence review',
+  reviewedBy: 'CHECK-MK9 DTC edge evidence review',
 };
 
 export const CHECK_GOLDEN_DTC_EDGE_CASES_V1: readonly GoldenReplayCase[] = Object.freeze([
@@ -100,12 +100,12 @@ export const CHECK_GOLDEN_DTC_EDGE_CASES_V1: readonly GoldenReplayCase[] = Objec
   }),
   golden({
     ...base,
-    caseId: 'golden-positive-empty-dtc-list',
-    claims: scopes('SERVICE_SEMANTICS'),
+    caseId: 'golden-positive-empty-dtc-fails-closed',
+    claims: scopes('PARSER_FAILURE_SEMANTICS'),
     fixture: EMPTY_POSITIVE,
-    expected: expected({ terminalState: 'COMPLETE', commandsIssued: 1, attemptOutcomes: outcomes('SUCCESS'), dtcObservations: Object.freeze([observation('SUCCESS_ZERO_CODES')]) }),
-    reviewMethod: 'A structurally successful legacy Mode 03 response with no complete DTC pairs is a zero-code result, distinct from NO DATA.',
-    limitations: Object.freeze(['Synthetic edge representation; physical adapter formatting may differ.']),
+    expected: expected({ terminalState: 'LIMITED', commandsIssued: 1, attemptOutcomes: outcomes('INVALID_RESPONSE'), dtcObservations: Object.freeze([observation('INVALID_RESPONSE')]) }),
+    reviewMethod: 'A bare positive legacy service byte proves neither a DTC pair nor explicit 0000 padding. Zero-code truth therefore remains unproven and the parser fails closed.',
+    limitations: Object.freeze(['A future physical/reference promotion may add an explicitly proven alternate legacy zero-list representation.']),
   }),
   golden({
     ...base,
