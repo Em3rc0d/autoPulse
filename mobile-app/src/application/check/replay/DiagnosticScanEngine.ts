@@ -25,7 +25,10 @@ import {
   evaluatePlannedRequestGate,
   PlannedDiagnosticRequest,
 } from '../planner/DiagnosticScanPlanner';
-import type { PlannedDiagnosticExecutor } from './DiagnosticExecutionPort';
+import type {
+  PlannedDiagnosticExecutionReceipt,
+  PlannedDiagnosticExecutor,
+} from './DiagnosticExecutionPort';
 
 export const CHECK_SCAN_ENGINE_VERSION = 'check-scan-engine/v1' as const;
 
@@ -99,10 +102,16 @@ function parseAttempt(request: PlannedDiagnosticRequest, envelope: DiagnosticSer
     if (envelope.kind !== 'POSITIVE_RESPONSE') return { outcome: envelopeOutcome(envelope) };
     if (envelope.requestService.toUpperCase() !== request.service.toUpperCase()) return { outcome: 'INVALID_RESPONSE' };
     if (envelope.responseService.toUpperCase() !== request.expectedResponseService.toUpperCase()) return { outcome: 'INVALID_RESPONSE' };
-    if (!request.pid) return { outcome: 'INVALID_RESPONSE' };
+    if (!request.pid || envelope.payload.length < 1) return { outcome: 'INVALID_RESPONSE' };
+
+    const observedPid = envelope.payload[0];
+    const expectedPid = Number.parseInt(request.pid, 16);
+    if (!Number.isInteger(expectedPid) || observedPid !== expectedPid) {
+      return { outcome: 'INVALID_RESPONSE' };
+    }
 
     const command = `${request.service}${request.pid}`.toUpperCase() as Mode01CapabilityCommand;
-    const result = parsePidSupportBitmap(command, envelope.payload);
+    const result = parsePidSupportBitmap(command, envelope.payload.slice(1));
     return {
       outcome: result.outcome === 'VALID' ? 'SUCCESS' : 'INVALID_RESPONSE',
       pidSupportResult: result,
@@ -187,7 +196,7 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
         return frozenResult(plan, 'CANCELLED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
       }
 
-      let receipt;
+      let receipt: PlannedDiagnosticExecutionReceipt;
       let gateRemainingMs: number;
       try {
         if (pendingContinuation) {
