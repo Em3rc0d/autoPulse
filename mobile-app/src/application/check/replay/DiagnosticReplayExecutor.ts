@@ -4,6 +4,7 @@ import {
   assertValidDiagnosticReplayFixture,
   DiagnosticReplayEvent,
   DiagnosticReplayFixture,
+  diagnosticReplayEventResponses,
   diagnosticReplayScriptKey,
 } from './DiagnosticReplayFixture';
 
@@ -65,7 +66,7 @@ export class DiagnosticReplayExecutor implements PlannedDiagnosticExecutor {
     if (!Number.isFinite(startedAt)) {
       throw new DiagnosticReplayFixtureError('Replay execution startedAt must be finite');
     }
-    if (this.fixture.protocol !== request.supportedProtocols.find(protocol => protocol === this.fixture.protocol)) {
+    if (!request.supportedProtocols.includes(this.fixture.protocol)) {
       throw new DiagnosticReplayFixtureError(
         `Replay fixture protocol ${this.fixture.protocol} is not promoted for ${request.semanticId}`,
       );
@@ -91,21 +92,26 @@ export class DiagnosticReplayExecutor implements PlannedDiagnosticExecutor {
     }
 
     const finishedAt = startedAt + event.durationMs;
-    if (event.envelope.observedAt !== finishedAt) {
-      throw new DiagnosticReplayFixtureError(
-        `Replay envelope observedAt mismatch for ${key}: expected ${finishedAt}, got ${event.envelope.observedAt}`,
-      );
-    }
-    if (event.envelope.requestService.toUpperCase() !== request.service.toUpperCase()) {
-      throw new DiagnosticReplayFixtureError(
-        `Replay envelope request service mismatch for ${key}`,
-      );
+    const responses = diagnosticReplayEventResponses(event);
+    for (const response of responses) {
+      if (response.envelope.observedAt !== finishedAt) {
+        throw new DiagnosticReplayFixtureError(
+          `Replay envelope observedAt mismatch for ${key}: expected ${finishedAt}, got ${response.envelope.observedAt}`,
+        );
+      }
+      if (response.envelope.requestService.toUpperCase() !== request.service.toUpperCase()) {
+        throw new DiagnosticReplayFixtureError(
+          `Replay envelope request service mismatch for ${key}`,
+        );
+      }
     }
 
     this.cursors.set(key, cursor + 1);
     return Object.freeze({
-      envelope: event.envelope,
-      observedResponseBytes: event.observedResponseBytes,
+      responses: Object.freeze(responses.map(response => Object.freeze({
+        envelope: response.envelope,
+        observedResponseBytes: response.observedResponseBytes,
+      }))),
       startedAt,
       finishedAt,
     });
