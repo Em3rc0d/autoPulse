@@ -31,7 +31,12 @@ const sameArray = (left: readonly string[], right: readonly string[]): boolean =
   left.length === right.length && left.every((value, index) => value === right[index]);
 
 function compareDtcObservation(
-  actual: { readonly status: string; readonly outcome: string; readonly sourceEndpointId: string | null; readonly codes: readonly { readonly code: string }[] },
+  actual: {
+    readonly status: string;
+    readonly outcome: string;
+    readonly sourceEndpointId: string | null;
+    readonly codes: readonly { readonly code: string; readonly occurrenceCount: number }[];
+  },
   expected: GoldenReplayExpectedDtcObservation,
   index: number,
   mismatches: string[],
@@ -43,6 +48,14 @@ function compareDtcObservation(
   }
   const codes = actual.codes.map(code => code.code);
   if (!sameArray(codes, expected.codes)) mismatches.push(`dtc[${index}].codes expected ${expected.codes.join(',')} got ${codes.join(',')}`);
+  for (const occurrence of expected.codeOccurrences ?? []) {
+    const actualCode = actual.codes.find(code => code.code === occurrence.code);
+    if (!actualCode) {
+      mismatches.push(`dtc[${index}].occurrence ${occurrence.code} missing`);
+    } else if (actualCode.occurrenceCount !== occurrence.count) {
+      mismatches.push(`dtc[${index}].occurrence ${occurrence.code} expected ${occurrence.count} got ${actualCode.occurrenceCount}`);
+    }
+  }
 }
 
 export async function certifyGoldenReplayCase(candidate: GoldenReplayCase): Promise<GoldenReplayCaseReceipt> {
