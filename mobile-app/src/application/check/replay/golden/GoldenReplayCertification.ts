@@ -9,7 +9,7 @@ import {
   isReplayCertificationEligible,
 } from './GoldenReplayContract';
 
-export const CHECK_GOLDEN_REPLAY_CERTIFIER_VERSION = 'check-golden-replay-certifier/v1' as const;
+export const CHECK_GOLDEN_REPLAY_CERTIFIER_VERSION = 'check-golden-replay-certifier/v2' as const;
 
 export interface GoldenReplayCaseReceipt {
   readonly caseId: string;
@@ -31,13 +31,16 @@ const sameArray = (left: readonly string[], right: readonly string[]): boolean =
   left.length === right.length && left.every((value, index) => value === right[index]);
 
 function compareDtcObservation(
-  actual: { readonly status: string; readonly outcome: string; readonly codes: readonly { readonly code: string }[] },
+  actual: { readonly status: string; readonly outcome: string; readonly sourceEndpointId: string | null; readonly codes: readonly { readonly code: string }[] },
   expected: GoldenReplayExpectedDtcObservation,
   index: number,
   mismatches: string[],
 ): void {
   if (actual.status !== expected.status) mismatches.push(`dtc[${index}].status expected ${expected.status} got ${actual.status}`);
   if (actual.outcome !== expected.outcome) mismatches.push(`dtc[${index}].outcome expected ${expected.outcome} got ${actual.outcome}`);
+  if (Object.prototype.hasOwnProperty.call(expected, 'sourceEndpointId') && actual.sourceEndpointId !== expected.sourceEndpointId) {
+    mismatches.push(`dtc[${index}].sourceEndpointId expected ${String(expected.sourceEndpointId)} got ${String(actual.sourceEndpointId)}`);
+  }
   const codes = actual.codes.map(code => code.code);
   if (!sameArray(codes, expected.codes)) mismatches.push(`dtc[${index}].codes expected ${expected.codes.join(',')} got ${codes.join(',')}`);
 }
@@ -46,13 +49,7 @@ export async function certifyGoldenReplayCase(candidate: GoldenReplayCase): Prom
   assertValidGoldenReplayCase(candidate);
   const eligible = isReplayCertificationEligible(candidate);
   if (!eligible) {
-    return Object.freeze({
-      caseId: candidate.caseId,
-      promotionState: candidate.promotionState,
-      eligible: false,
-      passed: false,
-      mismatches: Object.freeze(['CASE_NOT_PROMOTED_TO_GOLDEN']),
-    });
+    return Object.freeze({ caseId: candidate.caseId, promotionState: candidate.promotionState, eligible: false, passed: false, mismatches: Object.freeze(['CASE_NOT_PROMOTED_TO_GOLDEN']) });
   }
 
   const plan = buildDiagnosticScanPlan({
@@ -77,10 +74,7 @@ export async function certifyGoldenReplayCase(candidate: GoldenReplayCase): Prom
     retryPolicy: {
       maxRetries: candidate.executionProfile.maxRetries,
       retryableOutcomes: candidate.executionProfile.retryableOutcomes,
-      responsePending: {
-        maxExtensions: candidate.executionProfile.maxPendingExtensions,
-        extensionMs: 5000,
-      },
+      responsePending: { maxExtensions: candidate.executionProfile.maxPendingExtensions, extensionMs: 5000 },
       provenance: `${candidate.caseId}:golden-replay-retry`,
     },
     deadlinePolicy: {
@@ -90,11 +84,7 @@ export async function certifyGoldenReplayCase(candidate: GoldenReplayCase): Prom
     },
   });
 
-  const result = await runDiagnosticScan({
-    plan,
-    executor: new DiagnosticReplayExecutor(candidate.fixture),
-  });
-
+  const result = await runDiagnosticScan({ plan, executor: new DiagnosticReplayExecutor(candidate.fixture) });
   const mismatches: string[] = [];
   if (result.state !== candidate.expected.terminalState) mismatches.push(`terminalState expected ${candidate.expected.terminalState} got ${result.state}`);
   if (result.usage.commandsIssued !== candidate.expected.commandsIssued) mismatches.push(`commandsIssued expected ${candidate.expected.commandsIssued} got ${result.usage.commandsIssued}`);
@@ -105,14 +95,15 @@ export async function certifyGoldenReplayCase(candidate: GoldenReplayCase): Prom
   }
 
   if (candidate.expected.dtcObservations) {
-    if (result.dtcResults.length !== candidate.expected.dtcObservations.length) {
-      mismatches.push(`dtcResults length expected ${candidate.expected.dtcObservations.length} got ${result.dtcResults.length}`);
-    }
+    if (result.dtcResults.length !== candidate.expected.dtcObservations.length) mismatches.push(`dtcResults length expected ${candidate.expected.dtcObservations.length} got ${result.dtcResults.length}`);
     candidate.expected.dtcObservations.forEach((expected, index) => {
       const actual = result.dtcResults[index];
-      if (!actual) return;
-      compareDtcObservation(actual, expected, index, mismatches);
+      if (actual) compareDtcObservation(actual, expected, index, mismatches);
     });
+  }
+
+  for (const requiredLimitation of candidate.expected.limitationsContain ?? []) {
+    if (!result.limitations.includes(requiredLimitation)) mismatches.push(`missing limitation ${requiredLimitation}`);
   }
 
   if (candidate.expected.pidSupport) {
@@ -126,24 +117,16 @@ export async function certifyGoldenReplayCase(candidate: GoldenReplayCase): Prom
     }
   }
 
-  return Object.freeze({
-    caseId: candidate.caseId,
-    promotionState: candidate.promotionState,
-    eligible: true,
-    passed: mismatches.length === 0,
-    mismatches: Object.freeze([...mismatches]),
-  });
+  return Object.freeze({ caseId: candidate.caseId, promotionState: candidate.promotionState, eligible: true, passed: mismatches.length === 0, mismatches: Object.freeze([...mismatches]) });
 }
 
 export async function certifyGoldenReplayCorpus(cases: readonly GoldenReplayCase[]): Promise<GoldenReplayCertificationReceipt> {
   const receipts = await Promise.all(cases.map(certifyGoldenReplayCase));
   const eligible = receipts.filter(item => item.eligible);
   const passed = eligible.filter(item => item.passed);
-  const status = eligible.length > 0 && passed.length === eligible.length ? 'PASS' : 'FAIL';
-
   return Object.freeze({
     certifierVersion: CHECK_GOLDEN_REPLAY_CERTIFIER_VERSION,
-    status,
+    status: eligible.length > 0 && passed.length === eligible.length ? 'PASS' : 'FAIL',
     eligibleCases: eligible.length,
     passedCases: passed.length,
     cases: Object.freeze(receipts),
