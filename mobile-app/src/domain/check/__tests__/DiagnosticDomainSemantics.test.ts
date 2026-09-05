@@ -20,8 +20,23 @@ const pending: DiagnosticTroubleCode = {
 
 const scan: DiagnosticScan = {
   scanId: 'scan-1', state: 'COMPLETE', startedAt: 1, endedAt: 20, protocol: 'UNKNOWN',
-  endpointAttribution: 'PARTIAL', endpoints: [], troubleCodes: [stored, pending], readiness: [],
-  freezeFrames: [], monitorResults: [], evidenceFacts: [], evidenceRelations: [], limitations: [],
+  endpointAttribution: 'ATTRIBUTED',
+  endpoints: [{
+    endpointId: 'ecu-1', protocol: 'UNKNOWN', role: 'UNKNOWN', roleConfidence: 'INSUFFICIENT',
+    identityEvidence: [], supportedServices: [], supportedPids: [], scanStatus: 'COMPLETE',
+  }],
+  troubleCodes: [stored, pending], readiness: [], freezeFrames: [], monitorResults: [],
+  evidenceFacts: [
+    {
+      evidenceId: 'e-stored', sourceType: 'DTC', sourceEndpointId: 'ecu-1', observedAt: 10,
+      value: 'P0301', quality: 'CONFIRMED_BY_ECU', provenance: 'fixture:stored',
+    },
+    {
+      evidenceId: 'e-pending', sourceType: 'DTC', sourceEndpointId: 'ecu-1', observedAt: 10,
+      value: 'P0301', quality: 'CONFIRMED_BY_ECU', provenance: 'fixture:pending',
+    },
+  ],
+  evidenceRelations: [], limitations: [],
 };
 
 const coverage: DiagnosticCoverage = {
@@ -92,7 +107,7 @@ describe('Check domain semantics', () => {
     const result: DiagnosticMonitorResult = {
       monitorResultId: 'm06-1', sourceEndpointId: 'ecu-1', monitorId: 'MID-01',
       rawValue: [0x12, 0x34], outcome: 'UNKNOWN', provenance: 'fixture:mode06-raw',
-      evidenceIds: ['e-mode06'], observedAt: 12,
+      evidenceIds: ['e-stored'], observedAt: 12,
     };
     expect(result.rawValue).toEqual([0x12, 0x34]);
     expect(result.meaning).toBeUndefined();
@@ -101,7 +116,7 @@ describe('Check domain semantics', () => {
   it('preserves sub-signal identity for compound freeze-frame PIDs', () => {
     const frame: DiagnosticFreezeFrame = {
       freezeFrameId: 'ff-1', frameNumber: 0, state: 'FRAME_OBSERVED', sourceEndpointId: 'ecu-1',
-      capturedAt: 'ECU_EVENT_TIME_UNKNOWN', observedAt: 13, evidenceIds: ['e-ff'],
+      capturedAt: 'ECU_EVENT_TIME_UNKNOWN', observedAt: 13, evidenceIds: ['e-stored'],
       values: [
         { pid: '14', signalId: 'OxySensor1_Volt', value: 0.72, unit: 'V' },
         { pid: '14', signalId: 'OxySensor1_STFT', value: 3.1, unit: '%' },
@@ -113,7 +128,7 @@ describe('Check domain semantics', () => {
   it('seals a deeply immutable terminal report with all version axes', () => {
     const inputScan = { ...scan, limitations: ['coverage bounded'] };
     const report = createDiagnosticReport({
-      reportId: 'report-1', scan: inputScan, coverage, concerns: [], evidenceHash: 'sha256:test', sealedAt: 21,
+      reportId: 'report-1', scan: inputScan, coverage, concerns: [], evidenceHash: 'a'.repeat(64), sealedAt: 21,
       versions: {
         scanSchemaVersion: '1', diagnosticEngineVersion: 'mk3', decoderCatalogVersion: '1',
         dtcKnowledgeVersion: '1', correlationRulesVersion: '1',
@@ -128,7 +143,7 @@ describe('Check domain semantics', () => {
   it('refuses to seal an active scan or an unversioned report', () => {
     expect(() => createDiagnosticReport({
       reportId: 'report-active', scan: { ...scan, state: 'SCANNING_DTC' }, coverage,
-      evidenceHash: 'hash', sealedAt: 20,
+      evidenceHash: 'a'.repeat(64), sealedAt: 20,
       versions: {
         scanSchemaVersion: '1', diagnosticEngineVersion: 'mk3', decoderCatalogVersion: '1',
         dtcKnowledgeVersion: '1', correlationRulesVersion: '1',
@@ -136,7 +151,7 @@ describe('Check domain semantics', () => {
     })).toThrow('non-terminal');
 
     expect(() => createDiagnosticReport({
-      reportId: 'report-unversioned', scan, coverage, evidenceHash: 'hash', sealedAt: 20,
+      reportId: 'report-unversioned', scan, coverage, evidenceHash: 'b'.repeat(64), sealedAt: 20,
       versions: {
         scanSchemaVersion: '1', diagnosticEngineVersion: '', decoderCatalogVersion: '1',
         dtcKnowledgeVersion: '1', correlationRulesVersion: '1',
