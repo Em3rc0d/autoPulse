@@ -1,7 +1,12 @@
 import type { DiagnosticConcern } from './DiagnosticConcern';
 import type { DiagnosticCoverage } from './DiagnosticCoverage';
 import type { DiagnosticEndpoint } from './DiagnosticEndpoint';
-import type { DiagnosticEvidenceFact, DiagnosticEvidenceRelation } from './DiagnosticEvidence';
+import type {
+  DiagnosticEvidenceFact,
+  DiagnosticEvidenceRelation,
+  DiagnosticEvidenceScalar,
+  DiagnosticEvidenceValue,
+} from './DiagnosticEvidence';
 import type { DiagnosticFreezeFrame } from './DiagnosticFreezeFrame';
 import type { DiagnosticMonitorResult } from './DiagnosticMonitorResult';
 import type { DiagnosticReadiness, DiagnosticReadinessMonitor } from './DiagnosticReadiness';
@@ -15,8 +20,12 @@ function assertNonEmpty(value: string, label: string): void {
   if (value.trim().length === 0) throw new Error(`${label} must be non-empty`);
 }
 
-function assertFiniteTimestamp(value: number, label: string): void {
+function assertFiniteNumber(value: number, label: string): void {
   if (!Number.isFinite(value)) throw new Error(`${label} must be finite`);
+}
+
+function assertFiniteTimestamp(value: number, label: string): void {
+  assertFiniteNumber(value, label);
 }
 
 function assertUniqueNonEmpty(values: readonly string[], label: string): void {
@@ -38,23 +47,53 @@ function assertEvidenceRefs(ids: readonly string[], evidenceIds: ReadonlySet<str
   }
 }
 
+function assertEvidenceScalar(value: DiagnosticEvidenceScalar, label: string): void {
+  if (typeof value === 'number') assertFiniteNumber(value, label);
+}
+
+function assertEvidenceValue(value: DiagnosticEvidenceValue, label: string): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => assertEvidenceScalar(item, `${label}[${index}]`));
+    return;
+  }
+  if (typeof value === 'object' && value !== null) {
+    for (const [key, scalar] of Object.entries(value)) {
+      assertNonEmpty(key, `${label} record key`);
+      assertEvidenceScalar(scalar, `${label}.${key}`);
+    }
+    return;
+  }
+  assertEvidenceScalar(value as DiagnosticEvidenceScalar, label);
+}
+
 function assertEndpoint(endpoint: DiagnosticEndpoint): void {
   assertNonEmpty(endpoint.endpointId, 'Diagnostic endpointId');
   if (endpoint.sourceAddress !== undefined) assertNonEmpty(endpoint.sourceAddress, `Diagnostic endpoint ${endpoint.endpointId} sourceAddress`);
+
+  const identityKeys = endpoint.identityEvidence.map(item => item.key);
+  assertUniqueNonEmpty(identityKeys, `Diagnostic endpoint ${endpoint.endpointId} identity keys`);
   for (const identity of endpoint.identityEvidence) {
-    assertNonEmpty(identity.key, `Diagnostic endpoint ${endpoint.endpointId} identity key`);
     assertNonEmpty(identity.value, `Diagnostic endpoint ${endpoint.endpointId} identity value`);
     assertNonEmpty(identity.provenance, `Diagnostic endpoint ${endpoint.endpointId} identity provenance`);
     assertFiniteTimestamp(identity.observedAt, `Diagnostic endpoint ${endpoint.endpointId} identity observedAt`);
   }
+
+  const serviceKeys = endpoint.supportedServices.map(item => `${item.service.trim().toUpperCase()}::${item.stage}`);
+  assertUniqueNonEmpty(serviceKeys, `Diagnostic endpoint ${endpoint.endpointId} service-stage observations`);
   for (const service of endpoint.supportedServices) {
     assertNonEmpty(service.service, `Diagnostic endpoint ${endpoint.endpointId} service`);
     assertNonEmpty(service.provenance, `Diagnostic endpoint ${endpoint.endpointId} service provenance`);
     if (service.stage === 'OBSERVED' && service.outcome === undefined) {
       throw new Error(`Diagnostic endpoint ${endpoint.endpointId} observed service ${service.service} requires an outcome`);
     }
+    if (service.stage !== 'OBSERVED' && service.outcome !== undefined) {
+      throw new Error(`Diagnostic endpoint ${endpoint.endpointId} service ${service.service} cannot carry an outcome before OBSERVED stage`);
+    }
     if (service.observedAt !== undefined) assertFiniteTimestamp(service.observedAt, `Diagnostic endpoint ${endpoint.endpointId} service observedAt`);
   }
+
+  const pidKeys = endpoint.supportedPids.map(item => `${item.pid.trim().toUpperCase()}::${item.stage}`);
+  assertUniqueNonEmpty(pidKeys, `Diagnostic endpoint ${endpoint.endpointId} PID-stage observations`);
   for (const pid of endpoint.supportedPids) {
     assertNonEmpty(pid.pid, `Diagnostic endpoint ${endpoint.endpointId} PID`);
     assertNonEmpty(pid.provenance, `Diagnostic endpoint ${endpoint.endpointId} PID provenance`);
@@ -77,17 +116,35 @@ function assertDtc(dtc: DiagnosticTroubleCode, endpointIds: ReadonlySet<string>)
 
 function assertReadinessMonitor(readinessId: string, monitor: DiagnosticReadinessMonitor): void {
   assertNonEmpty(monitor.monitorId, `Readiness ${readinessId} monitorId`);
-  if (monitor.supported === false && monitor.readinessState !== 'NOT_SUPPORTED') {
-    throw new Error(`Readiness ${readinessId} monitor ${monitor.monitorId} unsupported monitor must be NOT_SUPPORTED`);
+
+  if (monitor.supported === false) {
+    if (monitor.completion !== 'NOT_APPLICABLE') {
+      throw new Error(`Readiness ${readinessId} monitor ${monitor.monitorId} unsupported monitor must be NOT_APPLICABLE`);
+    }
+    if (monitor.readinessState !== 'NOT_SUPPORTED') {
+      throw new Error(`Readiness ${readinessId} monitor ${monitor.monitorId} unsupported monitor must be NOT_SUPPORTED`);
+    }
+    return;
   }
-  if (monitor.supported === true && monitor.completion === 'COMPLETE' && monitor.readinessState !== 'READY') {
+
+  if (monitor.supported === 'UNKNOWN') {
+    if (monitor.completion !== 'UNKNOWN' || monitor.readinessState !== 'UNKNOWN') {
+      throw new Error(`Readiness ${readinessId} monitor ${monitor.monitorId} unknown support must remain UNKNOWN`);
+    }
+    return;
+  }
+
+  if (monitor.completion === 'COMPLETE' && monitor.readinessState !== 'READY') {
     throw new Error(`Readiness ${readinessId} monitor ${monitor.monitorId} complete supported monitor must be READY`);
   }
-  if (monitor.supported === true && monitor.completion === 'INCOMPLETE' && monitor.readinessState !== 'NOT_READY') {
+  if (monitor.completion === 'INCOMPLETE' && monitor.readinessState !== 'NOT_READY') {
     throw new Error(`Readiness ${readinessId} monitor ${monitor.monitorId} incomplete supported monitor must be NOT_READY`);
   }
-  if (monitor.supported === 'UNKNOWN' && monitor.readinessState !== 'UNKNOWN') {
-    throw new Error(`Readiness ${readinessId} monitor ${monitor.monitorId} unknown support must remain UNKNOWN`);
+  if (monitor.completion === 'UNKNOWN' && monitor.readinessState !== 'UNKNOWN') {
+    throw new Error(`Readiness ${readinessId} monitor ${monitor.monitorId} unknown completion must remain UNKNOWN`);
+  }
+  if (monitor.completion === 'NOT_APPLICABLE') {
+    throw new Error(`Readiness ${readinessId} monitor ${monitor.monitorId} cannot be supported and NOT_APPLICABLE`);
   }
 }
 
@@ -113,14 +170,19 @@ function assertFreezeFrame(frame: DiagnosticFreezeFrame, endpointIds: ReadonlySe
   if (frame.state === 'FRAME_OBSERVED' && frame.values.length === 0) {
     throw new Error(`Freeze frame ${frame.freezeFrameId} FRAME_OBSERVED requires at least one value`);
   }
+  if (frame.state !== 'FRAME_OBSERVED' && frame.values.length > 0) {
+    throw new Error(`Freeze frame ${frame.freezeFrameId} ${frame.state} cannot carry decoded values`);
+  }
   if (frame.state === 'UNATTRIBUTED' && frame.sourceEndpointId !== null) {
     throw new Error(`Freeze frame ${frame.freezeFrameId} UNATTRIBUTED must have null sourceEndpointId`);
   }
+
   const valueKeys = frame.values.map(value => `${value.pid.trim().toUpperCase()}::${value.signalId?.trim() ?? ''}`);
   assertUniqueNonEmpty(valueKeys, `Freeze frame ${frame.freezeFrameId} value identities`);
   for (const value of frame.values) {
     assertNonEmpty(value.pid, `Freeze frame ${frame.freezeFrameId} PID`);
     if (value.signalId !== undefined) assertNonEmpty(value.signalId, `Freeze frame ${frame.freezeFrameId} signalId`);
+    if (typeof value.value === 'number') assertFiniteNumber(value.value, `Freeze frame ${frame.freezeFrameId} value`);
     if (value.unit !== undefined) assertNonEmpty(value.unit, `Freeze frame ${frame.freezeFrameId} unit`);
   }
 }
@@ -131,12 +193,33 @@ function assertMonitorResult(result: DiagnosticMonitorResult, endpointIds: Reado
   assertKnownEndpoint(result.sourceEndpointId, endpointIds, `Mode06 ${result.monitorResultId}`);
   assertNonEmpty(result.provenance, `Mode06 ${result.monitorResultId} provenance`);
   assertFiniteTimestamp(result.observedAt, `Mode06 ${result.monitorResultId} observedAt`);
-  if ((result.outcome === 'WITHIN_LIMITS' || result.outcome === 'OUTSIDE_LIMITS') && result.testValue === undefined) {
+  if (result.rawValue !== undefined) assertEvidenceValue(result.rawValue, `Mode06 ${result.monitorResultId} rawValue`);
+  if (result.testValue !== undefined) assertFiniteNumber(result.testValue, `Mode06 ${result.monitorResultId} testValue`);
+  if (result.minimumLimit !== undefined) assertFiniteNumber(result.minimumLimit, `Mode06 ${result.monitorResultId} minimumLimit`);
+  if (result.maximumLimit !== undefined) assertFiniteNumber(result.maximumLimit, `Mode06 ${result.monitorResultId} maximumLimit`);
+  if (result.minimumLimit !== undefined && result.maximumLimit !== undefined && result.minimumLimit > result.maximumLimit) {
+    throw new Error(`Mode06 ${result.monitorResultId} minimumLimit cannot exceed maximumLimit`);
+  }
+
+  const boundedOutcome = result.outcome === 'WITHIN_LIMITS' || result.outcome === 'OUTSIDE_LIMITS';
+  if (boundedOutcome && result.testValue === undefined) {
     throw new Error(`Mode06 ${result.monitorResultId} ${result.outcome} requires testValue`);
   }
-  if ((result.outcome === 'WITHIN_LIMITS' || result.outcome === 'OUTSIDE_LIMITS') && result.minimumLimit === undefined && result.maximumLimit === undefined) {
+  if (boundedOutcome && result.minimumLimit === undefined && result.maximumLimit === undefined) {
     throw new Error(`Mode06 ${result.monitorResultId} ${result.outcome} requires at least one limit`);
   }
+  if (boundedOutcome && result.testValue !== undefined) {
+    const below = result.minimumLimit !== undefined && result.testValue < result.minimumLimit;
+    const above = result.maximumLimit !== undefined && result.testValue > result.maximumLimit;
+    const actuallyOutside = below || above;
+    if (result.outcome === 'WITHIN_LIMITS' && actuallyOutside) {
+      throw new Error(`Mode06 ${result.monitorResultId} WITHIN_LIMITS contradicts testValue/limits`);
+    }
+    if (result.outcome === 'OUTSIDE_LIMITS' && !actuallyOutside) {
+      throw new Error(`Mode06 ${result.monitorResultId} OUTSIDE_LIMITS contradicts testValue/limits`);
+    }
+  }
+
   if (result.meaning !== undefined) {
     assertNonEmpty(result.meaning.label, `Mode06 ${result.monitorResultId} meaning label`);
     assertNonEmpty(result.meaning.sourceId, `Mode06 ${result.monitorResultId} meaning sourceId`);
@@ -148,6 +231,7 @@ function assertEvidenceFact(fact: DiagnosticEvidenceFact, endpointIds: ReadonlyS
   assertNonEmpty(fact.evidenceId, 'Diagnostic evidenceId');
   assertKnownEndpoint(fact.sourceEndpointId, endpointIds, `Evidence ${fact.evidenceId}`);
   assertFiniteTimestamp(fact.observedAt, `Evidence ${fact.evidenceId} observedAt`);
+  assertEvidenceValue(fact.value, `Evidence ${fact.evidenceId} value`);
   assertNonEmpty(fact.provenance, `Evidence ${fact.evidenceId} provenance`);
   if (fact.unit !== undefined) assertNonEmpty(fact.unit, `Evidence ${fact.evidenceId} unit`);
 }
@@ -195,8 +279,8 @@ function assertAttribution(scan: DiagnosticScan): void {
 export function assertValidDiagnosticScan(scan: DiagnosticScan): void {
   assertNonEmpty(scan.scanId, 'Diagnostic scanId');
   assertFiniteTimestamp(scan.startedAt, `Diagnostic scan ${scan.scanId} startedAt`);
-  if (isDiagnosticScanTerminal(scan.state)) {
-    if (scan.endedAt === undefined) throw new Error(`Terminal diagnostic scan ${scan.scanId} requires endedAt`);
+  if (isDiagnosticScanTerminal(scan.state) && scan.endedAt === undefined) {
+    throw new Error(`Terminal diagnostic scan ${scan.scanId} requires endedAt`);
   }
   if (scan.endedAt !== undefined) {
     assertFiniteTimestamp(scan.endedAt, `Diagnostic scan ${scan.scanId} endedAt`);
@@ -239,19 +323,37 @@ export function assertValidDiagnosticCoverage(scan: DiagnosticScan, coverage: Di
   const endpointIds = new Set(scan.endpoints.map(item => item.endpointId));
   assertUniqueNonEmpty(coverage.discoveredEndpointIds, 'Diagnostic coverage discoveredEndpointIds');
   assertUniqueNonEmpty(coverage.scannedEndpointIds, 'Diagnostic coverage scannedEndpointIds');
-  for (const endpointId of coverage.discoveredEndpointIds) {
-    if (!endpointIds.has(endpointId)) throw new Error(`Diagnostic coverage discovered unknown endpoint ${endpointId}`);
-  }
+
   const discovered = new Set(coverage.discoveredEndpointIds);
-  for (const endpointId of coverage.scannedEndpointIds) {
+  if (discovered.size !== endpointIds.size || [...endpointIds].some(endpointId => !discovered.has(endpointId))) {
+    throw new Error('Diagnostic coverage discoveredEndpointIds must exactly match scan endpoints');
+  }
+
+  const scanned = new Set(coverage.scannedEndpointIds);
+  for (const endpointId of scanned) {
     if (!discovered.has(endpointId)) throw new Error(`Diagnostic coverage scanned endpoint ${endpointId} was not discovered`);
+  }
+
+  for (const endpoint of scan.endpoints) {
+    const wasScanned = scanned.has(endpoint.endpointId);
+    if (wasScanned && endpoint.scanStatus === 'NOT_EVALUATED') {
+      throw new Error(`Diagnostic coverage marks endpoint ${endpoint.endpointId} scanned while scanStatus is NOT_EVALUATED`);
+    }
+    if (!wasScanned && endpoint.scanStatus !== 'NOT_EVALUATED') {
+      throw new Error(`Diagnostic coverage omits evaluated endpoint ${endpoint.endpointId} from scannedEndpointIds`);
+    }
   }
 
   const serviceKeys: string[] = [];
   for (const service of coverage.services) {
     assertNonEmpty(service.service, 'Diagnostic coverage service');
-    if (service.endpointId !== null && !discovered.has(service.endpointId)) {
-      throw new Error(`Diagnostic coverage service ${service.service} references undiscovered endpoint ${service.endpointId}`);
+    if (service.endpointId !== null) {
+      if (!discovered.has(service.endpointId)) {
+        throw new Error(`Diagnostic coverage service ${service.service} references undiscovered endpoint ${service.endpointId}`);
+      }
+      if (service.outcome !== 'NOT_EVALUATED' && !scanned.has(service.endpointId)) {
+        throw new Error(`Diagnostic coverage service ${service.service} has evaluated outcome for unscanned endpoint ${service.endpointId}`);
+      }
     }
     if (service.detail !== undefined) assertNonEmpty(service.detail, `Diagnostic coverage ${service.service} detail`);
     serviceKeys.push(`${service.endpointId ?? 'UNATTRIBUTED'}::${service.service.trim().toUpperCase()}`);
