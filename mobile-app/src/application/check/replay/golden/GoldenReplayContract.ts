@@ -46,6 +46,8 @@ export interface GoldenReplayExpectedDtcObservation {
     | 'FAILED'
     | 'PARTIAL';
   readonly codes: readonly string[];
+  /** Omit when attribution is outside the case claim; null explicitly asserts UNATTRIBUTED. */
+  readonly sourceEndpointId?: string | null;
 }
 
 export interface GoldenReplayExpectation {
@@ -53,6 +55,7 @@ export interface GoldenReplayExpectation {
   readonly commandsIssued: number;
   readonly attemptOutcomes: readonly DiagnosticAttemptOutcome[];
   readonly dtcObservations?: readonly GoldenReplayExpectedDtcObservation[];
+  readonly limitationsContain?: readonly string[];
   readonly pidSupport?: {
     readonly command: string;
     readonly advertisedPids: readonly string[];
@@ -99,58 +102,32 @@ export function assertValidGoldenReplayCase(candidate: GoldenReplayCase): void {
   nonEmpty(candidate.reviewedBy, `Golden replay ${candidate.caseId} reviewedBy`);
   nonEmpty(candidate.reviewMethod, `Golden replay ${candidate.caseId} reviewMethod`);
 
-  if (candidate.semanticIds.length === 0) {
-    throw new Error(`Golden replay ${candidate.caseId} must declare at least one semanticId`);
-  }
-  if (new Set(candidate.semanticIds).size !== candidate.semanticIds.length) {
-    throw new Error(`Golden replay ${candidate.caseId} contains duplicate semanticIds`);
-  }
-  if (candidate.claims.length === 0) {
-    throw new Error(`Golden replay ${candidate.caseId} must declare at least one bounded claim`);
-  }
-  if (new Set(candidate.claims).size !== candidate.claims.length) {
-    throw new Error(`Golden replay ${candidate.caseId} contains duplicate claims`);
-  }
+  if (candidate.semanticIds.length === 0) throw new Error(`Golden replay ${candidate.caseId} must declare at least one semanticId`);
+  if (new Set(candidate.semanticIds).size !== candidate.semanticIds.length) throw new Error(`Golden replay ${candidate.caseId} contains duplicate semanticIds`);
+  if (candidate.claims.length === 0) throw new Error(`Golden replay ${candidate.caseId} must declare at least one bounded claim`);
+  if (new Set(candidate.claims).size !== candidate.claims.length) throw new Error(`Golden replay ${candidate.caseId} contains duplicate claims`);
 
-  if (!Number.isInteger(candidate.executionProfile.maxRetries) || candidate.executionProfile.maxRetries < 0) {
-    throw new Error(`Golden replay ${candidate.caseId} maxRetries must be a non-negative integer`);
-  }
-  if (!Number.isInteger(candidate.executionProfile.maxPendingExtensions) || candidate.executionProfile.maxPendingExtensions < 0) {
-    throw new Error(`Golden replay ${candidate.caseId} maxPendingExtensions must be a non-negative integer`);
-  }
-  if (!Number.isInteger(candidate.executionProfile.minInterCommandDelayMs) || candidate.executionProfile.minInterCommandDelayMs < 0) {
-    throw new Error(`Golden replay ${candidate.caseId} minInterCommandDelayMs must be a non-negative integer`);
-  }
+  if (!Number.isInteger(candidate.executionProfile.maxRetries) || candidate.executionProfile.maxRetries < 0) throw new Error(`Golden replay ${candidate.caseId} maxRetries must be a non-negative integer`);
+  if (!Number.isInteger(candidate.executionProfile.maxPendingExtensions) || candidate.executionProfile.maxPendingExtensions < 0) throw new Error(`Golden replay ${candidate.caseId} maxPendingExtensions must be a non-negative integer`);
+  if (!Number.isInteger(candidate.executionProfile.minInterCommandDelayMs) || candidate.executionProfile.minInterCommandDelayMs < 0) throw new Error(`Golden replay ${candidate.caseId} minInterCommandDelayMs must be a non-negative integer`);
 
   for (const evidence of candidate.evidence) {
     nonEmpty(evidence.evidenceId, `Golden replay ${candidate.caseId} evidenceId`);
     nonEmpty(evidence.locator, `Golden replay ${candidate.caseId} evidence locator`);
-    if (evidence.supports.length === 0) {
-      throw new Error(`Golden replay ${candidate.caseId} evidence ${evidence.evidenceId} must declare bounded support`);
-    }
+    if (evidence.supports.length === 0) throw new Error(`Golden replay ${candidate.caseId} evidence ${evidence.evidenceId} must declare bounded support`);
   }
 
-  const physicalClaims = candidate.claims.filter(
-    claim => claim === 'PHYSICAL_TRANSPORT' || claim === 'PHYSICAL_TIMING',
-  );
+  const physicalClaims = candidate.claims.filter(claim => claim === 'PHYSICAL_TRANSPORT' || claim === 'PHYSICAL_TIMING');
   if (physicalClaims.length > 0 && candidate.sourceType !== 'PHYSICAL_CAPTURE') {
     throw new Error(`Golden replay ${candidate.caseId} cannot make a physical claim from ${candidate.sourceType}`);
   }
 
   if (candidate.promotionState === 'PHYSICALLY_CERTIFIED') {
-    if (candidate.sourceType !== 'PHYSICAL_CAPTURE') {
-      throw new Error(`Golden replay ${candidate.caseId} physical certification requires PHYSICAL_CAPTURE`);
-    }
-    if (!candidate.rawEvidenceSha256?.match(/^[a-f0-9]{64}$/i)) {
-      throw new Error(`Golden replay ${candidate.caseId} physical certification requires a SHA-256 raw evidence digest`);
-    }
-    if (!candidate.evidence.some(item => item.kind === 'PHYSICAL_RAW_CAPTURE')) {
-      throw new Error(`Golden replay ${candidate.caseId} physical certification requires physical raw capture evidence`);
-    }
+    if (candidate.sourceType !== 'PHYSICAL_CAPTURE') throw new Error(`Golden replay ${candidate.caseId} physical certification requires PHYSICAL_CAPTURE`);
+    if (!candidate.rawEvidenceSha256?.match(/^[a-f0-9]{64}$/i)) throw new Error(`Golden replay ${candidate.caseId} physical certification requires a SHA-256 raw evidence digest`);
+    if (!candidate.evidence.some(item => item.kind === 'PHYSICAL_RAW_CAPTURE')) throw new Error(`Golden replay ${candidate.caseId} physical certification requires physical raw capture evidence`);
     for (const claim of physicalClaims) {
-      if (!candidate.evidence.some(
-        item => item.kind === 'PHYSICAL_RAW_CAPTURE' && item.independentFromParserOutput && item.supports.includes(claim),
-      )) {
+      if (!candidate.evidence.some(item => item.kind === 'PHYSICAL_RAW_CAPTURE' && item.independentFromParserOutput && item.supports.includes(claim))) {
         throw new Error(`Golden replay ${candidate.caseId} physical claim ${claim} lacks independent raw capture evidence`);
       }
     }
@@ -158,14 +135,9 @@ export function assertValidGoldenReplayCase(candidate: GoldenReplayCase): void {
 
   const promoted = PROMOTION_RANK[candidate.promotionState] >= PROMOTION_RANK.GOLDEN;
   if (promoted) {
-    if (candidate.evidence.length === 0) {
-      throw new Error(`Golden replay ${candidate.caseId} cannot be GOLDEN without evidence`);
-    }
+    if (candidate.evidence.length === 0) throw new Error(`Golden replay ${candidate.caseId} cannot be GOLDEN without evidence`);
     for (const claim of candidate.claims) {
-      const independentlySupported = candidate.evidence.some(
-        item => item.independentFromParserOutput && item.supports.includes(claim),
-      );
-      if (!independentlySupported) {
+      if (!candidate.evidence.some(item => item.independentFromParserOutput && item.supports.includes(claim))) {
         throw new Error(`Golden replay ${candidate.caseId} claim ${claim} lacks independent supporting evidence`);
       }
     }
