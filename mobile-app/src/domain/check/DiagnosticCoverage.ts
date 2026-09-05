@@ -1,3 +1,5 @@
+import type { DiagnosticEvidenceSourceType } from './DiagnosticEvidence';
+
 export type DiagnosticCoverageOutcome = 'COMPLETE' | 'PARTIAL' | 'UNSUPPORTED' | 'UNAVAILABLE' | 'NOT_EVALUATED';
 
 export interface DiagnosticServiceCoverage {
@@ -11,7 +13,7 @@ export interface DiagnosticCoverage {
   readonly discoveredEndpointIds: readonly string[];
   readonly scannedEndpointIds: readonly string[];
   readonly services: readonly DiagnosticServiceCoverage[];
-  readonly availableEvidenceFamilies: readonly string[];
+  readonly availableEvidenceFamilies: readonly DiagnosticEvidenceSourceType[];
   readonly limitations: readonly string[];
 }
 
