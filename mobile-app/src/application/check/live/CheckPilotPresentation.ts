@@ -124,18 +124,23 @@ export function presentDtcResult(result: DtcServiceParseResult): CheckPresentati
 
 export function presentCapabilityAssessment(assessment: CheckCapabilityAssessment): CheckPresentationCopy {
   switch (assessment.state) {
-    case 'ADVERTISED':
+    case 'ADVERTISED': {
+      const advertising = assessment.observations.filter(item => item.outcome === 'VALID' && item.advertisedPids.length > 0);
+      const single = assessment.validObservationCount === 1 ? advertising[0] : undefined;
       return {
-        label: `${assessment.advertisedPids.length} standard PID${assessment.advertisedPids.length === 1 ? '' : 's'} advertised`,
+        label: single
+          ? `${single.advertisedPids.length} standard PID${single.advertisedPids.length === 1 ? '' : 's'} advertised`
+          : `${assessment.validObservationCount} capability responses retained`,
         detail: assessment.unattributed
-          ? 'Capability evidence was valid, but the responding ECU could not be attributed with the current header-off pilot.'
-          : 'Capability evidence was retained with responder attribution.',
+          ? 'Capability responses remain separate, but at least one responder could not be attributed with the current header-off pilot.'
+          : 'Capability maps are preserved per observed responder; AutoPulse does not create a vehicle-global PID union.',
         tone: 'POSITIVE',
       };
+    }
     case 'EMPTY_BITMAP':
       return {
         label: 'Capability map inconclusive',
-        detail: 'The 0100 response contained an empty support bitmap. AutoPulse does not convert that into a claim that individual PIDs are unsupported.',
+        detail: 'The observed 0100 response set contained valid empty support bitmap evidence. AutoPulse does not convert that into a claim that individual PIDs are unsupported.',
         tone: 'ATTENTION',
       };
     case 'NOT_ESTABLISHED':
