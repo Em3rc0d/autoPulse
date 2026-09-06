@@ -1,7 +1,11 @@
 import type { DiagnosticProtocol } from '../../../domain/diagnostics/DiagnosticConnector';
 import { RealObdController } from '../../../infrastructure/ble/real/RealObdController';
 import type { CommandRequest, CommandResult } from '../../../infrastructure/ble/real/pipeline/types';
-import { CHECK_CORE_DESCRIPTOR_REGISTRY_V1, resolveDescriptorBySemanticId } from '../planner/DiagnosticDescriptorRegistry';
+import {
+  CHECK_CORE_DESCRIPTOR_REGISTRY_V1,
+  CHECK_CORE_DESCRIPTOR_REGISTRY_V2,
+  resolveDescriptorBySemanticId,
+} from '../planner/DiagnosticDescriptorRegistry';
 import { buildDiagnosticScanPlan } from '../planner/DiagnosticScanPlanner';
 import type { DiagnosticScanEngineResult, DiagnosticPidSupportObservation } from '../replay/DiagnosticScanEngine';
 import { runDiagnosticScan } from '../replay/DiagnosticScanEngine';
@@ -9,12 +13,13 @@ import type { PlannedDiagnosticExecutionReceipt } from '../replay/DiagnosticExec
 import type { PlannedDiagnosticRequest } from '../planner/DiagnosticScanPlanner';
 import { CheckPilotCancellationToken, RealCheckPlannedExecutor } from './RealCheckPlannedExecutor';
 
-export const CHECK_PHYSICAL_PILOT_VERSION = 'check-physical-pilot/v2' as const;
+export const CHECK_PHYSICAL_PILOT_VERSION = 'check-physical-pilot/v3' as const;
 
 export type CheckPhysicalPilotStage =
   | 'PREPARING_ADAPTER'
   | 'NEGOTIATING_PROTOCOL'
   | 'RUNNING_STANDARD_SCAN'
+  | 'RUNNING_DIRECT_PID_CORROBORATION'
   | 'SEALING_PILOT_RESULT';
 
 export type CheckCapabilityAssessmentState =
@@ -42,7 +47,7 @@ export interface CheckCapabilityAssessment {
 }
 
 export interface CheckPhysicalRawEvidence {
-  readonly phase: 'BOOTSTRAP' | 'SCAN';
+  readonly phase: 'BOOTSTRAP' | 'SCAN' | 'DIRECT_OBSERVATION';
   readonly semanticId: string;
   readonly service: string;
   readonly pid?: string;
@@ -57,10 +62,13 @@ export interface CheckPhysicalPilotResult {
   readonly protocol: DiagnosticProtocol;
   readonly protocolEvidence: string;
   readonly scan: DiagnosticScanEngineResult;
+  /** Separate phase; direct observations never mutate/repair the advertised capability map. */
+  readonly directObservationScan: DiagnosticScanEngineResult | null;
   readonly capabilityAssessment: CheckCapabilityAssessment;
   readonly rawEvidence: readonly CheckPhysicalRawEvidence[];
   readonly bootstrapStandardObdStatus: CommandResult['status'];
   readonly scanCommandCount: number;
+  readonly directObservationCommandCount: number;
   readonly bootstrapObdCommandCount: 1;
   readonly cancelled: boolean;
   readonly userLimitations: readonly string[];
@@ -75,9 +83,14 @@ export interface RunCheckPhysicalPilotInput {
   readonly onStage?: (stage: CheckPhysicalPilotStage) => void;
 }
 
-const PILOT_PROVENANCE = 'CHECK physical pilot v2; descriptor-gated; raw evidence retained in-memory; timing/vehicle compatibility not yet physically certified';
+const PILOT_PROVENANCE = 'CHECK physical pilot v3; descriptor-gated; direct Mode 01 corroboration remains OBSERVED_DIRECTLY evidence; raw evidence retained in-memory; timing/vehicle compatibility not yet physically certified';
 const REQUEST_TIMEOUT_MS = 7000;
 const MIN_INTER_COMMAND_DELAY_MS = 120;
+const DIRECT_KWP_SEMANTIC_IDS = Object.freeze([
+  'check.obd.mode01.observe.05',
+  'check.obd.mode01.observe.0C',
+  'check.obd.mode01.observe.0D',
+] as const);
 
 function adapterRequest(command: string, timeoutMs = 3500): CommandRequest {
   return {
@@ -98,7 +111,6 @@ function rawTextFromCommandResult(result: CommandResult): string | null {
 }
 
 async function prepareAdapter(controller: RealObdController, cancellation: CheckPilotCancellationToken): Promise<void> {
-  // Adapter-only controls. No ECU mutation/control services are present here.
   for (const command of ['ATE0', 'ATL0', 'ATS0', 'ATH0', 'ATSP0'] as const) {
     if (cancellation.isCancelled) throw new Error('CHECK_CANCELLED');
     const result = await controller.executeCommand(adapterRequest(command));
@@ -242,9 +254,12 @@ function collectReceiptEvidence(
   receipt: PlannedDiagnosticExecutionReceipt,
   sink: CheckPhysicalRawEvidence[],
 ): void {
+  const phase: CheckPhysicalRawEvidence['phase'] = request.stage === 'TARGETED_PID_ACQUISITION'
+    ? 'DIRECT_OBSERVATION'
+    : 'SCAN';
   receipt.responses.forEach(response => {
     sink.push(Object.freeze({
-      phase: 'SCAN' as const,
+      phase,
       semanticId: request.semanticId,
       service: request.service,
       pid: request.pid,
@@ -256,20 +271,11 @@ function collectReceiptEvidence(
   });
 }
 
-export async function runCheckPhysicalPilot(input: RunCheckPhysicalPilotInput): Promise<CheckPhysicalPilotResult> {
-  const { controller, cancellation } = input;
-  input.onStage?.('PREPARING_ADAPTER');
-  await prepareAdapter(controller, cancellation);
-
-  input.onStage?.('NEGOTIATING_PROTOCOL');
-  const bootstrapResult = await bootstrapStandardObd(controller, cancellation);
-  const protocolEvidence = await discoverProtocol(controller, cancellation);
-
-  if (cancellation.isCancelled) throw new Error('CHECK_CANCELLED');
-  const plan = buildDiagnosticScanPlan({
-    planId: `check-pilot:${Date.now()}`,
+function buildCorePlan(protocol: DiagnosticProtocol) {
+  return buildDiagnosticScanPlan({
+    planId: `check-pilot-core:${Date.now()}`,
     createdAt: Date.now(),
-    protocol: protocolEvidence.protocol,
+    protocol,
     registry: CHECK_CORE_DESCRIPTOR_REGISTRY_V1,
     proposals: [
       { semanticId: 'check.obd.mode01.support.00', required: true },
@@ -300,7 +306,56 @@ export async function runCheckPhysicalPilot(input: RunCheckPhysicalPilotInput): 
       provenance: PILOT_PROVENANCE,
     },
   });
+}
 
+function buildDirectObservationPlan(protocol: DiagnosticProtocol) {
+  return buildDiagnosticScanPlan({
+    planId: `check-pilot-direct:${Date.now()}`,
+    createdAt: Date.now(),
+    protocol,
+    registry: CHECK_CORE_DESCRIPTOR_REGISTRY_V2,
+    proposals: DIRECT_KWP_SEMANTIC_IDS.map(semanticId => ({
+      semanticId,
+      required: false,
+      rationaleEvidenceIds: ['0100-empty-bitmap-observed'],
+    })),
+    budget: {
+      maxCommands: 3,
+      maxResponseBytes: 1024,
+      maxBytesPerResponse: 256,
+      maxElapsedMs: 15000,
+      minInterCommandDelayMs: MIN_INTER_COMMAND_DELAY_MS,
+      provenance: `${PILOT_PROVENANCE}; bounded KWP direct corroboration`,
+    },
+    retryPolicy: {
+      maxRetries: 0,
+      retryableOutcomes: [],
+      responsePending: { maxExtensions: 0, extensionMs: 1000 },
+      provenance: `${PILOT_PROVENANCE}; direct corroboration never auto-resends`,
+    },
+    deadlinePolicy: {
+      overallDeadlineMs: 15000,
+      stageDeadlineMs: {
+        CAPABILITY_DISCOVERY: 15000,
+        DTC_CORE: 15000,
+        TARGETED_PID_ACQUISITION: 12000,
+      },
+      provenance: `${PILOT_PROVENANCE}; pilot-only bounded direct-observation timing`,
+    },
+  });
+}
+
+export async function runCheckPhysicalPilot(input: RunCheckPhysicalPilotInput): Promise<CheckPhysicalPilotResult> {
+  const { controller, cancellation } = input;
+  input.onStage?.('PREPARING_ADAPTER');
+  await prepareAdapter(controller, cancellation);
+
+  input.onStage?.('NEGOTIATING_PROTOCOL');
+  const bootstrapResult = await bootstrapStandardObd(controller, cancellation);
+  const protocolEvidence = await discoverProtocol(controller, cancellation);
+
+  if (cancellation.isCancelled) throw new Error('CHECK_CANCELLED');
+  const plan = buildCorePlan(protocolEvidence.protocol);
   if (plan.status === 'BLOCKED') {
     throw new Error(`CHECK_PLAN_BLOCKED:${plan.blockedProposals.map(item => `${item.semanticId}:${item.reason}`).join(',')}`);
   }
@@ -319,7 +374,6 @@ export async function runCheckPhysicalPilot(input: RunCheckPhysicalPilotInput): 
       .reduce((sum, line) => sum + line.length / 2, 0) ?? 0,
   })];
 
-  input.onStage?.('RUNNING_STANDARD_SCAN');
   const executor = new RealCheckPlannedExecutor(
     controller,
     protocolEvidence.protocol,
@@ -329,13 +383,34 @@ export async function runCheckPhysicalPilot(input: RunCheckPhysicalPilotInput): 
     cancellation,
     (request, receipt) => collectReceiptEvidence(request, receipt, rawEvidence),
   );
+
+  input.onStage?.('RUNNING_STANDARD_SCAN');
   const scan = await runDiagnosticScan({ plan, executor });
+  const capabilityAssessment = assessMode01CapabilityEvidence(scan.pidSupportResults);
+
+  let directObservationScan: DiagnosticScanEngineResult | null = null;
+  const directPlanLimitations: string[] = [];
+  if (
+    capabilityAssessment.state === 'EMPTY_BITMAP'
+    && protocolEvidence.protocol === 'ISO_14230_KWP'
+    && !cancellation.isCancelled
+  ) {
+    input.onStage?.('RUNNING_DIRECT_PID_CORROBORATION');
+    const directPlan = buildDirectObservationPlan(protocolEvidence.protocol);
+    if (directPlan.status === 'BLOCKED') {
+      directPlanLimitations.push(...directPlan.blockedProposals.map(item => `direct-plan:${item.semanticId}:${item.reason}`));
+    } else {
+      directObservationScan = await runDiagnosticScan({ plan: directPlan, executor });
+      directPlanLimitations.push(...directPlan.blockedProposals.map(item => `direct-plan:${item.semanticId}:${item.reason}`));
+    }
+  }
 
   input.onStage?.('SEALING_PILOT_RESULT');
-  const capabilityAssessment = assessMode01CapabilityEvidence(scan.pidSupportResults);
   const technicalLimitations = [
     ...scan.limitations,
+    ...(directObservationScan?.limitations ?? []),
     ...plan.blockedProposals.map(item => `${item.semanticId}:${item.reason}`),
+    ...directPlanLimitations,
   ];
   const userLimitations = [
     'This Check is diagnostic evidence, not a mechanical PASS/FAIL verdict.',
@@ -343,6 +418,9 @@ export async function runCheckPhysicalPilot(input: RunCheckPhysicalPilotInput): 
     'Readiness, Mode 06 and Freeze Frame remain outside this physical-pilot descriptor set.',
     capabilityAssessment.state === 'EMPTY_BITMAP'
       ? 'The Mode 01 support bitmap was empty in this scan. AutoPulse does not treat that as proof that individual PIDs are unsupported.'
+      : null,
+    directObservationScan
+      ? 'Direct PID corroboration is OBSERVED_DIRECTLY evidence. It does not convert the empty support bitmap into ECU_ADVERTISED support.'
       : null,
   ].filter((value): value is string => Boolean(value));
   const limitations = [...technicalLimitations, ...userLimitations];
@@ -352,10 +430,12 @@ export async function runCheckPhysicalPilot(input: RunCheckPhysicalPilotInput): 
     protocol: protocolEvidence.protocol,
     protocolEvidence: protocolEvidence.evidence,
     scan,
+    directObservationScan,
     capabilityAssessment,
     rawEvidence: Object.freeze(rawEvidence),
     bootstrapStandardObdStatus: bootstrapResult.status,
     scanCommandCount: scan.usage.commandsIssued,
+    directObservationCommandCount: directObservationScan?.usage.commandsIssued ?? 0,
     bootstrapObdCommandCount: 1 as const,
     cancelled: cancellation.isCancelled,
     userLimitations: Object.freeze(userLimitations),
