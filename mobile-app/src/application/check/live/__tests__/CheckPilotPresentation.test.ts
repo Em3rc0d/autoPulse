@@ -60,7 +60,7 @@ describe('Mode 01 capability assessment', () => {
     expect(copy.detail).toContain('does not convert');
   });
 
-  it('deduplicates advertised PIDs across valid observations without inventing attribution', () => {
+  it('keeps advertised PID maps separate for different responders', () => {
     const assessment = assessMode01CapabilityEvidence([
       {
         outcome: 'VALID', command: '0100', advertisedPids: ['0105', '010C'], continuationCommand: null,
@@ -73,7 +73,11 @@ describe('Mode 01 capability assessment', () => {
     ]);
 
     expect(assessment.state).toBe('ADVERTISED');
-    expect(assessment.advertisedPids).toEqual(['0105', '010C', '010D']);
+    expect(assessment.observations).toEqual([
+      expect.objectContaining({ sourceEndpointId: 'ecu-a', advertisedPids: ['0105', '010C'] }),
+      expect.objectContaining({ sourceEndpointId: 'ecu-b', advertisedPids: ['010C', '010D'] }),
+    ]);
     expect(assessment.unattributed).toBe(false);
+    expect(presentCapabilityAssessment(assessment).detail).toContain('vehicle-global PID union');
   });
 });
