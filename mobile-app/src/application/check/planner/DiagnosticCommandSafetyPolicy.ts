@@ -3,11 +3,12 @@ import type { DiagnosticRequestDescriptor } from './DiagnosticRequestDescriptor'
 import type { DiagnosticDescriptorRegistry } from './DiagnosticDescriptorRegistry';
 import {
   CHECK_CORE_DESCRIPTOR_REGISTRY_V1,
+  CHECK_CORE_DESCRIPTOR_REGISTRY_V2,
   CHECK_MUTATING_OBD_SERVICES,
   resolveDescriptorBySemanticId,
 } from './DiagnosticDescriptorRegistry';
 
-export const CHECK_COMMAND_SAFETY_POLICY_VERSION = 'check-command-safety/v1' as const;
+export const CHECK_COMMAND_SAFETY_POLICY_VERSION = 'check-command-safety/v2' as const;
 
 export type DiagnosticSafetyBlockReason =
   | 'REGISTRY_NOT_ALLOWLISTED'
@@ -64,10 +65,13 @@ function matchesCanonicalDefinition(
     && candidate.executionMode === canonical.executionMode;
 }
 
-/**
- * Defense-in-depth check for one already-resolved canonical descriptor.
- * Registry authorization is intentionally separate and stricter below.
- */
+function canonicalRegistryFor(version: string): DiagnosticDescriptorRegistry | undefined {
+  if (version === CHECK_CORE_DESCRIPTOR_REGISTRY_V1.version) return CHECK_CORE_DESCRIPTOR_REGISTRY_V1;
+  if (version === CHECK_CORE_DESCRIPTOR_REGISTRY_V2.version) return CHECK_CORE_DESCRIPTOR_REGISTRY_V2;
+  return undefined;
+}
+
+/** Defense-in-depth check for one already-resolved canonical descriptor. */
 export function evaluateDescriptorSafety(
   descriptor: DiagnosticRequestDescriptor | undefined,
   protocol: DiagnosticProtocol,
@@ -91,17 +95,17 @@ export function evaluateDescriptorSafety(
 }
 
 /**
- * The normal MK5 authorization entrypoint. A caller cannot mint a new
- * READ_ONLY_PROVEN operation simply by constructing another registry object:
- * the registry version and exact descriptor definition must match the policy's
- * canonical allowlist.
+ * Registry authority is fail-closed. Only the two immutable canonical Check
+ * registries are recognized; a caller cannot mint READ_ONLY_PROVEN operations
+ * by constructing a look-alike registry with a new version or changed fields.
  */
 export function authorizeRegisteredDescriptor(
   registry: DiagnosticDescriptorRegistry,
   semanticId: string,
   protocol: DiagnosticProtocol,
 ): DiagnosticSafetyDecision {
-  if (registry.version !== CHECK_CORE_DESCRIPTOR_REGISTRY_V1.version) {
+  const canonicalRegistry = canonicalRegistryFor(registry.version);
+  if (!canonicalRegistry) {
     return { disposition: 'BLOCK', policyVersion: CHECK_COMMAND_SAFETY_POLICY_VERSION, reason: 'REGISTRY_NOT_ALLOWLISTED' };
   }
 
@@ -110,7 +114,7 @@ export function authorizeRegisteredDescriptor(
     return { disposition: 'BLOCK', policyVersion: CHECK_COMMAND_SAFETY_POLICY_VERSION, reason: 'UNREGISTERED_DESCRIPTOR' };
   }
 
-  const canonical = resolveDescriptorBySemanticId(CHECK_CORE_DESCRIPTOR_REGISTRY_V1, semanticId);
+  const canonical = resolveDescriptorBySemanticId(canonicalRegistry, semanticId);
   if (!canonical) {
     return { disposition: 'BLOCK', policyVersion: CHECK_COMMAND_SAFETY_POLICY_VERSION, reason: 'UNREGISTERED_DESCRIPTOR', descriptor: candidate };
   }
