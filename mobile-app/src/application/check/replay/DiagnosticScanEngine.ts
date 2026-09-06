@@ -3,6 +3,7 @@ import type { DiagnosticScanTerminalState } from '../../../domain/check/Diagnost
 import type { DiagnosticProtocol } from '../../../domain/diagnostics/DiagnosticConnector';
 import type { DiagnosticServiceEnvelope } from '../parsers/DiagnosticServiceEnvelope';
 import { DtcRequestService, DtcServiceParseResult, parseDtcServiceEnvelope } from '../parsers/DtcServiceParser';
+import { parseMode01DirectObservation, type Mode01DirectObservationResult } from '../parsers/Mode01DirectObservationParser';
 import { parsePidSupportBitmap, PidSupportBitmapParseResult } from '../parsers/PidSupportBitmapParser';
 import {
   CommandBudgetDecision,
@@ -19,7 +20,7 @@ import {
 } from '../planner/DiagnosticScanPlanner';
 import type { PlannedDiagnosticExecutionReceipt, PlannedDiagnosticExecutor } from './DiagnosticExecutionPort';
 
-export const CHECK_SCAN_ENGINE_VERSION = 'check-scan-engine/v4' as const;
+export const CHECK_SCAN_ENGINE_VERSION = 'check-scan-engine/v5' as const;
 
 export interface DiagnosticScanAttemptRecord {
   readonly planRequestId: string;
@@ -58,6 +59,8 @@ export interface DiagnosticScanEngineResult {
   readonly attempts: readonly DiagnosticScanAttemptRecord[];
   readonly dtcResults: readonly DtcServiceParseResult[];
   readonly pidSupportResults: readonly DiagnosticPidSupportObservation[];
+  /** Exact PID observations; never merged into pidSupportResults. */
+  readonly mode01DirectResults: readonly Mode01DirectObservationResult[];
   readonly usage: CommandBudgetUsage;
   readonly limitations: readonly string[];
 }
@@ -73,6 +76,7 @@ interface ParsedAttempt {
   readonly outcome: DiagnosticAttemptOutcome;
   readonly dtcResult?: DtcServiceParseResult;
   readonly pidSupportResult?: DiagnosticPidSupportObservation;
+  readonly mode01DirectResult?: Mode01DirectObservationResult;
 }
 
 function envelopeOutcome(envelope: DiagnosticServiceEnvelope): DiagnosticAttemptOutcome {
@@ -118,6 +122,15 @@ function parseAttempt(request: PlannedDiagnosticRequest, envelope: DiagnosticSer
       observedAt: envelope.observedAt,
     });
     return { outcome: result.outcome === 'VALID' ? 'SUCCESS' : 'INVALID_RESPONSE', pidSupportResult: observation };
+  }
+
+  if (request.parserContractId === 'check.mode01.direct-observation/v1') {
+    if (!request.pid) return { outcome: 'INVALID_RESPONSE' };
+    const result = parseMode01DirectObservation(request.pid, envelope);
+    const outcome: DiagnosticAttemptOutcome = result.outcome === 'OBSERVED_DIRECTLY'
+      ? 'SUCCESS'
+      : result.outcome;
+    return { outcome, mode01DirectResult: result };
   }
 
   return { outcome: 'INVALID_RESPONSE' };
@@ -220,6 +233,7 @@ function frozenResult(
   attempts: readonly DiagnosticScanAttemptRecord[],
   dtcResults: readonly DtcServiceParseResult[],
   pidSupportResults: readonly DiagnosticPidSupportObservation[],
+  mode01DirectResults: readonly Mode01DirectObservationResult[],
   usage: CommandBudgetUsage,
   limitations: readonly string[],
 ): DiagnosticScanEngineResult {
@@ -233,6 +247,7 @@ function frozenResult(
     attempts: Object.freeze([...attempts]),
     dtcResults: Object.freeze([...dtcResults]),
     pidSupportResults: Object.freeze([...pidSupportResults]),
+    mode01DirectResults: Object.freeze([...mode01DirectResults]),
     usage: Object.freeze({ ...usage, elapsedMs: endedAt - startedAt }),
     limitations: Object.freeze([...limitations]),
   });
@@ -253,12 +268,13 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
   const attempts: DiagnosticScanAttemptRecord[] = [];
   const dtcResults: DtcServiceParseResult[] = [];
   const pidSupportResults: DiagnosticPidSupportObservation[] = [];
+  const mode01DirectResults: Mode01DirectObservationResult[] = [];
   const limitations: string[] = [];
   let limited = plan.status === 'LIMITED';
 
   if (plan.status === 'BLOCKED') {
     limitations.push(...plan.blockedProposals.map(item => `${item.semanticId}:${item.reason}`));
-    return frozenResult(plan, 'FAILED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
+    return frozenResult(plan, 'FAILED', startedAt, now, attempts, dtcResults, pidSupportResults, mode01DirectResults, usage, limitations);
   }
 
   for (const request of plan.requests) {
@@ -280,7 +296,7 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
 
       if (cancellationRequested(input.cancelRequestedAt, now)) {
         limitations.push(`cancelled-before:${request.semanticId}`);
-        return frozenResult(plan, 'CANCELLED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
+        return frozenResult(plan, 'CANCELLED', startedAt, now, attempts, dtcResults, pidSupportResults, mode01DirectResults, usage, limitations);
       }
 
       let receipt: PlannedDiagnosticExecutionReceipt;
@@ -290,6 +306,11 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
         if (pendingContinuation) {
           const overallRemaining = Math.max(0, plan.deadlinePolicy.overallDeadlineMs - (now - startedAt));
           const stageLimit = plan.deadlinePolicy.stageDeadlineMs[request.stage];
+          if (!stageLimit) {
+            limitations.push(`deadline-policy-missing-stage:${request.stage}`);
+            limited = true;
+            break;
+          }
           const stageRemaining = Math.max(0, stageLimit - (now - stageStartedAt));
           gateRemainingMs = Math.min(overallRemaining, stageRemaining);
           if (gateRemainingMs <= 0) {
@@ -317,9 +338,9 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
           if (gate.disposition === 'BLOCK') {
             limitations.push(`gate:${request.semanticId}:${gate.reason}`);
             if (gate.reason === 'CANCELLED') {
-              return frozenResult(plan, 'CANCELLED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
+              return frozenResult(plan, 'CANCELLED', startedAt, now, attempts, dtcResults, pidSupportResults, mode01DirectResults, usage, limitations);
             }
-            return frozenResult(plan, request.required ? 'FAILED' : 'LIMITED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
+            return frozenResult(plan, request.required ? 'FAILED' : 'LIMITED', startedAt, now, attempts, dtcResults, pidSupportResults, mode01DirectResults, usage, limitations);
           }
           gateRemainingMs = gate.deadlineRemainingMs;
           usage = recordCommandIssued({ ...usage, elapsedMs: now - startedAt });
@@ -328,14 +349,14 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
         }
       } catch (error) {
         limitations.push(`executor:${request.semanticId}:${error instanceof Error ? error.message : String(error)}`);
-        return frozenResult(plan, 'FAILED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
+        return frozenResult(plan, 'FAILED', startedAt, now, attempts, dtcResults, pidSupportResults, mode01DirectResults, usage, limitations);
       }
 
       const receiptProblem = validateExecutionReceipt(plan, request, executionStartedAt, receipt);
       if (receiptProblem) {
         limitations.push(`executor:${request.semanticId}:${receiptProblem}`);
         const safeEndedAt = Number.isFinite(receipt.finishedAt) ? Math.max(now, receipt.finishedAt) : now;
-        return frozenResult(plan, 'FAILED', startedAt, safeEndedAt, attempts, dtcResults, pidSupportResults, usage, limitations);
+        return frozenResult(plan, 'FAILED', startedAt, safeEndedAt, attempts, dtcResults, pidSupportResults, mode01DirectResults, usage, limitations);
       }
 
       now = receipt.finishedAt;
@@ -346,7 +367,7 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
       if (observed.decision.disposition === 'BLOCK') {
         limitations.push(`response-budget:${request.semanticId}:${observed.decision.reason}`);
         appendAttemptRecords(request, receipt, undefined, 'FAILED', pendingContinuation, commandAttemptIndex, pendingExtensionsUsed, attempts);
-        return frozenResult(plan, request.required ? 'FAILED' : 'LIMITED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
+        return frozenResult(plan, request.required ? 'FAILED' : 'LIMITED', startedAt, now, attempts, dtcResults, pidSupportResults, mode01DirectResults, usage, limitations);
       }
 
       const elapsedThisReceipt = receipt.finishedAt - receipt.startedAt;
@@ -356,25 +377,26 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
         const reason = deadlineExceeded ? 'DEADLINE_EXCEEDED' : 'ELAPSED_TIME_BUDGET_EXHAUSTED';
         limitations.push(`post-response-deadline:${request.semanticId}:${reason}`);
         appendAttemptRecords(request, receipt, undefined, 'DEADLINE_EXCEEDED', pendingContinuation, commandAttemptIndex, pendingExtensionsUsed, attempts);
-        return frozenResult(plan, request.required ? 'FAILED' : 'LIMITED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
+        return frozenResult(plan, request.required ? 'FAILED' : 'LIMITED', startedAt, now, attempts, dtcResults, pidSupportResults, mode01DirectResults, usage, limitations);
       }
 
       const parsedResponses = receipt.responses.map(response => parseAttempt(request, response.envelope));
       parsedResponses.forEach(parsed => {
         if (parsed.dtcResult) dtcResults.push(parsed.dtcResult);
         if (parsed.pidSupportResult) pidSupportResults.push(parsed.pidSupportResult);
+        if (parsed.mode01DirectResult) mode01DirectResults.push(parsed.mode01DirectResult);
       });
       appendAttemptRecords(request, receipt, parsedResponses, undefined, pendingContinuation, commandAttemptIndex, pendingExtensionsUsed, attempts);
 
       if (cancellationRequested(input.cancelRequestedAt, now)) {
         limitations.push(`cancelled-after-response:${request.semanticId}`);
-        return frozenResult(plan, 'CANCELLED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
+        return frozenResult(plan, 'CANCELLED', startedAt, now, attempts, dtcResults, pidSupportResults, mode01DirectResults, usage, limitations);
       }
 
       const transactionOutcome = aggregateResponderOutcomes(parsedResponses);
       if (transactionOutcome === 'DISCONNECTED') {
         limitations.push(`disconnected:${request.semanticId}`);
-        return frozenResult(plan, 'DISCONNECTED', startedAt, now, attempts, dtcResults, pidSupportResults, usage, limitations);
+        return frozenResult(plan, 'DISCONNECTED', startedAt, now, attempts, dtcResults, pidSupportResults, mode01DirectResults, usage, limitations);
       }
       if (transactionOutcome === 'PARTIAL' && receipt.responses.length > 1) {
         limitations.push(`mixed-responder-outcomes:${request.semanticId}`);
@@ -417,6 +439,7 @@ export async function runDiagnosticScan(input: RunDiagnosticScanInput): Promise<
     attempts,
     dtcResults,
     pidSupportResults,
+    mode01DirectResults,
     usage,
     limitations,
   );
