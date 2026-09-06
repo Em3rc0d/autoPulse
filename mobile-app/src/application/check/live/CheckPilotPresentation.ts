@@ -1,5 +1,6 @@
 import type { DiagnosticScanTerminalState } from '../../../domain/check/DiagnosticScanState';
 import type { DtcServiceParseResult } from '../parsers/DtcServiceParser';
+import type { Mode01DirectObservationResult } from '../parsers/Mode01DirectObservationParser';
 import type { CheckCapabilityAssessment } from './CheckPhysicalPilot';
 
 export type CheckPresentationTone = 'POSITIVE' | 'ATTENTION' | 'NEUTRAL';
@@ -149,6 +150,34 @@ export function presentCapabilityAssessment(assessment: CheckCapabilityAssessmen
         detail: 'A valid Mode 01 capability bitmap was not established in this scan.',
         tone: 'NEUTRAL',
       };
+  }
+}
+
+export function presentDirectMode01Observation(result: Mode01DirectObservationResult): CheckPresentationCopy {
+  const pid = `01${result.requestPid}`;
+  switch (result.outcome) {
+    case 'OBSERVED_DIRECTLY':
+      return {
+        label: 'Observed directly',
+        detail: `${pid} returned usable current-data bytes. This is direct observation, not ECU-advertised support.`,
+        tone: 'POSITIVE',
+      };
+    case 'NO_DATA':
+      return { label: 'No data returned', detail: `${pid} did not return usable data in this bounded request.`, tone: 'NEUTRAL' };
+    case 'NEGATIVE_RESPONSE':
+    case 'UNSUPPORTED':
+      return { label: 'Not established here', detail: `${pid} was not established by this direct observation. AutoPulse does not infer broader PID support from this.`, tone: 'NEUTRAL' };
+    case 'TIMEOUT':
+      return { label: 'No response in time', detail: `${pid} did not complete within the bounded timeout.`, tone: 'ATTENTION' };
+    case 'RESPONSE_PENDING':
+      return { label: 'Response not completed', detail: `${pid} requested additional wait time; no automatic resend was issued.`, tone: 'ATTENTION' };
+    case 'PARTIAL':
+    case 'INVALID_RESPONSE':
+      return { label: 'Response not accepted', detail: `${pid} did not produce validated direct-observation evidence.`, tone: 'ATTENTION' };
+    case 'DISCONNECTED':
+      return { label: 'Connection lost', detail: `${pid} could not complete because the diagnostic connection ended.`, tone: 'ATTENTION' };
+    case 'FAILED':
+      return { label: 'Request unavailable', detail: `${pid} did not establish usable direct-observation evidence.`, tone: 'ATTENTION' };
   }
 }
 
