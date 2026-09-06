@@ -3,24 +3,68 @@ import { RealObdController } from '../../../infrastructure/ble/real/RealObdContr
 import type { CommandRequest, CommandResult } from '../../../infrastructure/ble/real/pipeline/types';
 import { CHECK_CORE_DESCRIPTOR_REGISTRY_V1, resolveDescriptorBySemanticId } from '../planner/DiagnosticDescriptorRegistry';
 import { buildDiagnosticScanPlan } from '../planner/DiagnosticScanPlanner';
-import type { DiagnosticScanEngineResult } from '../replay/DiagnosticScanEngine';
+import type { DiagnosticScanEngineResult, DiagnosticPidSupportObservation } from '../replay/DiagnosticScanEngine';
 import { runDiagnosticScan } from '../replay/DiagnosticScanEngine';
+import type { PlannedDiagnosticExecutionReceipt } from '../replay/DiagnosticExecutionPort';
+import type { PlannedDiagnosticRequest } from '../planner/DiagnosticScanPlanner';
 import { CheckPilotCancellationToken, RealCheckPlannedExecutor } from './RealCheckPlannedExecutor';
 
-export const CHECK_PHYSICAL_PILOT_VERSION = 'check-physical-pilot/v1' as const;
+export const CHECK_PHYSICAL_PILOT_VERSION = 'check-physical-pilot/v2' as const;
 
 export type CheckPhysicalPilotStage =
   | 'PREPARING_ADAPTER'
   | 'NEGOTIATING_PROTOCOL'
-  | 'RUNNING_DTC_SCAN'
+  | 'RUNNING_STANDARD_SCAN'
   | 'SEALING_PILOT_RESULT';
+
+export type CheckCapabilityAssessmentState =
+  | 'ADVERTISED'
+  | 'EMPTY_BITMAP'
+  | 'NOT_ESTABLISHED';
+
+export interface CheckCapabilityObservation {
+  readonly observationIndex: number;
+  readonly sourceEndpointId: string | null;
+  readonly outcome: DiagnosticPidSupportObservation['outcome'];
+  readonly command: DiagnosticPidSupportObservation['command'];
+  readonly advertisedPids: readonly string[];
+  readonly limitation?: string;
+}
+
+export interface CheckCapabilityAssessment {
+  readonly state: CheckCapabilityAssessmentState;
+  /** Each support bitmap remains response-scoped; no vehicle-global union is produced. */
+  readonly observations: readonly CheckCapabilityObservation[];
+  readonly validObservationCount: number;
+  readonly invalidObservationCount: number;
+  readonly unattributed: boolean;
+  readonly detail: string;
+}
+
+export interface CheckPhysicalRawEvidence {
+  readonly phase: 'BOOTSTRAP' | 'SCAN';
+  readonly semanticId: string;
+  readonly service: string;
+  readonly pid?: string;
+  readonly sourceEndpointId: string | null;
+  readonly responseKind: string;
+  readonly rawText: string | null;
+  readonly observedResponseBytes: number;
+}
 
 export interface CheckPhysicalPilotResult {
   readonly pilotVersion: typeof CHECK_PHYSICAL_PILOT_VERSION;
   readonly protocol: DiagnosticProtocol;
   readonly protocolEvidence: string;
   readonly scan: DiagnosticScanEngineResult;
+  readonly capabilityAssessment: CheckCapabilityAssessment;
+  readonly rawEvidence: readonly CheckPhysicalRawEvidence[];
+  readonly bootstrapStandardObdStatus: CommandResult['status'];
+  readonly scanCommandCount: number;
+  readonly bootstrapObdCommandCount: 1;
   readonly cancelled: boolean;
+  readonly userLimitations: readonly string[];
+  readonly technicalLimitations: readonly string[];
   readonly limitations: readonly string[];
 }
 
@@ -31,7 +75,7 @@ export interface RunCheckPhysicalPilotInput {
   readonly onStage?: (stage: CheckPhysicalPilotStage) => void;
 }
 
-const PILOT_PROVENANCE = 'CHECK physical pilot v1; descriptor-gated; timing/vehicle compatibility not yet physically certified';
+const PILOT_PROVENANCE = 'CHECK physical pilot v2; descriptor-gated; raw evidence retained in-memory; timing/vehicle compatibility not yet physically certified';
 const REQUEST_TIMEOUT_MS = 7000;
 const MIN_INTER_COMMAND_DELAY_MS = 120;
 
@@ -48,6 +92,11 @@ function isTransportSuccess(result: CommandResult): boolean {
   return result.status === 'SUCCESS_RAW' || result.status === 'SUCCESS_DECODED';
 }
 
+function rawTextFromCommandResult(result: CommandResult): string | null {
+  const raw = result.rawResponse?.accumulatedText?.trim();
+  return raw && raw.length > 0 ? raw : null;
+}
+
 async function prepareAdapter(controller: RealObdController, cancellation: CheckPilotCancellationToken): Promise<void> {
   // Adapter-only controls. No ECU mutation/control services are present here.
   for (const command of ['ATE0', 'ATL0', 'ATS0', 'ATH0', 'ATSP0'] as const) {
@@ -62,7 +111,7 @@ async function prepareAdapter(controller: RealObdController, cancellation: Check
 async function bootstrapStandardObd(
   controller: RealObdController,
   cancellation: CheckPilotCancellationToken,
-): Promise<void> {
+): Promise<CommandResult> {
   if (cancellation.isCancelled) throw new Error('CHECK_CANCELLED');
   const descriptor = resolveDescriptorBySemanticId(
     CHECK_CORE_DESCRIPTOR_REGISTRY_V1,
@@ -86,6 +135,7 @@ async function bootstrapStandardObd(
   if (!isTransportSuccess(result)) {
     throw new Error(`CHECK_STANDARD_OBD_UNREACHABLE:${result.status}`);
   }
+  return result;
 }
 
 function normalizedAdapterText(result: CommandResult): string {
@@ -135,13 +185,84 @@ async function discoverProtocol(
   return { protocol, evidence };
 }
 
+export function assessMode01CapabilityEvidence(
+  observations: readonly DiagnosticPidSupportObservation[],
+): CheckCapabilityAssessment {
+  const preserved = observations.map((item, observationIndex) => Object.freeze({
+    observationIndex,
+    sourceEndpointId: item.sourceEndpointId,
+    outcome: item.outcome,
+    command: item.command,
+    advertisedPids: Object.freeze([...item.advertisedPids]),
+    limitation: item.limitation,
+  }));
+  const valid = preserved.filter(item => item.outcome === 'VALID');
+  const invalidObservationCount = preserved.length - valid.length;
+  const unattributed = preserved.some(item => item.sourceEndpointId === null);
+  const observationsWithAdvertisements = valid.filter(item => item.advertisedPids.length > 0);
+
+  if (valid.length === 0) {
+    return Object.freeze({
+      state: 'NOT_ESTABLISHED' as const,
+      observations: Object.freeze(preserved),
+      validObservationCount: 0,
+      invalidObservationCount,
+      unattributed,
+      detail: 'A valid Mode 01 support bitmap was not established. AutoPulse makes no PID-support claim.',
+    });
+  }
+
+  if (observationsWithAdvertisements.length === 0) {
+    return Object.freeze({
+      state: 'EMPTY_BITMAP' as const,
+      observations: Object.freeze(preserved),
+      validObservationCount: valid.length,
+      invalidObservationCount,
+      unattributed,
+      detail: 'The observed 0100 support bitmap response set was valid but empty. AutoPulse will not infer that directly observable PIDs are unsupported.',
+    });
+  }
+
+  const detail = valid.length === 1
+    ? `${valid[0].advertisedPids.length} Mode 01 PID${valid[0].advertisedPids.length === 1 ? '' : 's'} advertised by this support-bitmap response.`
+    : `${valid.length} valid Mode 01 capability responses were retained separately; ${observationsWithAdvertisements.length} advertised one or more PIDs.`;
+
+  return Object.freeze({
+    state: 'ADVERTISED' as const,
+    observations: Object.freeze(preserved),
+    validObservationCount: valid.length,
+    invalidObservationCount,
+    unattributed,
+    detail,
+  });
+}
+
+function collectReceiptEvidence(
+  request: PlannedDiagnosticRequest,
+  receipt: PlannedDiagnosticExecutionReceipt,
+  sink: CheckPhysicalRawEvidence[],
+): void {
+  receipt.responses.forEach(response => {
+    sink.push(Object.freeze({
+      phase: 'SCAN' as const,
+      semanticId: request.semanticId,
+      service: request.service,
+      pid: request.pid,
+      sourceEndpointId: response.envelope.sourceEndpointId,
+      responseKind: response.envelope.kind,
+      rawText: response.envelope.rawText?.trim() || null,
+      observedResponseBytes: response.observedResponseBytes,
+    }));
+  });
+}
+
 export async function runCheckPhysicalPilot(input: RunCheckPhysicalPilotInput): Promise<CheckPhysicalPilotResult> {
   const { controller, cancellation } = input;
   input.onStage?.('PREPARING_ADAPTER');
   await prepareAdapter(controller, cancellation);
 
   input.onStage?.('NEGOTIATING_PROTOCOL');
-  await bootstrapStandardObd(controller, cancellation);
+  const bootstrapResult = await bootstrapStandardObd(controller, cancellation);
   const protocolEvidence = await discoverProtocol(controller, cancellation);
 
   if (cancellation.isCancelled) throw new Error('CHECK_CANCELLED');
@@ -184,7 +305,21 @@ export async function runCheckPhysicalPilot(input: RunCheckPhysicalPilotInput): 
     throw new Error(`CHECK_PLAN_BLOCKED:${plan.blockedProposals.map(item => `${item.semanticId}:${item.reason}`).join(',')}`);
   }
 
-  input.onStage?.('RUNNING_DTC_SCAN');
+  const rawEvidence: CheckPhysicalRawEvidence[] = [Object.freeze({
+    phase: 'BOOTSTRAP' as const,
+    semanticId: 'check.obd.mode01.support.00',
+    service: '01',
+    pid: '00',
+    sourceEndpointId: null,
+    responseKind: bootstrapResult.status,
+    rawText: rawTextFromCommandResult(bootstrapResult),
+    observedResponseBytes: bootstrapResult.normalizedResponse?.candidateHexLines
+      .map(line => line.replace(/\s+/g, ''))
+      .filter(line => /^[0-9A-Fa-f]+$/.test(line) && line.length % 2 === 0)
+      .reduce((sum, line) => sum + line.length / 2, 0) ?? 0,
+  })];
+
+  input.onStage?.('RUNNING_STANDARD_SCAN');
   const executor = new RealCheckPlannedExecutor(
     controller,
     protocolEvidence.protocol,
@@ -192,24 +327,39 @@ export async function runCheckPhysicalPilot(input: RunCheckPhysicalPilotInput): 
     REQUEST_TIMEOUT_MS,
     MIN_INTER_COMMAND_DELAY_MS,
     cancellation,
+    (request, receipt) => collectReceiptEvidence(request, receipt, rawEvidence),
   );
   const scan = await runDiagnosticScan({ plan, executor });
 
   input.onStage?.('SEALING_PILOT_RESULT');
-  const limitations = [
+  const capabilityAssessment = assessMode01CapabilityEvidence(scan.pidSupportResults);
+  const technicalLimitations = [
     ...scan.limitations,
     ...plan.blockedProposals.map(item => `${item.semanticId}:${item.reason}`),
-    'Physical pilot evidence is not a mechanical PASS/FAIL verdict.',
-    'ABS, SRS, transmission and manufacturer-enhanced modules are not claimed by this standard OBD pilot.',
-    'Readiness/Mode 06/Freeze Frame remain outside this first physically activated descriptor set.',
   ];
+  const userLimitations = [
+    'This Check is diagnostic evidence, not a mechanical PASS/FAIL verdict.',
+    'ABS, SRS, transmission and manufacturer-enhanced modules are not claimed by this standard OBD pilot.',
+    'Readiness, Mode 06 and Freeze Frame remain outside this physical-pilot descriptor set.',
+    capabilityAssessment.state === 'EMPTY_BITMAP'
+      ? 'The Mode 01 support bitmap was empty in this scan. AutoPulse does not treat that as proof that individual PIDs are unsupported.'
+      : null,
+  ].filter((value): value is string => Boolean(value));
+  const limitations = [...technicalLimitations, ...userLimitations];
 
   return Object.freeze({
     pilotVersion: CHECK_PHYSICAL_PILOT_VERSION,
     protocol: protocolEvidence.protocol,
     protocolEvidence: protocolEvidence.evidence,
     scan,
+    capabilityAssessment,
+    rawEvidence: Object.freeze(rawEvidence),
+    bootstrapStandardObdStatus: bootstrapResult.status,
+    scanCommandCount: scan.usage.commandsIssued,
+    bootstrapObdCommandCount: 1 as const,
     cancelled: cancellation.isCancelled,
+    userLimitations: Object.freeze(userLimitations),
+    technicalLimitations: Object.freeze(technicalLimitations),
     limitations: Object.freeze(limitations),
   });
 }

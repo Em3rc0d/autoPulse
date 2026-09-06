@@ -11,6 +11,11 @@ export class CheckPilotCancellationToken {
   get isCancelled(): boolean { return this.cancelled; }
 }
 
+export type CheckPhysicalReceiptObserver = (
+  request: PlannedDiagnosticRequest,
+  receipt: PlannedDiagnosticExecutionReceipt,
+) => void;
+
 function familyForAuthorizedService(service: string): CommandFamily {
   switch (service.toUpperCase()) {
     case '01': return 'OBD_MODE_01';
@@ -36,10 +41,12 @@ function commandForPlannedRequest(request: PlannedDiagnosticRequest): string {
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
 /**
- * Physical execution adapter for the first Check pilot.
+ * Physical execution adapter for the Check pilot.
  *
  * There is intentionally no free-form execute API. The only input is a request
  * already emitted by DiagnosticScanPlanner from the READ_ONLY_PROVEN registry.
+ * The optional observer receives immutable normalized receipts for pilot
+ * provenance/debug evidence; it cannot influence execution.
  */
 export class RealCheckPlannedExecutor implements PlannedDiagnosticExecutor {
   private lastFinishedWallClock: number | undefined;
@@ -51,6 +58,7 @@ export class RealCheckPlannedExecutor implements PlannedDiagnosticExecutor {
     private readonly requestTimeoutMs: number,
     private readonly minInterCommandDelayMs: number,
     private readonly cancellation: CheckPilotCancellationToken,
+    private readonly onReceipt?: CheckPhysicalReceiptObserver,
   ) {}
 
   async executeCommand(
@@ -83,7 +91,9 @@ export class RealCheckPlannedExecutor implements PlannedDiagnosticExecutor {
     };
     const result = await this.controller.executeCommand(transportRequest);
     this.lastFinishedWallClock = Date.now();
-    return adaptRealCommandResultToReceipt(request, this.protocol, result, startedAt, this.provenance);
+    const receipt = adaptRealCommandResultToReceipt(request, this.protocol, result, startedAt, this.provenance);
+    this.onReceipt?.(request, receipt);
+    return receipt;
   }
 
   async awaitPendingContinuation(
