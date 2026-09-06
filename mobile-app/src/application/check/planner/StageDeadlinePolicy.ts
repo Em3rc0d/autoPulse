@@ -23,11 +23,17 @@ export interface StageGateContext {
   readonly cancelRequested: boolean;
 }
 
+const ALL_DIAGNOSTIC_STAGES: readonly DiagnosticPlannerStage[] = Object.freeze([
+  'CAPABILITY_DISCOVERY',
+  'DTC_CORE',
+  'TARGETED_PID_ACQUISITION',
+]);
+
 export function assertValidStageDeadlinePolicy(policy: StageDeadlinePolicy): void {
   if (!Number.isInteger(policy.overallDeadlineMs) || policy.overallDeadlineMs < 1) {
     throw new Error('StageDeadlinePolicy.overallDeadlineMs must be a positive integer');
   }
-  for (const stage of ['CAPABILITY_DISCOVERY', 'DTC_CORE'] as const) {
+  for (const stage of ALL_DIAGNOSTIC_STAGES) {
     const value = policy.stageDeadlineMs[stage];
     if (!Number.isInteger(value) || value < 1) {
       throw new Error(`StageDeadlinePolicy deadline for ${stage} must be a positive integer`);
