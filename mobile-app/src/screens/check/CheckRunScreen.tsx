@@ -184,9 +184,16 @@ export default function CheckRunScreen() {
               <View style={styles.metric}><Text style={styles.metricLabel}>Protocol</Text><Text style={styles.metricValue}>{result.protocol}</Text></View>
               <View style={styles.metric}><Text style={styles.metricLabel}>PID capability</Text><Text style={[styles.metricValue, toneStyle(capabilityPresentation.tone)]}>{capabilityPresentation.label}</Text></View>
               <Text style={styles.body}>{capabilityPresentation.detail}</Text>
-              {result.capabilityAssessment.state === 'ADVERTISED' && result.capabilityAssessment.advertisedPids.length > 0 ? (
-                <Text style={styles.meta}>{result.capabilityAssessment.advertisedPids.join(' · ')}</Text>
-              ) : null}
+              {result.capabilityAssessment.observations.map(observation => (
+                <View key={`cap-${observation.observationIndex}`} style={styles.capabilityObservation}>
+                  <Text style={styles.meta}>Response {observation.observationIndex + 1} · ECU {observation.sourceEndpointId ?? 'UNATTRIBUTED'} · {observation.outcome}</Text>
+                  {observation.advertisedPids.length > 0
+                    ? <Text style={styles.capabilityPidList}>{observation.advertisedPids.join(' · ')}</Text>
+                    : observation.outcome === 'VALID'
+                      ? <Text style={styles.meta}>Valid empty bitmap</Text>
+                      : <Text style={styles.meta}>{observation.limitation ?? 'Capability response rejected'}</Text>}
+                </View>
+              ))}
             </View>
 
             <Text style={styles.sectionTitle}>Diagnostic codes</Text>
@@ -272,6 +279,8 @@ const styles = StyleSheet.create({
   metricLabel: { color: '#94a3b8' },
   metricValue: { color: '#f8fafc', fontWeight: '800', textAlign: 'right', flex: 1 },
   limitation: { color: '#cbd5e1', lineHeight: 20, marginTop: 8 },
+  capabilityObservation: { borderTopWidth: 1, borderTopColor: '#202a30', marginTop: 12, paddingTop: 8 },
+  capabilityPidList: { color: '#93c5fd', fontSize: 11, lineHeight: 17, marginTop: 6 },
   technicalInset: { borderTopWidth: 1, borderTopColor: '#263139', marginTop: 12, paddingTop: 6 },
   technicalToggle: { borderWidth: 1, borderColor: '#334155', borderRadius: 14, paddingVertical: 13, alignItems: 'center', marginBottom: 16 },
   technicalToggleText: { color: '#94a3b8', fontWeight: '800' },
