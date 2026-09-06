@@ -5,6 +5,12 @@ import type { PlannedDiagnosticExecutionReceipt, PlannedDiagnosticExecutor } fro
 import type { PlannedDiagnosticRequest } from '../planner/DiagnosticScanPlanner';
 import { adaptRealCommandResultToReceipt } from './RealCheckEnvelopeAdapter';
 
+export class CheckPilotCancellationToken {
+  private cancelled = false;
+  cancel(): void { this.cancelled = true; }
+  get isCancelled(): boolean { return this.cancelled; }
+}
+
 function familyForAuthorizedService(service: string): CommandFamily {
   switch (service.toUpperCase()) {
     case '01': return 'OBD_MODE_01';
@@ -27,6 +33,8 @@ function commandForPlannedRequest(request: PlannedDiagnosticRequest): string {
   return command;
 }
 
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
 /**
  * Physical execution adapter for the first Check pilot.
  *
@@ -34,11 +42,15 @@ function commandForPlannedRequest(request: PlannedDiagnosticRequest): string {
  * already emitted by DiagnosticScanPlanner from the READ_ONLY_PROVEN registry.
  */
 export class RealCheckPlannedExecutor implements PlannedDiagnosticExecutor {
+  private lastFinishedWallClock: number | undefined;
+
   constructor(
     private readonly controller: RealObdController,
     private readonly protocol: DiagnosticProtocol,
     private readonly provenance: string,
     private readonly requestTimeoutMs: number,
+    private readonly minInterCommandDelayMs: number,
+    private readonly cancellation: CheckPilotCancellationToken,
   ) {}
 
   async executeCommand(
@@ -46,12 +58,19 @@ export class RealCheckPlannedExecutor implements PlannedDiagnosticExecutor {
     attemptIndex: number,
     startedAt: number,
   ): Promise<PlannedDiagnosticExecutionReceipt> {
+    if (this.cancellation.isCancelled) throw new Error('CHECK_CANCELLED');
     if (!request.supportedProtocols.includes(this.protocol)) {
       throw new Error(`CHECK_EXECUTOR_PROTOCOL_NOT_PROMOTED:${request.semanticId}:${this.protocol}`);
     }
     if (request.executionMode !== 'SERIAL_ONLY') {
       throw new Error(`CHECK_EXECUTOR_NON_SERIAL_REQUEST:${request.semanticId}`);
     }
+
+    if (this.lastFinishedWallClock !== undefined) {
+      const remaining = this.minInterCommandDelayMs - (Date.now() - this.lastFinishedWallClock);
+      if (remaining > 0) await sleep(remaining);
+    }
+    if (this.cancellation.isCancelled) throw new Error('CHECK_CANCELLED');
 
     const command = commandForPlannedRequest(request);
     const transportRequest: CommandRequest = {
@@ -63,6 +82,7 @@ export class RealCheckPlannedExecutor implements PlannedDiagnosticExecutor {
       timeoutMs: this.requestTimeoutMs,
     };
     const result = await this.controller.executeCommand(transportRequest);
+    this.lastFinishedWallClock = Date.now();
     return adaptRealCommandResultToReceipt(request, this.protocol, result, startedAt, this.provenance);
   }
 
