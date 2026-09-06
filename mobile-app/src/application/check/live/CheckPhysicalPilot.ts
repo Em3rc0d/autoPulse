@@ -22,9 +22,19 @@ export type CheckCapabilityAssessmentState =
   | 'EMPTY_BITMAP'
   | 'NOT_ESTABLISHED';
 
+export interface CheckCapabilityObservation {
+  readonly observationIndex: number;
+  readonly sourceEndpointId: string | null;
+  readonly outcome: DiagnosticPidSupportObservation['outcome'];
+  readonly command: DiagnosticPidSupportObservation['command'];
+  readonly advertisedPids: readonly string[];
+  readonly limitation?: string;
+}
+
 export interface CheckCapabilityAssessment {
   readonly state: CheckCapabilityAssessmentState;
-  readonly advertisedPids: readonly string[];
+  /** Each support bitmap remains response-scoped; no vehicle-global union is produced. */
+  readonly observations: readonly CheckCapabilityObservation[];
   readonly validObservationCount: number;
   readonly invalidObservationCount: number;
   readonly unattributed: boolean;
@@ -178,15 +188,23 @@ async function discoverProtocol(
 export function assessMode01CapabilityEvidence(
   observations: readonly DiagnosticPidSupportObservation[],
 ): CheckCapabilityAssessment {
-  const valid = observations.filter(item => item.outcome === 'VALID');
-  const invalidObservationCount = observations.length - valid.length;
-  const advertisedPids = [...new Set(valid.flatMap(item => item.advertisedPids))].sort();
-  const unattributed = observations.some(item => item.sourceEndpointId === null);
+  const preserved = observations.map((item, observationIndex) => Object.freeze({
+    observationIndex,
+    sourceEndpointId: item.sourceEndpointId,
+    outcome: item.outcome,
+    command: item.command,
+    advertisedPids: Object.freeze([...item.advertisedPids]),
+    limitation: item.limitation,
+  }));
+  const valid = preserved.filter(item => item.outcome === 'VALID');
+  const invalidObservationCount = preserved.length - valid.length;
+  const unattributed = preserved.some(item => item.sourceEndpointId === null);
+  const observationsWithAdvertisements = valid.filter(item => item.advertisedPids.length > 0);
 
   if (valid.length === 0) {
     return Object.freeze({
       state: 'NOT_ESTABLISHED' as const,
-      advertisedPids: Object.freeze([]),
+      observations: Object.freeze(preserved),
       validObservationCount: 0,
       invalidObservationCount,
       unattributed,
@@ -194,24 +212,28 @@ export function assessMode01CapabilityEvidence(
     });
   }
 
-  if (advertisedPids.length === 0) {
+  if (observationsWithAdvertisements.length === 0) {
     return Object.freeze({
       state: 'EMPTY_BITMAP' as const,
-      advertisedPids: Object.freeze([]),
+      observations: Object.freeze(preserved),
       validObservationCount: valid.length,
       invalidObservationCount,
       unattributed,
-      detail: 'The 0100 response contained a valid empty support bitmap. AutoPulse will not infer that directly observable PIDs are unsupported.',
+      detail: 'The observed 0100 support bitmap response set was valid but empty. AutoPulse will not infer that directly observable PIDs are unsupported.',
     });
   }
 
+  const detail = valid.length === 1
+    ? `${valid[0].advertisedPids.length} Mode 01 PID${valid[0].advertisedPids.length === 1 ? '' : 's'} advertised by this support-bitmap response.`
+    : `${valid.length} valid Mode 01 capability responses were retained separately; ${observationsWithAdvertisements.length} advertised one or more PIDs.`;
+
   return Object.freeze({
     state: 'ADVERTISED' as const,
-    advertisedPids: Object.freeze(advertisedPids),
+    observations: Object.freeze(preserved),
     validObservationCount: valid.length,
     invalidObservationCount,
     unattributed,
-    detail: `${advertisedPids.length} Mode 01 PID${advertisedPids.length === 1 ? '' : 's'} advertised by the observed support bitmap evidence.`,
+    detail,
   });
 }
 
