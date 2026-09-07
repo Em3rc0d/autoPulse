@@ -11,9 +11,11 @@ import {
 } from '../../application/check/live/CheckPhysicalPilot';
 import { CheckPilotCancellationToken } from '../../application/check/live/RealCheckPlannedExecutor';
 import type { DtcServiceParseResult } from '../../application/check/parsers/DtcServiceParser';
+import type { Mode01DirectObservationResult } from '../../application/check/parsers/Mode01DirectObservationParser';
 import {
   presentCapabilityAssessment,
   presentCheckScanState,
+  presentDirectMode01Observation,
   presentDtcResult,
   technicalDtcOutcome,
 } from '../../application/check/live/CheckPilotPresentation';
@@ -24,8 +26,15 @@ const stageLabel: Record<CheckPhysicalPilotStage, string> = {
   PREPARING_ADAPTER: 'Preparing read-only adapter channel',
   NEGOTIATING_PROTOCOL: 'Discovering vehicle protocol',
   RUNNING_STANDARD_SCAN: 'Reading standard ECU diagnostic evidence',
+  RUNNING_DIRECT_PID_CORROBORATION: 'Corroborating exact Mode 01 observations',
   SEALING_PILOT_RESULT: 'Sealing diagnostic evidence',
 };
+
+const directPidLabel: Readonly<Record<string, string>> = Object.freeze({
+  '05': 'Engine coolant',
+  '0C': 'Engine RPM',
+  '0D': 'Vehicle speed',
+});
 
 function toneStyle(tone: 'POSITIVE' | 'ATTENTION' | 'NEUTRAL') {
   if (tone === 'POSITIVE') return styles.observed;
@@ -50,6 +59,28 @@ function DtcEvidenceCard({ result, showTechnical }: { result: DtcServiceParseRes
         <View style={styles.technicalInset}>
           <Text style={styles.meta}>Outcome: {technicalDtcOutcome(result)}</Text>
           <Text style={styles.meta}>Source ECU: {result.sourceEndpointId ?? 'UNATTRIBUTED'} · service {result.requestService}</Text>
+          {result.limitation ? <Text style={styles.meta}>Parser: {result.limitation}</Text> : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+function DirectObservationCard({ result, showTechnical }: { result: Mode01DirectObservationResult; showTechnical: boolean }) {
+  const presentation = presentDirectMode01Observation(result);
+  const pid = result.requestPid.toUpperCase();
+  return (
+    <View style={styles.evidenceCard}>
+      <Text style={styles.evidenceTitle}>{directPidLabel[pid] ?? `Mode 01 PID ${pid}`}</Text>
+      <Text style={styles.pidCaption}>PID 01{pid}</Text>
+      <Text style={[styles.resultLabel, toneStyle(presentation.tone)]}>{presentation.label}</Text>
+      <Text style={styles.body}>{presentation.detail}</Text>
+      {showTechnical ? (
+        <View style={styles.technicalInset}>
+          <Text style={styles.meta}>Outcome: {result.outcome}</Text>
+          <Text style={styles.meta}>Source ECU: {result.sourceEndpointId ?? 'UNATTRIBUTED'}</Text>
+          {result.dataBytes.length > 0 ? <Text style={styles.meta}>Data bytes: {result.dataBytes.map(value => value.toString(16).padStart(2, '0').toUpperCase()).join(' ')}</Text> : null}
+          {result.negativeResponseCode ? <Text style={styles.meta}>NRC: {result.negativeResponseCode}</Text> : null}
           {result.limitation ? <Text style={styles.meta}>Parser: {result.limitation}</Text> : null}
         </View>
       ) : null}
@@ -124,6 +155,7 @@ export default function CheckRunScreen() {
 
   const scanPresentation = result ? presentCheckScanState(result.scan.state) : null;
   const capabilityPresentation = result ? presentCapabilityAssessment(result.capabilityAssessment) : null;
+  const directResults = result?.directObservationScan?.mode01DirectResults ?? [];
 
   return (
     <View style={styles.container}>
@@ -143,7 +175,7 @@ export default function CheckRunScreen() {
         {uiState === 'IDLE' && (
           <View style={styles.panel}>
             <Text style={styles.panelTitle}>Ready to query the ECU</Text>
-            <Text style={styles.body}>This pilot reads standard PID capability evidence plus stored, pending and permanent DTC services only where the protocol/parser path is promoted.</Text>
+            <Text style={styles.body}>This pilot reads standard PID capability evidence plus stored, pending and permanent DTC services. When a proven KWP path returns a valid empty support bitmap, AutoPulse may corroborate only a small exact allowlist of Mode 01 PIDs as direct observations.</Text>
             <TouchableOpacity style={styles.primary} onPress={() => void run()} testID="run-physical-check">
               <Text style={styles.primaryText}>Run Check</Text>
             </TouchableOpacity>
@@ -196,6 +228,23 @@ export default function CheckRunScreen() {
               ))}
             </View>
 
+            {directResults.length > 0 ? (
+              <>
+                <Text style={styles.sectionTitle}>Direct Mode 01 observations</Text>
+                <View style={styles.directNotice}>
+                  <Text style={styles.directNoticeTitle}>Corroboration, not advertised support</Text>
+                  <Text style={styles.body}>These exact PIDs were queried individually because the support bitmap was valid but empty. A successful response proves only that exact PID was observed in this Check.</Text>
+                </View>
+                {directResults.map((item, index) => (
+                  <DirectObservationCard
+                    key={`direct-${item.requestPid}-${item.sourceEndpointId ?? 'u'}-${index}`}
+                    result={item}
+                    showTechnical={showTechnical}
+                  />
+                ))}
+              </>
+            ) : null}
+
             <Text style={styles.sectionTitle}>Diagnostic codes</Text>
             {result.scan.dtcResults.length > 0
               ? result.scan.dtcResults.map((item, index) => <DtcEvidenceCard key={`${item.status}-${item.sourceEndpointId ?? 'u'}-${index}`} result={item} showTechnical={showTechnical} />)
@@ -216,9 +265,11 @@ export default function CheckRunScreen() {
                 <Text style={styles.meta}>Pilot: {result.pilotVersion}</Text>
                 <Text style={styles.meta}>Protocol evidence: {result.protocolEvidence || 'not retained'}</Text>
                 <Text style={styles.meta}>Bootstrap OBD command: 1 · {result.bootstrapStandardObdStatus}</Text>
-                <Text style={styles.meta}>Planned scan commands: {result.scanCommandCount}</Text>
-                <Text style={styles.meta}>Normalized response records: {result.scan.attempts.length}</Text>
-                <Text style={styles.meta}>Response bytes: {result.scan.usage.responseBytes}</Text>
+                <Text style={styles.meta}>Core scan commands: {result.scanCommandCount}</Text>
+                <Text style={styles.meta}>Direct-observation commands: {result.directObservationCommandCount}</Text>
+                <Text style={styles.meta}>Core normalized response records: {result.scan.attempts.length}</Text>
+                <Text style={styles.meta}>Core response bytes: {result.scan.usage.responseBytes}</Text>
+                {result.directObservationScan ? <Text style={styles.meta}>Direct response bytes: {result.directObservationScan.usage.responseBytes}</Text> : null}
 
                 {result.rawEvidence.map((evidence, index) => (
                   <View key={`${evidence.phase}-${evidence.semanticId}-${index}`} style={styles.rawBlock}>
@@ -269,6 +320,7 @@ const styles = StyleSheet.create({
   sectionTitle: { color: '#f8fafc', fontWeight: '900', fontSize: 20, marginBottom: 10, marginTop: 4 },
   evidenceCard: { backgroundColor: '#121b20', borderWidth: 1, borderColor: '#2a363d', borderRadius: 16, padding: 16, marginBottom: 12 },
   evidenceTitle: { color: '#f8fafc', fontWeight: '900', fontSize: 17 },
+  pidCaption: { color: '#64748b', fontSize: 11, marginTop: 4 },
   resultLabel: { fontWeight: '900', fontSize: 13, marginTop: 9 },
   observed: { color: '#4ade80' },
   attention: { color: '#fbbf24' },
@@ -281,6 +333,8 @@ const styles = StyleSheet.create({
   limitation: { color: '#cbd5e1', lineHeight: 20, marginTop: 8 },
   capabilityObservation: { borderTopWidth: 1, borderTopColor: '#202a30', marginTop: 12, paddingTop: 8 },
   capabilityPidList: { color: '#93c5fd', fontSize: 11, lineHeight: 17, marginTop: 6 },
+  directNotice: { backgroundColor: '#0f1c24', borderWidth: 1, borderColor: '#334155', borderRadius: 14, padding: 14, marginBottom: 12 },
+  directNoticeTitle: { color: '#93c5fd', fontWeight: '900', fontSize: 13 },
   technicalInset: { borderTopWidth: 1, borderTopColor: '#263139', marginTop: 12, paddingTop: 6 },
   technicalToggle: { borderWidth: 1, borderColor: '#334155', borderRadius: 14, paddingVertical: 13, alignItems: 'center', marginBottom: 16 },
   technicalToggleText: { color: '#94a3b8', fontWeight: '800' },
