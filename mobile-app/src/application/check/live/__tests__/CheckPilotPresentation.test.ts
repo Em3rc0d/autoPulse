@@ -1,5 +1,12 @@
 import type { DtcServiceParseResult } from '../../parsers/DtcServiceParser';
-import { presentCapabilityAssessment, presentCheckScanState, presentDtcResult, technicalDtcOutcome } from '../CheckPilotPresentation';
+import type { Mode01DirectObservationResult } from '../../parsers/Mode01DirectObservationParser';
+import {
+  presentCapabilityAssessment,
+  presentCheckScanState,
+  presentDirectMode01Observation,
+  presentDtcResult,
+  technicalDtcOutcome,
+} from '../CheckPilotPresentation';
 import { assessMode01CapabilityEvidence } from '../CheckPhysicalPilot';
 
 function dtc(outcome: DtcServiceParseResult['outcome'], negativeResponseCode?: string): DtcServiceParseResult {
@@ -13,6 +20,19 @@ function dtc(outcome: DtcServiceParseResult['outcome'], negativeResponseCode?: s
     codes: [],
     rawPayload: [],
     negativeResponseCode,
+    provenance: 'fixture',
+    observedAt: 1,
+  };
+}
+
+function direct(outcome: Mode01DirectObservationResult['outcome']): Mode01DirectObservationResult {
+  return {
+    requestPid: '0C',
+    sourceEndpointId: null,
+    protocol: 'ISO_14230_KWP',
+    outcome,
+    dataBytes: outcome === 'OBSERVED_DIRECTLY' ? [0x1A, 0xF8] : [],
+    rawPayload: outcome === 'OBSERVED_DIRECTLY' ? [0x0C, 0x1A, 0xF8] : [],
     provenance: 'fixture',
     observedAt: 1,
   };
@@ -37,6 +57,20 @@ describe('Check pilot presentation', () => {
     const result = dtc('NEGATIVE_RESPONSE', '11');
     expect(presentDtcResult(result).label).toBe('Service unavailable');
     expect(technicalDtcOutcome(result)).toBe('NEGATIVE_RESPONSE · NRC 11');
+  });
+
+  it('labels direct Mode 01 success as direct observation, never advertised support', () => {
+    const copy = presentDirectMode01Observation(direct('OBSERVED_DIRECTLY'));
+    expect(copy.label).toBe('Observed directly');
+    expect(copy.detail).toContain('direct observation');
+    expect(copy.detail).toContain('not ECU-advertised support');
+  });
+
+  it('does not turn direct NO_DATA into an unsupported-PID claim', () => {
+    const copy = presentDirectMode01Observation(direct('NO_DATA'));
+    expect(copy.label).toBe('No data returned');
+    expect(copy.detail).toContain('did not return usable data');
+    expect(copy.detail.toLowerCase()).not.toContain('unsupported');
   });
 });
 
