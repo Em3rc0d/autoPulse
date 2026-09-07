@@ -11,7 +11,7 @@ const request: PlannedDiagnosticRequest = {
   semanticId: 'check.obd.mode03.stored-dtc',
   required: true,
   registryVersion: 'check-core-descriptors/v1',
-  safetyPolicyVersion: 'check-command-safety/v1',
+  safetyPolicyVersion: 'check-command-safety/v2',
   parserContractId: 'check.dtc-service/v1',
   descriptorProvenance: 'fixture',
   stage: 'DTC_CORE',

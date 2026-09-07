@@ -1,7 +1,7 @@
 import type { DiagnosticSafetyClassification } from '../../../domain/check/DiagnosticSafetyClassification';
 import type { DiagnosticProtocol, DiagnosticRequestKind } from '../../../domain/diagnostics/DiagnosticConnector';
 
-export type DiagnosticPlannerStage = 'CAPABILITY_DISCOVERY' | 'DTC_CORE';
+export type DiagnosticPlannerStage = 'CAPABILITY_DISCOVERY' | 'DTC_CORE' | 'TARGETED_PID_ACQUISITION';
 
 export type DiagnosticDescriptorActivationCondition =
   | { readonly kind: 'ALWAYS' }

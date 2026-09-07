@@ -32,6 +32,8 @@ const LEGACY_DTC_PROTOCOLS: readonly DiagnosticProtocol[] = Object.freeze([
   'SAE_J1850_VPW',
 ]);
 
+const KWP_ONLY: readonly DiagnosticProtocol[] = Object.freeze(['ISO_14230_KWP']);
+
 function normalizedActivationCondition(
   descriptor: DiagnosticRequestDescriptor,
 ): DiagnosticDescriptorActivationCondition {
@@ -226,6 +228,52 @@ export const CHECK_CORE_DESCRIPTOR_REGISTRY_V1 = createDiagnosticDescriptorRegis
       'DTC_CORE',
       'Q-CHECK-001 + Q-CHECK-008 + CHECK-MK4 DtcServiceParser; CAN envelope not yet fixture-promoted',
       LEGACY_DTC_PROTOCOLS,
+    ),
+  ],
+);
+
+const DIRECT_MODE01_PROVENANCE = 'Q-CHECK-008 read-only Mode 01 + Logan physical Live observations + CHECK Physical v3 exact-PID parser/adversarial fixtures';
+
+/**
+ * v2 keeps every v1 operation and adds only three exact KWP Mode 01 direct
+ * observations. These descriptors do not claim ECU-advertised support.
+ */
+export const CHECK_CORE_DESCRIPTOR_REGISTRY_V2 = createDiagnosticDescriptorRegistry(
+  'check-core-descriptors/v2',
+  [
+    ...CHECK_CORE_DESCRIPTOR_REGISTRY_V1.descriptors,
+    descriptor(
+      'check-core-mode01-observe-05',
+      'check.obd.mode01.observe.05',
+      '01',
+      '41',
+      'check.mode01.direct-observation/v1',
+      'TARGETED_PID_ACQUISITION',
+      DIRECT_MODE01_PROVENANCE,
+      KWP_ONLY,
+      '05',
+    ),
+    descriptor(
+      'check-core-mode01-observe-0c',
+      'check.obd.mode01.observe.0C',
+      '01',
+      '41',
+      'check.mode01.direct-observation/v1',
+      'TARGETED_PID_ACQUISITION',
+      DIRECT_MODE01_PROVENANCE,
+      KWP_ONLY,
+      '0C',
+    ),
+    descriptor(
+      'check-core-mode01-observe-0d',
+      'check.obd.mode01.observe.0D',
+      '01',
+      '41',
+      'check.mode01.direct-observation/v1',
+      'TARGETED_PID_ACQUISITION',
+      DIRECT_MODE01_PROVENANCE,
+      KWP_ONLY,
+      '0D',
     ),
   ],
 );

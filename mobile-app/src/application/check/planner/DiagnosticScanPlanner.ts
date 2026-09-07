@@ -30,7 +30,11 @@ export interface BuildDiagnosticScanPlanInput {
   readonly budget: CommandBudget; readonly retryPolicy: RetryPolicy; readonly deadlinePolicy: StageDeadlinePolicy;
 }
 
-const STAGE_ORDER: Readonly<Record<DiagnosticPlannerStage, number>> = { CAPABILITY_DISCOVERY: 0, DTC_CORE: 1 };
+const STAGE_ORDER: Readonly<Record<DiagnosticPlannerStage, number>> = {
+  CAPABILITY_DISCOVERY: 0,
+  DTC_CORE: 1,
+  TARGETED_PID_ACQUISITION: 2,
+};
 const targetKey = (proposal: DiagnosticPlanProposal): string => proposal.targetEndpointId ?? 'FUNCTIONAL_OR_UNATTRIBUTED';
 const unique = (values: readonly string[]): string[] => [...new Set(values)];
 

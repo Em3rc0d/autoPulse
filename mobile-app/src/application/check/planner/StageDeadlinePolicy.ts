@@ -2,7 +2,12 @@ import type { DiagnosticPlannerStage } from './DiagnosticRequestDescriptor';
 
 export interface StageDeadlinePolicy {
   readonly overallDeadlineMs: number;
-  readonly stageDeadlineMs: Readonly<Record<DiagnosticPlannerStage, number>>;
+  readonly stageDeadlineMs: Readonly<{
+    CAPABILITY_DISCOVERY: number;
+    DTC_CORE: number;
+    /** Required only for plans that contain targeted PID acquisition. */
+    TARGETED_PID_ACQUISITION?: number;
+  }>;
   readonly provenance: string;
 }
 
@@ -36,6 +41,15 @@ export function assertValidStageDeadlinePolicy(policy: StageDeadlinePolicy): voi
       throw new Error(`StageDeadlinePolicy deadline for ${stage} cannot exceed overall deadline`);
     }
   }
+  const targeted = policy.stageDeadlineMs.TARGETED_PID_ACQUISITION;
+  if (targeted !== undefined) {
+    if (!Number.isInteger(targeted) || targeted < 1) {
+      throw new Error('StageDeadlinePolicy deadline for TARGETED_PID_ACQUISITION must be a positive integer');
+    }
+    if (targeted > policy.overallDeadlineMs) {
+      throw new Error('StageDeadlinePolicy deadline for TARGETED_PID_ACQUISITION cannot exceed overall deadline');
+    }
+  }
   if (!policy.provenance.trim()) throw new Error('StageDeadlinePolicy.provenance must be non-empty');
 }
 
@@ -54,8 +68,13 @@ export function evaluateStageGate(
     return { disposition: 'BLOCK', reason: 'CANCELLED', remainingMs: 0 };
   }
 
+  const stageDeadlineMs = policy.stageDeadlineMs[context.stage];
+  if (!Number.isInteger(stageDeadlineMs) || (stageDeadlineMs ?? 0) < 1) {
+    throw new Error(`StageDeadlinePolicy deadline for ${context.stage} is required by this plan`);
+  }
+
   const overallDeadlineAt = context.scanStartedAt + policy.overallDeadlineMs;
-  const stageDeadlineAt = context.stageStartedAt + policy.stageDeadlineMs[context.stage];
+  const stageDeadlineAt = context.stageStartedAt + (stageDeadlineMs as number);
   if (context.now >= overallDeadlineAt) {
     return { disposition: 'BLOCK', reason: 'OVERALL_DEADLINE_EXCEEDED', remainingMs: 0 };
   }
