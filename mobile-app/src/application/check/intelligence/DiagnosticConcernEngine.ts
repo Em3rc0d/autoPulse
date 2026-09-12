@@ -35,6 +35,16 @@ function systemGroups(families: readonly DiagnosticEvidenceFamily[]): string[] {
   return [...groups];
 }
 
+function fallbackKnowledge(code: string): DtcKnowledgeEntry {
+  return Object.freeze({
+    code,
+    family: 'POWERTRAIN' as const,
+    namespace: 'UNKNOWN' as const,
+    concernFamilies: Object.freeze<DiagnosticEvidenceFamily[]>(['CONTEXT']),
+    provenance: 'Unresolved DTC knowledge; ECU event retained without fabricated meaning',
+  });
+}
+
 export function buildDiagnosticConcerns(
   dtcResults: readonly DtcServiceParseResult[],
   pidEvidence: readonly DecodedPidObservation[],
@@ -50,17 +60,11 @@ export function buildDiagnosticConcerns(
   }
 
   return Object.freeze([...byCode.entries()].map(([code, statusSet]) => {
-    const knowledge = resolveDtcKnowledge(code) ?? Object.freeze({
-      code,
-      family: 'POWERTRAIN' as const,
-      namespace: 'UNKNOWN' as const,
-      concernFamilies: Object.freeze(['CONTEXT' as const]),
-      provenance: 'Unresolved DTC knowledge; ECU event retained without fabricated meaning',
-    });
-    const families = knowledge.concernFamilies;
+    const knowledge: DtcKnowledgeEntry = resolveDtcKnowledge(code) ?? fallbackKnowledge(code);
+    const families: readonly DiagnosticEvidenceFamily[] = knowledge.concernFamilies;
     const evidence = pidEvidence.filter(observation => {
-      const walletFamilies = observation.pid === '01' ? ['READINESS'] : [];
-      return families.includes('CONTEXT') || walletFamilies.some(family => families.includes(family as DiagnosticEvidenceFamily)) || observation.signals.some(signal => {
+      const walletFamilies: readonly DiagnosticEvidenceFamily[] = observation.pid === '01' ? ['READINESS'] : [];
+      return families.includes('CONTEXT') || walletFamilies.some(family => families.includes(family)) || observation.signals.some(signal => {
         const key = signal.key.toLowerCase();
         if (families.includes('AIR_FUEL') && (key.includes('trim') || key.includes('o2'))) return true;
         if (families.includes('CATALYST') && key.includes('o2')) return true;
