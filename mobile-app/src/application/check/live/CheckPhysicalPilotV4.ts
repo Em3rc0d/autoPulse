@@ -83,9 +83,6 @@ function collectReceiptEvidence(
 }
 
 function advertisedPidsFromBase(base: CheckPhysicalPilotResult): readonly string[] {
-  // This is a planner candidate set only. Capability observations remain
-  // independently preserved in base.capabilityAssessment and are never rewritten
-  // into a vehicle-global support claim.
   const values = base.capabilityAssessment.observations
     .filter(item => item.outcome === 'VALID')
     .flatMap(item => item.advertisedPids);
@@ -98,10 +95,7 @@ function dtcCodesFromBase(base: CheckPhysicalPilotResult): readonly string[] {
     .flatMap(result => result.codes.map(item => item.code)))].sort());
 }
 
-function buildTargetedPlan(
-  protocol: DiagnosticProtocol,
-  evidencePlan: DiagnosticEvidencePlanV2,
-) {
+function buildTargetedPlan(protocol: DiagnosticProtocol, evidencePlan: DiagnosticEvidencePlanV2) {
   return buildDiagnosticScanPlan({
     planId: `check-v4-targeted:${Date.now()}`,
     createdAt: Date.now(),
@@ -186,7 +180,11 @@ export async function runCheckPhysicalPilotV4(input: RunCheckPhysicalPilotV4Inpu
 
   input.onStage?.('CORRELATING_DIAGNOSTIC_EVIDENCE');
   const targetedResults: readonly Mode01DirectObservationResult[] = targetedEvidenceScan?.mode01DirectResults ?? [];
-  const decodedPidEvidence = Object.freeze(targetedResults
+  const allMode01Evidence: readonly Mode01DirectObservationResult[] = Object.freeze([
+    ...(base.directObservationScan?.mode01DirectResults ?? []),
+    ...targetedResults,
+  ]);
+  const decodedPidEvidence = Object.freeze(allMode01Evidence
     .map(decodePromotedMode01Observation)
     .filter((value): value is DecodedPidObservation => Boolean(value)));
   const readiness = targetedResults
