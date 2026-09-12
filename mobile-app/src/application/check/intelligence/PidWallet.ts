@@ -109,8 +109,16 @@ export const CHECK_V4_PID_WALLET: readonly PidWalletEntry[] = Object.freeze(
   }),
 );
 
+function normalizeWalletPid(value: string): string | undefined {
+  const normalized = value.trim().toUpperCase();
+  if (/^[0-9A-F]{2}$/.test(normalized)) return normalized;
+  if (/^01[0-9A-F]{2}$/.test(normalized)) return normalized.slice(2);
+  return undefined;
+}
+
 export function findPidWalletEntry(pid: string): PidWalletEntry | undefined {
-  const normalized = pid.trim().toUpperCase().replace(/^01/, '');
+  const normalized = normalizeWalletPid(pid);
+  if (!normalized) return undefined;
   return CHECK_V4_PID_WALLET.find(entry => entry.pid === normalized);
 }
 
