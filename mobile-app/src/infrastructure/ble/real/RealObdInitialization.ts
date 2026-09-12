@@ -6,6 +6,7 @@ import {
   Mode01CapabilityCommand
 } from '../../../domain/acquisition/Mode01CapabilityDiscovery';
 import { appendPidEvidence } from '../../../domain/acquisition/SourceEcuEvidence';
+import { LIVE_OBD_REQUEST_ORDER } from '../../../domain/obd/LiveObdPollingPolicy';
 
 export interface CapabilitySnapshot {
   protocol: string | null;
@@ -183,6 +184,9 @@ export class RealObdInitialization {
           `${firstCapabilityResult.status}: ${firstCapabilityResult.errors.join(', ')}`;
       }
 
+      // Bitmap support can be incomplete or adapters can lose source attribution.
+      // Directly probe every bounded signal consumed by Driving View v2 so the live
+      // plan is based on observed evidence whenever the ECU can provide it.
       await this.probeCoreSignals(snapshot);
 
       await this.executeAndRecord(snapshot, '0900', 5000, 'OBD_MODE_09', '49');
@@ -267,9 +271,7 @@ export class RealObdInitialization {
   }
 
   private async probeCoreSignals(snapshot: CapabilitySnapshot) {
-    const corePids = ['010C', '010D', '0105', '0142'];
-
-    for (const pid of corePids) {
+    for (const pid of LIVE_OBD_REQUEST_ORDER) {
       const result = await this.executeAndRecord(snapshot, pid, 4000, 'OBD_MODE_01', '41');
       if (result.status === 'SUCCESS_DECODED') {
         if (!snapshot.supportedPids.includes(pid)) {

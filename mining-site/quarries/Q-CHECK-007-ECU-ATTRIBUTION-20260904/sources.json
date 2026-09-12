@@ -1,0 +1,33 @@
+{
+  "quarry_id": "Q-CHECK-007-ECU-ATTRIBUTION-20260904",
+  "status": "SEMANTIC_BOUNDARY_CLOSED_FIXTURES_OPEN",
+  "captured_on": "2026-09-04",
+  "scope": "Diagnostic endpoint/source attribution across AutoPulse standard OBD transports",
+  "sources": [
+    {
+      "id": "SRC-ELM327-DATASHEET",
+      "kind": "ADAPTER_VENDOR_TECHNICAL_DOCUMENTATION",
+      "name": "ELM327 OBD to RS232 Interpreter Datasheet",
+      "url": "https://www.elmelectronics.com/wp-content/uploads/2017/01/ELM327DS.pdf",
+      "role": "Evidence for three-byte legacy OBD headers, functional vs physical addressing, header visibility, ISO15765 7DF functional requests and responder IDs such as 7E8, and Response Pending multi-ECU caveats."
+    },
+    {
+      "id": "SRC-AUTOPULSE-ECU-CAPABILITY-DISCOVERY",
+      "kind": "CURRENT_REPOSITORY_EVIDENCE",
+      "path": "mobile-app/src/domain/diagnostics/EcuCapabilityDiscovery.ts",
+      "role": "Existing evidence-first source-address grouping and explicit non-inference of module roles."
+    },
+    {
+      "id": "SRC-AUTOPULSE-ELM-DIAGNOSTIC-CONNECTOR",
+      "kind": "CURRENT_REPOSITORY_EVIDENCE",
+      "path": "mobile-app/src/infrastructure/diagnostics/ElmBleDiagnosticConnector.ts",
+      "role": "Current response-level sourceEcus aggregation, identified as insufficient for final per-DTC attribution when multiple responders exist."
+    }
+  ],
+  "promotion": {
+    "semantic_boundary": "CLOSED",
+    "fixtures": "OPEN",
+    "physical_can_evidence": "OPEN",
+    "runtime": "BLOCKED"
+  }
+}

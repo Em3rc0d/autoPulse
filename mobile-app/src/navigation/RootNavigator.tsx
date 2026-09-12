@@ -14,6 +14,8 @@ import DriverLiveSessionScreen from '../screens/live/DriverLiveSessionScreen';
 import SessionSummaryScreen from '../screens/live/SessionSummaryScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import CheckScreen from '../screens/check/CheckScreen';
+import CheckConnectObdScreen from '../screens/check/CheckConnectObdScreen';
+import CheckRunScreen from '../screens/check/CheckRunScreen';
 import VehicleCheckReportScreen from '../screens/check/VehicleCheckReportScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
 
@@ -57,6 +59,8 @@ function CheckStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="CheckHome" component={CheckScreen} />
+      <Stack.Screen name="CheckConnect" component={CheckConnectObdScreen} />
+      <Stack.Screen name="CheckRun" component={CheckRunScreen} />
       <Stack.Screen name="VehicleCheckReport" component={VehicleCheckReportScreen} />
     </Stack.Navigator>
   );

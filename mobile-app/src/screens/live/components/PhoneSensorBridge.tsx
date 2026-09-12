@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { usePhoneDrivingSensors } from '../../../infrastructure/sensors/usePhoneDrivingSensors';
 import {
@@ -215,52 +215,53 @@ export function PhoneSensorBridge({ vehicleId }: Props) {
         </TouchableOpacity>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.metricStrip}>
+      <View style={styles.metricRow}>
         {values.map(item => (
           <View key={item.label} style={styles.metric}>
-            <Text style={styles.label}>{item.label}</Text>
-            <Text style={styles.value}>{item.value}</Text>
-            <Text style={styles.meta}>{item.meta}</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit style={styles.label}>{item.label}</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit style={styles.value}>{item.value}</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit style={styles.meta}>{item.meta}</Text>
           </View>
         ))}
-      </ScrollView>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { marginTop: 4, marginBottom: 4 },
+  container: { marginTop: 3, marginBottom: 3 },
   calibrationRow: {
-    minHeight: 48,
+    minHeight: 42,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    borderRadius: 12,
+    gap: 7,
+    borderRadius: 11,
     borderWidth: 1,
     borderColor: '#334155',
     backgroundColor: '#11191d',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    marginBottom: 7,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    marginBottom: 6,
   },
   calibrationCopy: { flex: 1 },
-  calibrationTitle: { color: '#cbd5e1', fontSize: 9, fontWeight: '800', letterSpacing: 0.8 },
-  calibrationText: { marginTop: 2, color: '#64748b', fontSize: 9 },
-  calibrateButton: { borderRadius: 999, borderWidth: 1, borderColor: '#d7ff4f', paddingHorizontal: 10, paddingVertical: 6 },
+  calibrationTitle: { color: '#cbd5e1', fontSize: 8, fontWeight: '800', letterSpacing: 0.7 },
+  calibrationText: { marginTop: 2, color: '#64748b', fontSize: 8 },
+  calibrateButton: { borderRadius: 999, borderWidth: 1, borderColor: '#d7ff4f', paddingHorizontal: 9, paddingVertical: 5 },
   calibrateButtonDisabled: { opacity: 0.35 },
-  calibrateButtonText: { color: '#d7ff4f', fontSize: 9, fontWeight: '800' },
-  metricStrip: { gap: 7, paddingRight: 6 },
+  calibrateButtonText: { color: '#d7ff4f', fontSize: 8, fontWeight: '800' },
+  metricRow: { flexDirection: 'row', gap: 5 },
   metric: {
-    width: 92,
-    minHeight: 72,
-    borderRadius: 12,
+    flex: 1,
+    minWidth: 0,
+    minHeight: 58,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: '#263239',
     backgroundColor: '#11191d',
-    paddingHorizontal: 9,
-    paddingVertical: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 6,
   },
-  label: { color: '#64748b', fontSize: 8, fontWeight: '800', letterSpacing: 0.6 },
-  value: { marginTop: 4, color: '#f8fafc', fontSize: 19, fontWeight: '800' },
-  meta: { marginTop: 2, color: '#64748b', fontSize: 8 },
+  label: { color: '#64748b', fontSize: 7, fontWeight: '800', letterSpacing: 0.3 },
+  value: { marginTop: 3, color: '#f8fafc', fontSize: 16, fontWeight: '800' },
+  meta: { marginTop: 1, color: '#64748b', fontSize: 7 },
 });

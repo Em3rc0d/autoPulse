@@ -1,14 +1,16 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import {
-  buildStartupBriefing,
-  createDriverVoiceMemory,
-  decideStartupVoiceWhenReady,
-  markStartupSpoken,
   resolveColdStartMaturity,
   resolveStartupAssessment,
   type DriverAdvisory,
 } from '../../../domain/driver-intelligence';
+import { driverAlertPhrase } from '../../../domain/driver-intelligence/DriverAlertLexicon';
+import {
+  DEFAULT_DRIVER_PREFERENCES,
+  loadDriverPreferences,
+  type DriverPreferences,
+} from '../../../application/settings/DriverPreferences';
 import { speakDriverMessage } from '../../../infrastructure/voice/AndroidDriverVoice';
 import { useDriverMode } from './DriverModeContext';
 
@@ -19,9 +21,18 @@ interface Props {
 
 export function DriverStartupCoordinator({ diagnosticScanComplete, advisories }: Props) {
   const { observations } = useDriverMode();
-  const voiceMemory = useRef(createDriverVoiceMemory());
   const [briefed, setBriefed] = useState(false);
   const [nowMs, setNowMs] = useState(Date.now());
+  const [preferences, setPreferences] = useState<DriverPreferences>(DEFAULT_DRIVER_PREFERENCES);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    void loadDriverPreferences()
+      .then(next => { if (mounted) setPreferences(next); })
+      .finally(() => { if (mounted) setPreferencesLoaded(true); });
+    return () => { mounted = false; };
+  }, []);
 
   useEffect(() => {
     if (briefed) return;
@@ -49,31 +60,28 @@ export function DriverStartupCoordinator({ diagnosticScanComplete, advisories }:
   }), [diagnosticScanComplete, maturity.complete, advisories, observations.ENGINE_RPM?.firstObservedAt, observations.ENGINE_COOLANT?.firstObservedAt, nowMs]);
 
   useEffect(() => {
-    if (briefed || !assessment.canBrief || assessment.scanInProgress) return;
-    const briefing = buildStartupBriefing(advisories);
-    const decision = decideStartupVoiceWhenReady(briefing, voiceMemory.current, assessment);
-    if (!decision.shouldSpeak || !decision.message) return;
-
-    speakDriverMessage(decision.message).then(spoken => {
-      if (!spoken) return;
-      voiceMemory.current = markStartupSpoken(voiceMemory.current);
+    if (briefed || !preferencesLoaded || !assessment.canBrief || assessment.scanInProgress) return;
+    if (!preferences.voiceAlertsEnabled) {
       setBriefed(true);
+      return;
+    }
+
+    const message = driverAlertPhrase('AUTOPULSE_READY', preferences.voiceLanguage);
+    void speakDriverMessage(message, preferences.voiceLanguage).then(spoken => {
+      if (spoken) setBriefed(true);
     });
-  }, [briefed, assessment, advisories]);
+  }, [briefed, assessment.canBrief, assessment.scanInProgress, preferences, preferencesLoaded]);
 
   if (briefed || assessment.phase === 'READY') return null;
 
-  // This is a transient status, not an UNKNOWN vehicle metric. It tells the
-  // driver why the final briefing has not happened yet without inventing health.
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>
-        {maturity.kind === 'COLD' ? 'COLD-START OBSERVATION' : 'STARTUP OBSERVATION'}
+      <View style={styles.dot} />
+      <Text numberOfLines={1} style={styles.title}>
+        {maturity.kind === 'COLD' ? 'COLD START' : 'STARTUP'}
       </Text>
-      <Text style={styles.message}>
-        {maturity.kind === 'COLD'
-          ? 'AutoPulse is observing engine warm-up.'
-          : 'AutoPulse is collecting stable engine evidence.'}
+      <Text numberOfLines={1} style={styles.message}>
+        {maturity.kind === 'COLD' ? 'Observing warm-up' : 'Collecting stable evidence'}
       </Text>
     </View>
   );
@@ -81,24 +89,18 @@ export function DriverStartupCoordinator({ diagnosticScanComplete, advisories }:
 
 const styles = StyleSheet.create({
   container: {
-    marginHorizontal: 16,
-    marginTop: 8,
-    borderRadius: 10,
+    minHeight: 30,
+    marginHorizontal: 12,
+    marginTop: 5,
+    borderRadius: 9,
     borderWidth: 1,
     borderColor: '#334155',
     backgroundColor: '#11191d',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  title: {
-    color: '#94a3b8',
-    fontSize: 10,
-    fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  message: {
-    color: '#cbd5e1',
-    fontSize: 12,
-    marginTop: 2,
-  },
+  dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#60a5fa', marginRight: 6 },
+  title: { color: '#94a3b8', fontSize: 8, fontWeight: '800', letterSpacing: 0.7, marginRight: 7 },
+  message: { color: '#64748b', fontSize: 9, flex: 1 },
 });

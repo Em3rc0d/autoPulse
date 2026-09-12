@@ -1,0 +1,33 @@
+{
+  "quarry_id": "Q-CHECK-008-DIAGNOSTIC-SAFETY-20260904",
+  "status": "CORE_SEMANTIC_ALLOWLIST_CLOSED_FIXTURE_PROOF_OPEN",
+  "captured_on": "2026-09-04",
+  "scope": "Evidence-backed read-only command boundary for AutoPulse Check Core",
+  "sources": [
+    {
+      "id": "SRC-ELM327-DATASHEET",
+      "kind": "ADAPTER_VENDOR_TECHNICAL_DOCUMENTATION",
+      "name": "ELM327 OBD to RS232 Interpreter Datasheet",
+      "url": "https://www.elmelectronics.com/wp-content/uploads/2017/01/ELM327DS.pdf",
+      "role": "Evidence for standard Mode purposes and explicit destructive consequences of Mode 04, including the need for software to prevent accidental clearing."
+    },
+    {
+      "id": "SRC-AUTOPULSE-CHECK-SAFETY-CONTRACT",
+      "kind": "DESIGN_AUTHORITY",
+      "path": "docs/design/check/CHECK_SAFETY_CONTRACT.md",
+      "role": "Accepted default-deny product safety architecture."
+    },
+    {
+      "id": "SRC-AUTOPULSE-DIAGNOSTIC-CONNECTOR",
+      "kind": "CURRENT_REPOSITORY_EVIDENCE",
+      "path": "mobile-app/src/domain/diagnostics/DiagnosticConnector.ts",
+      "role": "Shows raw/vendor/UDS execution capability that must remain product-gated rather than implicitly allowed."
+    }
+  ],
+  "promotion": {
+    "semantic_service_classification": "CLOSED",
+    "exact_runtime_descriptors": "OPEN",
+    "adversarial_tests": "OPEN",
+    "runtime": "BLOCKED"
+  }
+}

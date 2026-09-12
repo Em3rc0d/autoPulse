@@ -1,10 +1,13 @@
 import { CommandRequest, CommandResult } from './pipeline/types';
 import { STANDARD_OBD_TIER_1 } from '../../../domain/obd/StandardObdCatalogV1';
+import { LIVE_OBD_REQUEST_ORDER } from '../../../domain/obd/LiveObdPollingPolicy';
 
 type ObdCommandExecutor = {
   isConnected: boolean;
   executeCommand(request: CommandRequest): Promise<CommandResult>;
 };
+
+type StallReason = 'TIMEOUT' | 'WRITE_FAILED' | 'DISCONNECTED' | 'UNUSABLE_RESPONSE';
 
 export type PollerDiagnosticEvent =
   | {
@@ -14,11 +17,29 @@ export type PollerDiagnosticEvent =
   | {
       type: 'TRANSPORT_STALLED';
       pid: string;
-      reason: 'TIMEOUT' | 'WRITE_FAILED' | 'DISCONNECTED';
+      reason: StallReason;
       consecutiveFailures: number;
     };
 
 const TRANSPORT_FAILURE_THRESHOLD = 3;
+const UNUSABLE_RESPONSE_THRESHOLD = 6;
+const NO_DATA_RETIRE_THRESHOLD = 3;
+
+const isTransportFailure = (result: CommandResult) =>
+  result.status === 'TIMEOUT' ||
+  result.status === 'WRITE_FAILED' ||
+  result.status === 'DISCONNECTED';
+
+const provesVehiclePathProgress = (result: CommandResult) =>
+  result.status === 'SUCCESS_DECODED' ||
+  result.status === 'SUCCESS_RAW' ||
+  result.status === 'NO_DATA';
+
+const isUnusableResponse = (result: CommandResult) =>
+  result.status === 'ELM_ERROR' ||
+  result.status === 'INVALID_RESPONSE' ||
+  result.status === 'PARTIAL' ||
+  result.status === 'CANCELLED';
 
 export class RealTelemetryPoller {
   private controller: ObdCommandExecutor;
@@ -31,6 +52,7 @@ export class RealTelemetryPoller {
 
   private consecutiveFailures: Record<string, number> = {};
   private consecutiveTransportFailures = 0;
+  private consecutiveUnusableResponses = 0;
   private transportStallEmitted = false;
 
   constructor(
@@ -44,11 +66,17 @@ export class RealTelemetryPoller {
       ...STANDARD_OBD_TIER_1.map(definition => definition.requestId),
       'ATRV'
     ]);
-    this.supportedPids = Array.from(new Set(supportedPids))
-      .filter(pid => decodableRequests.has(pid));
+
+    this.supportedPids = Array.from(new Set(
+      supportedPids
+        .map(pid => String(pid).trim().toUpperCase())
+        .filter(Boolean)
+    )).filter(pid => decodableRequests.has(pid));
 
     if (this.supportedPids.length === 0) {
-      this.supportedPids = ['010C', '010D', '0105', '0104', '010B'];
+      // Capability discovery can fail even while the vehicle path is usable.
+      // Probe only the bounded Driving View v2 set; unsupported commands self-retire.
+      this.supportedPids = [...LIVE_OBD_REQUEST_ORDER];
     }
 
     this.onData = onData;
@@ -59,30 +87,52 @@ export class RealTelemetryPoller {
     if (this.isPolling) return;
     this.isPolling = true;
 
+    const scheduleNext = () => {
+      if (!this.isPolling) return;
+      this.intervalHandle = setTimeout(pollLoop, Math.max(0, intervalMs));
+    };
+
     const pollLoop = async () => {
-      if (!this.isPolling || !this.controller.isConnected || this.supportedPids.length === 0) {
+      if (!this.isPolling) return;
+      if (this.supportedPids.length === 0) {
         this.stop();
         return;
       }
 
-      const pid = this.supportedPids[this.currentPidIndex];
+      const pid = this.supportedPids[this.currentPidIndex] ?? this.supportedPids[0];
+
+      // A controller that already reports disconnected must not silently stop.
+      // Surface one explicit stall so the session controller can enter bounded recovery.
+      if (!this.controller.isConnected) {
+        this.emitTransportStall(pid, 'DISCONNECTED', TRANSPORT_FAILURE_THRESHOLD);
+        this.stop();
+        return;
+      }
+
       this.currentPidIndex = (this.currentPidIndex + 1) % this.supportedPids.length;
 
-      const isAT = pid.toUpperCase().startsWith('AT');
+      const isAT = pid.startsWith('AT');
       const request: CommandRequest = {
         id: Math.random().toString(36).substring(7),
         command: pid,
         family: isAT ? 'ELM_AT' : 'OBD_MODE_01',
         expectedService: isAT ? undefined : '41',
         expectedPid: isAT ? undefined : pid.slice(2),
-        timeoutMs: 1500
+        timeoutMs: isAT ? 1200 : 1500
       };
 
-      const result = await this.controller.executeCommand(request);
-      this.handleResult(pid, result);
-
-      if (this.isPolling) {
-        this.intervalHandle = setTimeout(pollLoop, intervalMs);
+      try {
+        const result = await this.controller.executeCommand(request);
+        this.handleResult(pid, result);
+      } catch (error) {
+        // executeCommand is expected to return a typed failure, but the poller is the
+        // last containment boundary. A thrown transport/pipeline error must not kill
+        // the loop as an unhandled rejection.
+        console.warn(`[RealTelemetryPoller] executeCommand threw for ${pid}`, error);
+        const reason = this.controller.isConnected ? 'WRITE_FAILED' : 'DISCONNECTED';
+        this.recordTransportFailure(pid, reason);
+      } finally {
+        scheduleNext();
       }
     };
 
@@ -97,73 +147,94 @@ export class RealTelemetryPoller {
     }
   }
 
-  private resetTransportHealth() {
+  private resetLinkHealth() {
     this.consecutiveTransportFailures = 0;
+    this.consecutiveUnusableResponses = 0;
     this.transportStallEmitted = false;
   }
 
-  private observeTransportHealth(pid: string, result: CommandResult) {
-    // NO_DATA and ELM_ERROR prove that the adapter answered. They are not a
-    // transport disconnect and must never trigger connection recovery.
-    if (
-      result.status === 'SUCCESS_DECODED' ||
-      result.status === 'SUCCESS_RAW' ||
-      result.status === 'NO_DATA' ||
-      result.status === 'ELM_ERROR'
-    ) {
-      this.resetTransportHealth();
-      return;
-    }
+  private emitTransportStall(
+    pid: string,
+    reason: StallReason,
+    consecutiveFailures: number,
+  ) {
+    if (this.transportStallEmitted) return;
+    this.transportStallEmitted = true;
+    this.onDiagnostic?.({
+      type: 'TRANSPORT_STALLED',
+      pid,
+      reason,
+      consecutiveFailures,
+    });
+  }
 
-    if (
-      result.status !== 'TIMEOUT' &&
-      result.status !== 'WRITE_FAILED' &&
-      result.status !== 'DISCONNECTED'
-    ) {
-      return;
-    }
-
+  private recordTransportFailure(
+    pid: string,
+    reason: 'TIMEOUT' | 'WRITE_FAILED' | 'DISCONNECTED',
+  ) {
     this.consecutiveTransportFailures += 1;
-    if (
-      this.consecutiveTransportFailures >= TRANSPORT_FAILURE_THRESHOLD &&
-      !this.transportStallEmitted
-    ) {
-      this.transportStallEmitted = true;
-      this.onDiagnostic?.({
-        type: 'TRANSPORT_STALLED',
-        pid,
-        reason: result.status,
-        consecutiveFailures: this.consecutiveTransportFailures
-      });
+    if (this.consecutiveTransportFailures >= TRANSPORT_FAILURE_THRESHOLD) {
+      this.emitTransportStall(pid, reason, this.consecutiveTransportFailures);
     }
   }
 
-  private handleResult(pid: string, result: CommandResult) {
-    this.observeTransportHealth(pid, result);
+  private observeLinkHealth(pid: string, result: CommandResult) {
+    if (isTransportFailure(result)) {
+      this.consecutiveUnusableResponses = 0;
+      this.recordTransportFailure(pid, result.status as 'TIMEOUT' | 'WRITE_FAILED' | 'DISCONNECTED');
+      return;
+    }
 
-    if (result.status === 'SUCCESS_DECODED' || result.status === 'SUCCESS_RAW') {
-      this.consecutiveFailures[pid] = 0;
-    } else if (result.status === 'NO_DATA') {
+    if (provesVehiclePathProgress(result)) {
+      // A decoded/raw vehicle response or an explicit NO_DATA proves the request
+      // round-trip is alive. Only this class of response fully resets link health.
+      this.resetLinkHealth();
+      return;
+    }
+
+    // Typed malformed/partial/adapter-error responses prove the JS pipeline returned,
+    // but they do NOT prove that the ECU path is healthy. A sufficiently long run of
+    // unusable replies is treated as a degraded vehicle path and enters the exact same
+    // bounded recovery used for timeouts. This is intentionally global across PIDs: an
+    // intermittent unsupported optional PID cannot trigger recovery when other signals
+    // are still returning usable vehicle-path evidence.
+    this.consecutiveTransportFailures = 0;
+    if (isUnusableResponse(result)) {
+      this.consecutiveUnusableResponses += 1;
+      if (this.consecutiveUnusableResponses >= UNUSABLE_RESPONSE_THRESHOLD) {
+        this.emitTransportStall(pid, 'UNUSABLE_RESPONSE', this.consecutiveUnusableResponses);
+      }
+    }
+  }
+
+  private retirePid(pid: string) {
+    const indexToRemove = this.supportedPids.indexOf(pid);
+    if (indexToRemove === -1) return;
+
+    this.supportedPids.splice(indexToRemove, 1);
+    this.currentPidIndex = this.supportedPids.length === 0
+      ? 0
+      : this.currentPidIndex % this.supportedPids.length;
+  }
+
+  private handleResult(pid: string, result: CommandResult) {
+    this.observeLinkHealth(pid, result);
+
+    if (result.status === 'NO_DATA') {
       this.consecutiveFailures[pid] = (this.consecutiveFailures[pid] || 0) + 1;
 
-      if (this.consecutiveFailures[pid] >= 3) {
-        console.log(`[RealTelemetryPoller] Retiring PID ${pid} after 3 consecutive NO_DATA`);
-        const indexToRemove = this.supportedPids.indexOf(pid);
-        if (indexToRemove !== -1) {
-          this.supportedPids.splice(indexToRemove, 1);
-          if (this.currentPidIndex >= indexToRemove && this.currentPidIndex > 0) {
-            this.currentPidIndex--;
-          }
-        }
-
+      if (this.consecutiveFailures[pid] >= NO_DATA_RETIRE_THRESHOLD) {
+        console.log(`[RealTelemetryPoller] Retiring PID ${pid} after ${NO_DATA_RETIRE_THRESHOLD} consecutive NO_DATA`);
+        this.retirePid(pid);
         this.onDiagnostic?.({ type: 'PID_RETIRED_NO_DATA', pid });
         this.onData(result);
 
-        if (this.supportedPids.length === 0) {
-          this.stop();
-        }
+        if (this.supportedPids.length === 0) this.stop();
         return;
       }
+    } else {
+      // "Consecutive NO_DATA" must be literal. Any other result breaks the streak.
+      this.consecutiveFailures[pid] = 0;
     }
 
     this.onData(result);

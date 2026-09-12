@@ -1,0 +1,33 @@
+{
+  "quarry_id": "Q-CHECK-002-SUPPORTED-PID-DISCOVERY-20260904",
+  "status": "SEMANTIC_BOUNDARY_CLOSED_FIXTURES_OPEN",
+  "captured_on": "2026-09-04",
+  "scope": "Endpoint-scoped standard Mode 01 PID support discovery",
+  "sources": [
+    {
+      "id": "SRC-ELM327-DATASHEET",
+      "kind": "ADAPTER_VENDOR_TECHNICAL_DOCUMENTATION",
+      "name": "ELM327 OBD to RS232 Interpreter Datasheet",
+      "url": "https://www.elmelectronics.com/wp-content/uploads/2017/01/ELM327DS.pdf",
+      "role": "Evidence for Mode 01 PID 00 support-bitmap request/response and the fact that vehicles need not support every PID."
+    },
+    {
+      "id": "SRC-WIKIPEDIA-OBD2-PIDS",
+      "kind": "SECONDARY_REFERENCE",
+      "url": "https://en.wikipedia.org/wiki/OBD-II_PIDs",
+      "role": "Cross-check for 32-bit support bitmap interpretation and support-block PID ranges."
+    },
+    {
+      "id": "SRC-AUTOPULSE-PID-QUARRY",
+      "kind": "RESEARCH_EVIDENCE",
+      "path": "mining-site/quarries/Q-OBD2-PID-CATALOG-20260904/",
+      "role": "Reference-defined Mode 01 universe mined from the frozen OBD-v4.3 DBC; not vehicle-support evidence."
+    }
+  ],
+  "promotion": {
+    "semantic_boundary": "CLOSED",
+    "fixtures": "OPEN",
+    "physical_multi_ecu_evidence": "OPEN",
+    "runtime": "BLOCKED"
+  }
+}
