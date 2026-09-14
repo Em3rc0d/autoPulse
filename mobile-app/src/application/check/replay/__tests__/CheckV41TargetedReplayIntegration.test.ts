@@ -4,32 +4,32 @@ import { DiagnosticReplayExecutor } from '../DiagnosticReplayExecutor';
 import type { DiagnosticReplayFixture } from '../DiagnosticReplayFixture';
 import { runDiagnosticScan } from '../DiagnosticScanEngine';
 
-const readinessFixture: DiagnosticReplayFixture = Object.freeze({
+const readinessFixture: DiagnosticReplayFixture = {
   fixtureId: 'check-v4.1-targeted-0101-synthetic',
   protocol: 'ISO_14230_KWP',
   provenance: 'SYNTHETIC_NOT_PHYSICAL_CERTIFICATION: CHECK v4.1 planner-to-executor authorization regression',
   startedAt: 1000,
-  scripts: Object.freeze([{
+  scripts: [{
     semanticId: 'check.obd.mode01.observe.01',
     targetEndpointId: null,
-    events: Object.freeze([{
+    events: [{
       kind: 'COMMAND_RESPONSE',
       durationMs: 5,
       observedResponseBytes: 6,
-      envelope: Object.freeze({
-        kind: 'POSITIVE_RESPONSE' as const,
+      envelope: {
+        kind: 'POSITIVE_RESPONSE',
         requestService: '01',
         responseService: '41',
-        payload: Object.freeze([0x01, 0x80, 0x07, 0xe1, 0x00]),
-        protocol: 'ISO_14230_KWP' as const,
+        payload: [0x01, 0x80, 0x07, 0xe1, 0x00],
+        protocol: 'ISO_14230_KWP',
         sourceEndpointId: null,
         provenance: 'synthetic 0101 response for authorization regression',
         observedAt: 1005,
         rawText: '41018007E100',
-      }),
-    }]),
-  }]),
-});
+      },
+    }],
+  }],
+};
 
 function readinessPlan() {
   return buildDiagnosticScanPlan({
@@ -58,7 +58,11 @@ function readinessPlan() {
     },
     deadlinePolicy: {
       overallDeadlineMs: 5000,
-      stageDeadlineMs: { TARGETED_PID_ACQUISITION: 4000 },
+      stageDeadlineMs: {
+        CAPABILITY_DISCOVERY: 5000,
+        DTC_CORE: 5000,
+        TARGETED_PID_ACQUISITION: 4000,
+      },
       provenance: 'v4.1 targeted replay integration',
     },
   });
