@@ -135,6 +135,9 @@ export default function CheckRunScreen() {
   const scanPresentation = result ? presentCheckScanState(result.scan.state) : null;
   const capabilityPresentation = result ? presentCapabilityAssessment(result.capabilityAssessment) : null;
   const issueCount = result?.concerns.length ?? 0;
+  const selectedTargetedCount = result?.targetedEvidencePlan.requests.length ?? 0;
+  const executedTargetedCount = result?.targetedEvidenceScan?.usage.commandsIssued ?? 0;
+  const targetedExecutionIncomplete = selectedTargetedCount > executedTargetedCount;
 
   return (
     <View style={styles.container}>
@@ -142,7 +145,7 @@ export default function CheckRunScreen() {
         <Text style={styles.back} onPress={() => navigation.goBack()}>← Check</Text>
         <View style={styles.headerRow}>
           <View style={styles.flex}>
-            <Text style={styles.eyebrow}>ECU CHECK · V4</Text>
+            <Text style={styles.eyebrow}>ECU CHECK · V4.1</Text>
             <Text style={styles.title}>{vehicle?.alias ?? 'Vehicle'} Check</Text>
           </View>
           <Text style={styles.readOnlyBadge}>READ ONLY</Text>
@@ -198,7 +201,9 @@ export default function CheckRunScreen() {
                   <Text style={styles.metricValue}>{formatDecodedPidObservation(item).replace(`${item.signals[0]?.label}: `, '')}</Text>
                 </View>
               )) : <Text style={styles.muted}>No promoted current-data value was established.</Text>}
-              <Text style={styles.walletNote}>{result.targetedEvidencePlan.requests.length} targeted PID request{result.targetedEvidencePlan.requests.length === 1 ? '' : 's'} selected from the larger reference wallet. No blind sweep.</Text>
+              <Text style={targetedExecutionIncomplete ? styles.targetedUnavailable : styles.walletNote}>
+                {selectedTargetedCount} targeted PID request{selectedTargetedCount === 1 ? '' : 's'} selected · {executedTargetedCount} executed. {targetedExecutionIncomplete ? 'Targeted evidence was not fully acquired in this run. ' : ''}No blind sweep.
+              </Text>
             </View>
 
             <View style={styles.panel}>
@@ -211,7 +216,7 @@ export default function CheckRunScreen() {
                     <View key={monitor.id} style={styles.metricRow}><Text style={styles.metricLabel}>{monitor.label}</Text><Text style={monitor.state === 'READY' ? styles.positive : monitor.state === 'NOT_READY' ? styles.attention : styles.neutral}>{monitor.state.replace('_', ' ')}</Text></View>
                   ))}
                 </>
-              ) : <Text style={styles.muted}>Readiness was not established from a validated PID 0101 response.</Text>}
+              ) : <Text style={styles.muted}>{targetedExecutionIncomplete && result.targetedEvidencePlan.requests.some(item => item.pid === '01') ? 'Readiness was selected but not executed successfully in this run.' : 'Readiness was not established from a validated PID 0101 response.'}</Text>}
               <Text style={styles.scopeNote}>NOT READY means the monitor has not completed; it does not mean the monitor failed.</Text>
             </View>
 
@@ -246,7 +251,8 @@ export default function CheckRunScreen() {
                 <Text style={styles.meta}>Protocol evidence: {result.protocolEvidence || 'not retained'}</Text>
                 <Text style={styles.meta}>Core commands: {result.scanCommandCount}</Text>
                 <Text style={styles.meta}>v3 corroboration commands: {result.directObservationCommandCount}</Text>
-                <Text style={styles.meta}>v4 targeted commands: {result.targetedEvidenceScan?.usage.commandsIssued ?? 0}</Text>
+                <Text style={styles.meta}>v4 targeted selected: {selectedTargetedCount}</Text>
+                <Text style={styles.meta}>v4 targeted executed: {executedTargetedCount}</Text>
                 <Text style={styles.meta}>Planner: {result.targetedEvidencePlan.version}</Text>
                 <Text style={styles.meta}>Selected: {result.targetedEvidencePlan.requests.map(item => `01${item.pid}`).join(' · ') || 'none'}</Text>
                 {result.rawEvidence.map((evidence, index) => (
@@ -306,6 +312,7 @@ const styles = StyleSheet.create({
   metricLabel: { color: '#94a3b8', fontSize: 12, flex: 1 },
   metricValue: { color: '#f8fafc', fontSize: 12, fontWeight: '800', textAlign: 'right', flex: 1 },
   walletNote: { color: '#64748b', fontSize: 10, lineHeight: 15, marginTop: 10 },
+  targetedUnavailable: { color: '#fbbf24', fontSize: 10, lineHeight: 15, marginTop: 10 },
   positive: { color: '#4ade80', fontWeight: '800' },
   attention: { color: '#fbbf24', fontWeight: '800' },
   neutral: { color: '#94a3b8', fontWeight: '700' },
