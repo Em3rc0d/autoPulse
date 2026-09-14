@@ -7,8 +7,9 @@ import {
   CHECK_MUTATING_OBD_SERVICES,
   resolveDescriptorBySemanticId,
 } from './DiagnosticDescriptorRegistry';
+import { CHECK_CORE_DESCRIPTOR_REGISTRY_V3 } from './DiagnosticDescriptorRegistryV3';
 
-export const CHECK_COMMAND_SAFETY_POLICY_VERSION = 'check-command-safety/v2' as const;
+export const CHECK_COMMAND_SAFETY_POLICY_VERSION = 'check-command-safety/v3' as const;
 
 export type DiagnosticSafetyBlockReason =
   | 'REGISTRY_NOT_ALLOWLISTED'
@@ -68,6 +69,7 @@ function matchesCanonicalDefinition(
 function canonicalRegistryFor(version: string): DiagnosticDescriptorRegistry | undefined {
   if (version === CHECK_CORE_DESCRIPTOR_REGISTRY_V1.version) return CHECK_CORE_DESCRIPTOR_REGISTRY_V1;
   if (version === CHECK_CORE_DESCRIPTOR_REGISTRY_V2.version) return CHECK_CORE_DESCRIPTOR_REGISTRY_V2;
+  if (version === CHECK_CORE_DESCRIPTOR_REGISTRY_V3.version) return CHECK_CORE_DESCRIPTOR_REGISTRY_V3;
   return undefined;
 }
 
@@ -95,9 +97,9 @@ export function evaluateDescriptorSafety(
 }
 
 /**
- * Registry authority is fail-closed. Only the two immutable canonical Check
- * registries are recognized; a caller cannot mint READ_ONLY_PROVEN operations
- * by constructing a look-alike registry with a new version or changed fields.
+ * Registry authority is fail-closed. Only immutable canonical Check registries
+ * are recognized; a caller cannot mint READ_ONLY_PROVEN operations by creating
+ * a look-alike version or by mutating any canonical descriptor field.
  */
 export function authorizeRegisteredDescriptor(
   registry: DiagnosticDescriptorRegistry,
