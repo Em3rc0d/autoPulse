@@ -30,7 +30,7 @@ import {
   type DiagnosticConcernV2,
 } from '../intelligence/DiagnosticConcernEngine';
 
-export const CHECK_PHYSICAL_PILOT_V4_VERSION = 'check-physical-pilot/v4' as const;
+export const CHECK_PHYSICAL_PILOT_V4_VERSION = 'check-physical-pilot/v4.1' as const;
 
 export type CheckPhysicalPilotStageV4 =
   | CheckPhysicalPilotStage
@@ -61,7 +61,13 @@ export interface RunCheckPhysicalPilotV4Input {
   readonly onStage?: (stage: CheckPhysicalPilotStageV4) => void;
 }
 
-const V4_PROVENANCE = 'CHECK physical pilot v4; read-only targeted evidence; large PID wallet is knowledge, not a blind scan list';
+export interface TargetedCapabilityPlanningScope {
+  readonly advertisedPids: readonly string[];
+  readonly capabilityInconclusive: boolean;
+  readonly limitation: string | null;
+}
+
+const V4_PROVENANCE = 'CHECK physical pilot v4.1; read-only targeted evidence; large PID wallet is knowledge, not a blind scan list';
 const MIN_INTER_COMMAND_DELAY_MS = 120;
 const REQUEST_TIMEOUT_MS = 7000;
 
@@ -82,11 +88,39 @@ function collectReceiptEvidence(
   })));
 }
 
-function advertisedPidsFromBase(base: CheckPhysicalPilotResult): readonly string[] {
-  const values = base.capabilityAssessment.observations
-    .filter(item => item.outcome === 'VALID')
-    .flatMap(item => item.advertisedPids);
-  return Object.freeze([...new Set(values)]);
+/**
+ * Capability evidence remains response-scoped. A single normalized capability
+ * response may inform the functional pilot selection. Two or more responses
+ * are never unioned: until physical endpoint targeting is promoted, the
+ * evidence planner falls back to its small bounded read-only set instead.
+ */
+export function capabilityPlanningScopeFromBase(
+  base: Pick<CheckPhysicalPilotResult, 'capabilityAssessment'>,
+): TargetedCapabilityPlanningScope {
+  const observations = base.capabilityAssessment.observations;
+  const valid = observations.filter(item => item.outcome === 'VALID');
+
+  if (observations.length === 1 && valid.length === 1) {
+    return Object.freeze({
+      advertisedPids: Object.freeze([...valid[0].advertisedPids]),
+      capabilityInconclusive: base.capabilityAssessment.state !== 'ADVERTISED',
+      limitation: null,
+    });
+  }
+
+  if (observations.length > 1) {
+    return Object.freeze({
+      advertisedPids: Object.freeze([]),
+      capabilityInconclusive: true,
+      limitation: 'v4.1-capability-scope:MULTI_RESPONSE_NO_GLOBAL_PID_UNION',
+    });
+  }
+
+  return Object.freeze({
+    advertisedPids: Object.freeze([]),
+    capabilityInconclusive: true,
+    limitation: null,
+  });
 }
 
 function dtcCodesFromBase(base: CheckPhysicalPilotResult): readonly string[] {
@@ -97,7 +131,7 @@ function dtcCodesFromBase(base: CheckPhysicalPilotResult): readonly string[] {
 
 function buildTargetedPlan(protocol: DiagnosticProtocol, evidencePlan: DiagnosticEvidencePlanV2) {
   return buildDiagnosticScanPlan({
-    planId: `check-v4-targeted:${Date.now()}`,
+    planId: `check-v4.1-targeted:${Date.now()}`,
     createdAt: Date.now(),
     protocol,
     registry: CHECK_CORE_DESCRIPTOR_REGISTRY_V3,
@@ -146,21 +180,22 @@ export async function runCheckPhysicalPilotV4(input: RunCheckPhysicalPilotV4Inpu
   });
 
   input.onStage?.('PLANNING_TARGETED_EVIDENCE');
+  const capabilityScope = capabilityPlanningScopeFromBase(base);
   const evidencePlan = buildDiagnosticEvidencePlanV2({
     dtcCodes: dtcCodesFromBase(base),
-    advertisedPids: advertisedPidsFromBase(base),
-    capabilityInconclusive: base.capabilityAssessment.state !== 'ADVERTISED',
+    advertisedPids: capabilityScope.advertisedPids,
+    capabilityInconclusive: capabilityScope.capabilityInconclusive,
     maxCommands: 12,
   });
 
   const targetedRaw: CheckPhysicalRawEvidence[] = [];
   let targetedEvidenceScan: DiagnosticScanEngineResult | null = null;
-  const targetedLimitations: string[] = [];
+  const targetedLimitations: string[] = capabilityScope.limitation ? [capabilityScope.limitation] : [];
 
   if (evidencePlan.requests.length > 0 && !input.cancellation.isCancelled) {
     const plan = buildTargetedPlan(base.protocol, evidencePlan);
     if (plan.status === 'BLOCKED') {
-      targetedLimitations.push(...plan.blockedProposals.map(item => `v4-targeted:${item.semanticId}:${item.reason}`));
+      targetedLimitations.push(...plan.blockedProposals.map(item => `v4.1-targeted:${item.semanticId}:${item.reason}`));
     } else {
       input.onStage?.('RUNNING_TARGETED_EVIDENCE');
       const executor = new RealCheckPlannedExecutor(
@@ -174,7 +209,7 @@ export async function runCheckPhysicalPilotV4(input: RunCheckPhysicalPilotV4Inpu
       );
       targetedEvidenceScan = await runDiagnosticScan({ plan, executor });
       targetedLimitations.push(...targetedEvidenceScan.limitations);
-      targetedLimitations.push(...plan.blockedProposals.map(item => `v4-targeted:${item.semanticId}:${item.reason}`));
+      targetedLimitations.push(...plan.blockedProposals.map(item => `v4.1-targeted:${item.semanticId}:${item.reason}`));
     }
   }
 
@@ -196,8 +231,9 @@ export async function runCheckPhysicalPilotV4(input: RunCheckPhysicalPilotV4Inpu
   const userLimitations = Object.freeze([
     ...baseUserLimitations,
     'Readiness is decoded from PID 0101 when a validated response is observed. NOT_READY does not mean a monitor failed.',
-    'Mode 06 and Freeze Frame remain gated until their physical/replay decoder contracts are promoted; v4 does not guess them.',
+    'Mode 06 and Freeze Frame remain gated until their physical/replay decoder contracts are promoted; v4.1 does not guess them.',
     'The PID wallet contains broad reference knowledge, but Check executes only the small concern-driven read-only subset selected for this vehicle.',
+    ...(capabilityScope.limitation ? ['Multiple capability responses are kept separate. AutoPulse does not union their advertised PIDs into vehicle-wide support.'] : []),
   ]);
   const technicalLimitations = Object.freeze([...base.technicalLimitations, ...targetedLimitations]);
   const limitations = Object.freeze([...technicalLimitations, ...userLimitations]);
