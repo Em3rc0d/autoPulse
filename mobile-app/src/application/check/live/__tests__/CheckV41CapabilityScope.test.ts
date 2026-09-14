@@ -1,5 +1,5 @@
 import { capabilityPlanningScopeFromBase } from '../CheckPhysicalPilotV4';
-import type { CheckCapabilityAssessment } from '../CheckPhysicalPilot';
+import type { CheckCapabilityAssessment, CheckCapabilityObservation } from '../CheckPhysicalPilot';
 
 function base(capabilityAssessment: CheckCapabilityAssessment) {
   return { capabilityAssessment };
@@ -9,13 +9,14 @@ const observation = (
   observationIndex: number,
   advertisedPids: readonly string[],
   sourceEndpointId: string | null = null,
-  outcome: 'VALID' | 'NO_DATA' = 'VALID',
-) => Object.freeze({
+  outcome: CheckCapabilityObservation['outcome'] = 'VALID',
+): CheckCapabilityObservation => Object.freeze({
   observationIndex,
   sourceEndpointId,
   outcome,
   command: '0100',
   advertisedPids: Object.freeze([...advertisedPids]),
+  ...(outcome === 'INVALID' ? { limitation: 'fixture invalid capability response' } : {}),
 });
 
 describe('CHECK v4.1 capability planning scope', () => {
@@ -77,7 +78,7 @@ describe('CHECK v4.1 capability planning scope', () => {
       state: 'ADVERTISED',
       observations: Object.freeze([
         observation(0, ['0101', '0105'], 'ecu-a'),
-        observation(1, [], 'ecu-b', 'NO_DATA'),
+        observation(1, [], 'ecu-b', 'INVALID'),
       ]),
       validObservationCount: 1,
       invalidObservationCount: 1,
