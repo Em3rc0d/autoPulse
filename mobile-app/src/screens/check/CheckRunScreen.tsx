@@ -82,20 +82,27 @@ export default function CheckRunScreen() {
   const [showTechnical, setShowTechnical] = useState(false);
   const cancellationRef = useRef(new CheckPilotCancellationToken());
   const controllerRef = useRef<RealObdController | null>(null);
-  const connection = connectionHandleId ? activeBleController.getConnection(connectionHandleId) : null;
 
   useEffect(() => () => {
     cancellationRef.current.cancel();
     controllerRef.current?.disconnect();
-    if (connection) {
-      void connection.device.cancelConnection().catch(() => undefined);
-      activeBleController.releaseConnection();
-    }
-  }, [connection]);
+    controllerRef.current = null;
+    activeBleController.releaseLease('CHECK');
+  }, []);
 
   const run = async () => {
-    if (!connection || !connectionHandleId) {
+    if (!connectionHandleId) {
       setError('The retained OBD connection is no longer available. Reconnect the adapter.');
+      setUiState('ERROR');
+      return;
+    }
+
+    const connection = activeBleController.claimConnection(connectionHandleId, 'CHECK');
+    if (!connection) {
+      const owner = activeBleController.getOwner();
+      setError(owner === 'LIVE'
+        ? 'The OBD adapter is still in use by Live. Stop the Live session before running Check.'
+        : 'The retained OBD connection is no longer available. Reconnect the adapter.');
       setUiState('ERROR');
       return;
     }
@@ -124,6 +131,10 @@ export default function CheckRunScreen() {
         setError(reason instanceof Error ? reason.message : 'Check stopped safely.');
         setUiState('ERROR');
       }
+    } finally {
+      controller.disconnect();
+      controllerRef.current = null;
+      activeBleController.releaseLease('CHECK');
     }
   };
 
