@@ -179,8 +179,10 @@ function DrivingPresentationSurface({
   const { language, text } = useAppLanguage();
   const unresolved = alertEpisode.state === 'UNRESOLVED';
   const severity = unresolved ? alertEpisode.peakSeverity : alert?.severity;
-  const hasCurrentTelemetryEvidence = Boolean(
-    presentation.primary || presentation.secondaryA || presentation.secondaryB
+  const visibleMetrics = [presentation.primary, presentation.secondaryA, presentation.secondaryB]
+    .filter((metric): metric is ResolvedDrivingMetric => Boolean(metric));
+  const hasCurrentEcuTelemetryEvidence = visibleMetrics.some(metric =>
+    !['ADAPTER_VOLTAGE', 'GNSS_SPEED', 'PITCH', 'ROLL', 'ALTITUDE', 'HEADING'].includes(metric.signalId)
   );
   const visualSeverity = severity ?? (motionState === 'UNKNOWN' ? 'S1_ADVISORY' : undefined);
   const tone = toneForSeverity(visualSeverity);
@@ -189,7 +191,7 @@ function DrivingPresentationSurface({
     : unresolved
       ? text('CONDITION UNRESOLVED', 'CONDICIÓN SIN RESOLVER')
       : motionState === 'UNKNOWN'
-        ? (hasCurrentTelemetryEvidence ? text('MOTION UNAVAILABLE', 'MOVIMIENTO NO DISPONIBLE') : text('WAITING FOR ECU DATA', 'ESPERANDO DATOS ECU'))
+        ? (hasCurrentEcuTelemetryEvidence ? text('MOTION UNAVAILABLE', 'MOVIMIENTO NO DISPONIBLE') : text('ECU DATA LIMITED', 'DATOS ECU LIMITADOS'))
         : text('NORMAL', 'NORMAL');
   const icon = alert?.icon ?? (unresolved || motionState === 'UNKNOWN' ? '▲' : '●');
   const secondaryA = presentation.stateFirst ? presentation.primary : presentation.secondaryA;
