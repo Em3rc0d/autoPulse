@@ -62,6 +62,7 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
   const [dataPoints, setDataPoints] = useState<number[]>([]);
   const [hasValidEcuSample, setHasValidEcuSample] = useState(adapterMode !== 'REAL_BLE');
   const [firstEcuSampleAt, setFirstEcuSampleAt] = useState<number | null>(adapterMode !== 'REAL_BLE' ? Date.now() : null);
+  const [lastEcuSampleAt, setLastEcuSampleAt] = useState<number | null>(adapterMode !== 'REAL_BLE' ? Date.now() : null);
   const [sessionController, setSessionController] = useState<RealLiveSessionController | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [terminalOutcome, setTerminalOutcome] = useState<LiveSessionTerminalOutcome | null>(null);
@@ -237,8 +238,10 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
 
     controller.start((result) => {
       if (commandResultContainsValidEcuSample(result)) {
+        const observedAt = Date.now();
         setHasValidEcuSample(true);
-        setFirstEcuSampleAt(previous => previous ?? Date.now());
+        setFirstEcuSampleAt(previous => previous ?? observedAt);
+        setLastEcuSampleAt(observedAt);
       }
 
       if (result.status !== 'SUCCESS_DECODED') return;
@@ -302,6 +305,8 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
     hasValidEcuSample,
     elapsedMs: secondsElapsed * 1000,
     sessionError: terminalOutcome ? null : sessionError,
+    lastValidEcuSampleAgeMs: lastEcuSampleAt === null ? null : Math.max(0, Date.now() - lastEcuSampleAt),
+    staleAfterMs: Math.max(5_000, expectedSignalRefreshMs * 2),
   });
   const waitingForFirstEcuSample = adapterMode === 'REAL_BLE' && !hasValidEcuSample;
   const statusLabel = terminalOutcome?.state === 'INTERRUPTED'
