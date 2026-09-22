@@ -175,6 +175,9 @@ function DrivingPresentationSurface({
 }) {
   const unresolved = alertEpisode.state === 'UNRESOLVED';
   const severity = unresolved ? alertEpisode.peakSeverity : alert?.severity;
+  const hasCurrentTelemetryEvidence = Boolean(
+    presentation.primary || presentation.secondaryA || presentation.secondaryB
+  );
   const visualSeverity = severity ?? (motionState === 'UNKNOWN' ? 'S1_ADVISORY' : undefined);
   const tone = toneForSeverity(visualSeverity);
   const headline = alert
@@ -182,7 +185,7 @@ function DrivingPresentationSurface({
     : unresolved
       ? 'CONDITION UNRESOLVED'
       : motionState === 'UNKNOWN'
-        ? 'TELEMETRY DEGRADED'
+        ? (hasCurrentTelemetryEvidence ? 'MOTION UNAVAILABLE' : 'WAITING FOR ECU DATA')
         : 'NORMAL';
   const icon = alert?.icon ?? (unresolved || motionState === 'UNKNOWN' ? '▲' : '●');
   const secondaryA = presentation.stateFirst ? presentation.primary : presentation.secondaryA;
@@ -196,7 +199,7 @@ function DrivingPresentationSurface({
         <View style={styles.drivingStateCopy}>
           <Text numberOfLines={2} adjustsFontSizeToFit style={[styles.drivingHeadline, { color: tone.text }]}>{headline}</Text>
           <Text style={styles.drivingStateMeta}>
-            {motionState === 'UNKNOWN' ? 'MOTION UNKNOWN · ' : ''}{presentation.readiness}
+            {motionState === 'UNKNOWN' ? 'MOTION EVIDENCE LIMITED · ' : ''}{presentation.readiness}
           </Text>
         </View>
       </View>
