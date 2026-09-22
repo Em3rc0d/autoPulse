@@ -41,6 +41,7 @@ import {
   deriveLiveEcuTruth,
 } from '../../application/live/LiveEcuTruth';
 import { speakDriverMessage } from '../../infrastructure/voice/AndroidDriverVoice';
+import { useAppLanguage } from '../../application/i18n/AppLanguage';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -55,6 +56,7 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
   const navigation = useNavigation<any>();
   const { vehicleId, sessionId, adapterMode, connectionHandleId, supportedPids, initialAdapterVoltage, replayUrl } = route.params || {};
   const { vehicle, loading: vehicleLoading } = useVehicle(vehicleId);
+  const { text } = useAppLanguage();
 
   const [secondsElapsed, setSecondsElapsed] = useState(0);
   const [dataPoints, setDataPoints] = useState<number[]>([]);
@@ -303,9 +305,9 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
   });
   const waitingForFirstEcuSample = adapterMode === 'REAL_BLE' && !hasValidEcuSample;
   const statusLabel = terminalOutcome?.state === 'INTERRUPTED'
-    ? 'SESSION INTERRUPTED'
+    ? text('SESSION INTERRUPTED', 'SESIÓN INTERRUMPIDA')
     : terminalOutcome?.state === 'COMPLETED'
-      ? 'SESSION SAVED'
+      ? text('SESSION SAVED', 'SESIÓN GUARDADA')
       : liveTruth.label;
   const statusColor = terminalOutcome?.state === 'INTERRUPTED'
     ? '#ef4444'
@@ -326,8 +328,8 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerCopy}>
-          <Text style={styles.vehicleAlias}>{vehicleLoading ? 'Vehicle' : vehicle?.alias ?? 'Vehicle'}</Text>
-          <Text style={styles.subtitle}>{vehicle ? `${vehicle.make} ${vehicle.model} · ${vehicle.year}` : 'Live telemetry'}</Text>
+          <Text style={styles.vehicleAlias}>{vehicleLoading ? text('Vehicle', 'Vehículo') : vehicle?.alias ?? text('Vehicle', 'Vehículo')}</Text>
+          <Text style={styles.subtitle}>{vehicle ? `${vehicle.make} ${vehicle.model} · ${vehicle.year}` : text('Live telemetry', 'Telemetría en vivo')}</Text>
         </View>
         <View style={styles.headerActions}>
           {adapterMode === 'REAL_BLE' && firstEcuSampleAt && liveTruth.state === 'LIVE_ECU_DATA' && !terminalOutcome ? (
@@ -351,8 +353,8 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
       {terminalOutcome?.state === 'INTERRUPTED' ? (
         <View style={styles.terminalNotice}>
           <View style={styles.terminalCopy}>
-            <Text style={styles.terminalTitle}>Recording stopped</Text>
-            <Text style={styles.terminalText}>{terminalOutcome.reason ?? 'Unexpected interruption'} · saved evidence remains available.</Text>
+            <Text style={styles.terminalTitle}>{text('Recording stopped', 'Grabación detenida')}</Text>
+            <Text style={styles.terminalText}>{terminalOutcome.reason ?? text('Unexpected interruption', 'Interrupción inesperada')} · {text('saved evidence remains available.', 'la evidencia guardada sigue disponible.')}</Text>
           </View>
           <View style={styles.terminalDot} />
         </View>
@@ -364,19 +366,19 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
         <View style={styles.grid}>
-          <LiveMetricCard label="Engine RPM" value={rpmTracker.value} unit="rpm" state={rpmTracker.advisoryState} stats={rpmTracker.stats} profile={DEMO_PROFILES.ENGINE_RPM} observedAt={rpmTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-engine-rpm" />
-          <LiveMetricCard label="Vehicle Speed" value={speedTracker.value} unit="km/h" state={speedTracker.advisoryState} stats={speedTracker.stats} profile={DEMO_PROFILES.VEHICLE_SPEED} observedAt={speedTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-vehicle-speed" />
-          <LiveMetricCard label="Engine Coolant" value={coolantTracker.value} unit="°C" state={coolantTracker.advisoryState} stats={coolantTracker.stats} profile={DEMO_PROFILES.ENGINE_COOLANT} observedAt={coolantTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-engine-coolant" />
-          <LiveMetricCard label="Engine Load" value={loadTracker.value} unit="%" state={loadTracker.advisoryState} stats={loadTracker.stats} profile={DEMO_PROFILES.ENGINE_LOAD} observedAt={loadTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-engine-load" />
-          <LiveMetricCard label="Throttle Position" value={throttleTracker.value} unit="%" state={throttleTracker.advisoryState} stats={throttleTracker.stats} profile={DEMO_PROFILES.THROTTLE_POSITION} observedAt={throttleTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-throttle-position" />
-          <LiveMetricCard label="ECU Voltage" value={ecuVoltageTracker.value} unit="V" state={ecuVoltageTracker.advisoryState} stats={ecuVoltageTracker.stats} profile={DEMO_PROFILES.CONTROL_VOLTAGE} observedAt={ecuVoltageTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-ecu-voltage" />
-          <LiveMetricCard label="Adapter Voltage" value={adapterVoltageTracker.value} unit="V" state={adapterVoltageTracker.advisoryState} stats={adapterVoltageTracker.stats} profile={DEMO_PROFILES.CONTROL_VOLTAGE} observedAt={adapterVoltageTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'Adapter measurement' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-adapter-voltage" />
+          <LiveMetricCard label={text('Engine RPM', 'RPM del motor')} value={rpmTracker.value} unit="rpm" state={rpmTracker.advisoryState} stats={rpmTracker.stats} profile={DEMO_PROFILES.ENGINE_RPM} observedAt={rpmTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? text('ECU direct', 'ECU directa') : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : text('Virtual', 'Virtual')} testID="live-metric-card-engine-rpm" />
+          <LiveMetricCard label={text('Vehicle Speed', 'Velocidad del vehículo')} value={speedTracker.value} unit="km/h" state={speedTracker.advisoryState} stats={speedTracker.stats} profile={DEMO_PROFILES.VEHICLE_SPEED} observedAt={speedTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-vehicle-speed" />
+          <LiveMetricCard label={text('Engine Coolant', 'Temperatura del motor')} value={coolantTracker.value} unit="°C" state={coolantTracker.advisoryState} stats={coolantTracker.stats} profile={DEMO_PROFILES.ENGINE_COOLANT} observedAt={coolantTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-engine-coolant" />
+          <LiveMetricCard label={text('Engine Load', 'Carga del motor')} value={loadTracker.value} unit="%" state={loadTracker.advisoryState} stats={loadTracker.stats} profile={DEMO_PROFILES.ENGINE_LOAD} observedAt={loadTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-engine-load" />
+          <LiveMetricCard label={text('Throttle Position', 'Posición del acelerador')} value={throttleTracker.value} unit="%" state={throttleTracker.advisoryState} stats={throttleTracker.stats} profile={DEMO_PROFILES.THROTTLE_POSITION} observedAt={throttleTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-throttle-position" />
+          <LiveMetricCard label={text('ECU Voltage', 'Voltaje ECU')} value={ecuVoltageTracker.value} unit="V" state={ecuVoltageTracker.advisoryState} stats={ecuVoltageTracker.stats} profile={DEMO_PROFILES.CONTROL_VOLTAGE} observedAt={ecuVoltageTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? 'ECU direct' : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : 'Virtual'} testID="live-metric-card-ecu-voltage" />
+          <LiveMetricCard label={text('Adapter Voltage', 'Voltaje del adaptador')} value={adapterVoltageTracker.value} unit="V" state={adapterVoltageTracker.advisoryState} stats={adapterVoltageTracker.stats} profile={DEMO_PROFILES.CONTROL_VOLTAGE} observedAt={adapterVoltageTracker.lastUpdateAt} origin={adapterMode === 'REAL_BLE' ? text('Adapter measurement', 'Medición del adaptador') : adapterMode === 'REPLAY_WS' ? 'Laptop Replay' : text('Virtual', 'Virtual')} testID="live-metric-card-adapter-voltage" />
         </View>
 
         {supplement}
 
         <View style={styles.chartContainer}>
-          <Text style={styles.chartTitle}>RPM TREND</Text>
+          <Text style={styles.chartTitle}>{text('RPM TREND', 'TENDENCIA RPM')}</Text>
           {dataPoints.length > 0 ? (
             <LineChart
               data={{ labels: [], datasets: [{ data: dataPoints }] }}
@@ -402,9 +404,9 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
               <Text style={styles.chartPlaceholderText}>
                 {waitingForFirstEcuSample
                   ? liveTruth.state === 'ECU_DATA_DELAYED'
-                    ? 'ECU data delayed · still retrying'
-                    : 'Waiting for first ECU sample…'
-                  : 'Waiting for RPM data…'}
+                    ? text('ECU data delayed · still retrying', 'Datos ECU retrasados · reintentando')
+                    : text('Waiting for first ECU sample…', 'Esperando primera muestra ECU…')
+                  : text('Waiting for RPM data…', 'Esperando datos RPM…')}
               </Text>
             </View>
           )}
@@ -415,16 +417,16 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
         {terminalOutcome ? (
           <View style={styles.terminalActions}>
             <TouchableOpacity style={styles.summaryButton} onPress={openSummary}>
-              <Text style={styles.summaryButtonText}>View Summary</Text>
+              <Text style={styles.summaryButtonText}>{text('View Summary', 'Ver resumen')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.historyButton} onPress={() => navigation.navigate('History')}>
-              <Text style={styles.historyButtonText}>History</Text>
+              <Text style={styles.historyButtonText}>{text('History', 'Historial')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
           <TouchableOpacity style={styles.stopButton} onPress={handleStop}>
             <View style={styles.stopIcon} />
-            <Text style={styles.stopButtonText}>Stop Session</Text>
+            <Text style={styles.stopButtonText}>{text('Stop Session', 'Detener sesión')}</Text>
           </TouchableOpacity>
         )}
       </View>
