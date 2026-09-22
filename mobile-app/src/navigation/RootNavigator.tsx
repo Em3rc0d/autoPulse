@@ -18,6 +18,7 @@ import CheckConnectObdScreen from '../screens/check/CheckConnectObdScreen';
 import CheckRunScreen from '../screens/check/CheckRunScreen';
 import VehicleCheckReportScreen from '../screens/check/VehicleCheckReportScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
+import { useAppLanguage } from '../application/i18n/AppLanguage';
 
 function TabBarIcon({ name, color }: { name: string; color: string }) {
   const iconMap: Record<string, string> = {
@@ -67,6 +68,7 @@ function CheckStack() {
 }
 
 function MainTabs() {
+  const { text } = useAppLanguage();
   return (
     <Tab.Navigator
       screenOptions={{
@@ -77,11 +79,11 @@ function MainTabs() {
         tabBarInactiveTintColor: '#8E8E93',
       }}
     >
-      <Tab.Screen name="Garage" component={GarageStack} options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="garage" color={color} /> }} />
-      <Tab.Screen name="Live" component={LiveStack} options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="live" color={color} /> }} />
-      <Tab.Screen name="Check" component={CheckStack} options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="check" color={color} /> }} />
-      <Tab.Screen name="History" component={HistoryScreen} options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="history" color={color} /> }} />
-      <Tab.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="settings" color={color} /> }} />
+      <Tab.Screen name="Garage" component={GarageStack} options={{ headerShown: false, tabBarLabel: text('Garage', 'Garaje'), tabBarIcon: ({ color }) => <TabBarIcon name="garage" color={color} /> }} />
+      <Tab.Screen name="Live" component={LiveStack} options={{ headerShown: false, tabBarLabel: text('Live', 'En vivo'), tabBarIcon: ({ color }) => <TabBarIcon name="live" color={color} /> }} />
+      <Tab.Screen name="Check" component={CheckStack} options={{ headerShown: false, tabBarLabel: text('Check', 'Check'), tabBarIcon: ({ color }) => <TabBarIcon name="check" color={color} /> }} />
+      <Tab.Screen name="History" component={HistoryScreen} options={{ headerShown: false, tabBarLabel: text('History', 'Historial'), tabBarIcon: ({ color }) => <TabBarIcon name="history" color={color} /> }} />
+      <Tab.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false, tabBarLabel: text('Settings', 'Ajustes'), tabBarIcon: ({ color }) => <TabBarIcon name="settings" color={color} /> }} />
     </Tab.Navigator>
   );
 }
