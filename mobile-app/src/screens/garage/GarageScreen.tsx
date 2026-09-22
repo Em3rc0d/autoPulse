@@ -3,10 +3,12 @@ import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'rea
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useVehicles } from '../../infrastructure/hooks/useVehicles';
+import { useAppLanguage } from '../../application/i18n/AppLanguage';
 
 export default function GarageScreen() {
   const { vehicles, loading, error } = useVehicles();
   const navigation = useNavigation<any>();
+  const { text } = useAppLanguage();
 
   if (loading) {
     return (
@@ -20,7 +22,7 @@ export default function GarageScreen() {
     return (
       <View style={styles.centerContainer}>
         <Ionicons name="warning" size={48} color="#FF3B30" />
-        <Text style={styles.errorText}>Could not load vehicles</Text>
+        <Text style={styles.errorText}>{text("Could not load vehicles", "No se pudieron cargar los vehículos")}</Text>
         <Text style={styles.errorSub}>{error.message}</Text>
       </View>
     );
@@ -33,25 +35,25 @@ export default function GarageScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.welcomeText}>Welcome back</Text>
-        <Text style={styles.title}>My Garage</Text>
+        <Text style={styles.welcomeText}>{text("Welcome back", "Bienvenido")}</Text>
+        <Text style={styles.title}>{text("My Garage", "Mi Garaje")}</Text>
         <View style={styles.workspaceBadge}>
           <Ionicons name="home-outline" size={16} color="#8E8E93" />
-          <Text style={styles.workspaceText}>Local Workspace</Text>
-          <View style={styles.tag}><Text style={styles.tagText}>LOCAL</Text></View>
+          <Text style={styles.workspaceText}>{text("Local Workspace", "Espacio local")}</Text>
+          <View style={styles.tag}><Text style={styles.tagText}>{text("LOCAL", "LOCAL")}</Text></View>
         </View>
       </View>
 
       {vehicles.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="car-sport-outline" size={80} color="#333" />
-          <Text style={styles.emptyTitle}>No vehicles yet</Text>
-          <Text style={styles.emptySub}>Add your first vehicle to start tracking telemetry.</Text>
+          <Text style={styles.emptyTitle}>{text("No vehicles yet", "Aún no hay vehículos")}</Text>
+          <Text style={styles.emptySub}>{text("Add your first vehicle to start tracking telemetry.", "Agrega tu primer vehículo para comenzar a registrar telemetría.")}</Text>
           <TouchableOpacity
             style={styles.primaryButton}
             onPress={() => navigation.navigate('AddVehicle')}
           >
-            <Text style={styles.primaryButtonText}>ADD VEHICLE</Text>
+            <Text style={styles.primaryButtonText}>{text("ADD VEHICLE", "AGREGAR VEHÍCULO")}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -59,12 +61,12 @@ export default function GarageScreen() {
           {/* Primary Vehicle */}
           <View style={styles.primaryCard}>
             <View style={styles.primaryHeader}>
-              <View style={styles.primaryTag}><Ionicons name="star" size={12} color="#FF6B00" /><Text style={styles.primaryTagText}>PRIMARY</Text></View>
+              <View style={styles.primaryTag}><Ionicons name="star" size={12} color="#FF6B00" /><Text style={styles.primaryTagText}>{text("PRIMARY", "PRINCIPAL")}</Text></View>
             </View>
             <View style={styles.primaryDetails}>
               <Text style={styles.vehicleName}>{primaryVehicle.alias}</Text>
               <Text style={styles.vehicleDesc}>
-                {primaryVehicle.make || 'Unknown'} {primaryVehicle.model || ''} • {primaryVehicle.year || 'N/A'}
+                {primaryVehicle.make || text('Unknown', 'Desconocido')} {primaryVehicle.model || ''} • {primaryVehicle.year || text('N/A', 'N/D')}
               </Text>
               {primaryVehicle.vin && <Text style={styles.vinText}>VIN: {primaryVehicle.vin}</Text>}
             </View>
@@ -73,7 +75,7 @@ export default function GarageScreen() {
               onPress={() => navigation.navigate('VehicleDetail', { vehicleId: primaryVehicle.id })}
             >
               <Ionicons name="car-outline" size={20} color="#000" />
-              <Text style={styles.openButtonText}>OPEN VEHICLE</Text>
+              <Text style={styles.openButtonText}>{text("OPEN VEHICLE", "ABRIR VEHÍCULO")}</Text>
             </TouchableOpacity>
           </View>
 
@@ -88,7 +90,7 @@ export default function GarageScreen() {
                 >
                   <Text style={styles.secondaryName} numberOfLines={1}>{v.alias}</Text>
                   <Text style={styles.secondaryDesc} numberOfLines={1}>
-                    {v.make || 'Unknown'} {v.model || ''}
+                    {v.make || text('Unknown', 'Desconocido')} {v.model || ''}
                   </Text>
                   <Ionicons name="chevron-forward" size={16} color="#666" style={{ alignSelf: 'flex-end', marginTop: 8 }} />
                 </TouchableOpacity>
@@ -102,16 +104,16 @@ export default function GarageScreen() {
             onPress={() => navigation.navigate('AddVehicle')}
           >
             <Ionicons name="add-circle-outline" size={20} color="#8E8E93" />
-            <Text style={styles.outlineButtonText}>ADD VEHICLE</Text>
+            <Text style={styles.outlineButtonText}>{text("ADD VEHICLE", "AGREGAR VEHÍCULO")}</Text>
           </TouchableOpacity>
 
           {/* Insights */}
           <View style={styles.insightsCard}>
-            <Text style={styles.insightsTitle}>GARAGE INSIGHTS</Text>
+            <Text style={styles.insightsTitle}>{text("GARAGE INSIGHTS", "RESUMEN DEL GARAJE")}</Text>
             <View style={styles.insightsRow}>
               <View style={styles.insightItem}>
                 <Text style={styles.insightValue}>{vehicles.length}</Text>
-                <Text style={styles.insightLabel}>Total Vehicles</Text>
+                <Text style={styles.insightLabel}>{text("Total Vehicles", "Vehículos totales")}</Text>
               </View>
             </View>
           </View>
