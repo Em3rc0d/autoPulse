@@ -144,6 +144,8 @@ export default function ConnectObdScreen() {
         writeCharacteristic: probeResult.handshakeComb.writeCharacteristic,
         receiveCharacteristic: probeResult.handshakeComb.receiveCharacteristic,
         profileId: probeResult.result.matchedProfileId,
+        vehicleId,
+        adapterInstanceId: adapter.id,
       });
 
       navigation.navigate('Initialization', {
