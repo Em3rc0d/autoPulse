@@ -17,6 +17,7 @@ import {
   STANDARD_OBD_TIER_1
 } from '../../domain/obd/StandardObdCatalogV1';
 import { resolveLivePollingPlan } from '../../domain/obd/LiveObdPollingPolicy';
+import { useAppLanguage } from '../../application/i18n/AppLanguage';
 
 import { useKeepAwake } from 'expo-keep-awake';
 
@@ -24,6 +25,7 @@ export default function InitializationScreen() {
   useKeepAwake();
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
+  const { text } = useAppLanguage();
 
   const { vehicleId, sessionId, adapterMode, connectionHandleId, adapterInstanceId } = route.params || {};
   const [activeSessionId, setActiveSessionId] = useState<string | null>(sessionId || null);
@@ -343,6 +345,22 @@ export default function InitializationScreen() {
   };
 
   const activeSteps = adapterMode === 'REAL_BLE' ? realSteps : virtualSteps;
+  const stepLabel = (label: string) => {
+    const translations: Record<string, string> = {
+      'Virtual adapter ready': 'Adaptador virtual listo',
+      'Virtual transport initialized': 'Transporte virtual inicializado',
+      'Virtual protocol selected': 'Protocolo virtual seleccionado',
+      'Virtual capabilities loaded': 'Capacidades virtuales cargadas',
+      'Signals ready': 'Señales listas',
+      'BLE adapter connected': 'Adaptador BLE conectado',
+      'ELM327 identified': 'ELM327 identificado',
+      'Configuring adapter': 'Configurando adaptador',
+      'Detecting vehicle protocol': 'Detectando protocolo del vehículo',
+      'Checking supported signals': 'Comprobando señales soportadas',
+      'Preparing live session': 'Preparando sesión Live',
+    };
+    return text(label, translations[label] ?? label);
+  };
 
   if (initError) {
     return (
@@ -352,12 +370,12 @@ export default function InitializationScreen() {
 
         {adapterMode === 'REAL_BLE' && (
           <TouchableOpacity style={[styles.primaryButton, { marginBottom: 16 }]} onPress={handleRetry}>
-            <Text style={styles.primaryButtonText}>Retry ECU Connection</Text>
+            <Text style={styles.primaryButtonText}>{text('Retry ECU Connection', 'Reintentar conexión ECU')}</Text>
           </TouchableOpacity>
         )}
 
         <TouchableOpacity style={styles.secondaryButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.secondaryButtonText}>Go Back</Text>
+          <Text style={styles.secondaryButtonText}>{text('Go Back', 'Volver')}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -366,9 +384,9 @@ export default function InitializationScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Initializing Session</Text>
+        <Text style={styles.title}>{text('Initializing Session', 'Inicializando sesión')}</Text>
         {vehicleLoading ? (
-          <Text style={styles.subtitle}>Loading vehicle...</Text>
+          <Text style={styles.subtitle}>{text('Loading vehicle...', 'Cargando vehículo...')}</Text>
         ) : vehicle ? (
           <View>
             <Text style={styles.vehicleAlias}>{vehicle.alias}</Text>
@@ -376,13 +394,13 @@ export default function InitializationScreen() {
             <Text style={styles.technicalText}>{vehicleId.substring(0, 8)}...</Text>
           </View>
         ) : (
-          <Text style={styles.subtitle}>Vehicle unavailable</Text>
+          <Text style={styles.subtitle}>{text('Vehicle unavailable', 'Vehículo no disponible')}</Text>
         )}
       </View>
 
       {adapterMode === 'VIRTUAL_PREVIEW' && (
         <View style={styles.warningBox}>
-          <Text style={styles.warningText}>VIRTUAL SESSION — DEVELOPMENT ONLY</Text>
+          <Text style={styles.warningText}>{text('VIRTUAL SESSION — DEVELOPMENT ONLY', 'SESIÓN VIRTUAL — SÓLO DESARROLLO')}</Text>
         </View>
       )}
 
@@ -409,10 +427,10 @@ export default function InitializationScreen() {
                   isActive && styles.stepLabelActive,
                   isPending && styles.stepLabelPending
                 ]}>
-                  {step.label}
+                  {stepLabel(step.label)}
                 </Text>
                 {isDetectingProtocol && (
-                  <Text style={styles.subtextLabel}>Waiting for ECU response...</Text>
+                  <Text style={styles.subtextLabel}>{text('Waiting for ECU response...', 'Esperando respuesta de la ECU...')}</Text>
                 )}
               </View>
             </View>
