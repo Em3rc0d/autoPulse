@@ -34,6 +34,17 @@ module.exports = {
   moduleNameMapper: {
     '^expo-crypto$': '<rootDir>/src/__mocks__/expo-crypto.js',
     '^expo-keep-awake$': '<rootDir>/src/__mocks__/expo-keep-awake.js',
-    '^react-native-chart-kit$': '<rootDir>/src/__mocks__/react-native-chart-kit.js'
+    '^react-native-chart-kit
+  }
+};
+: '<rootDir>/src/__mocks__/react-native-chart-kit.js',
+    '^@react-native-async-storage/async-storage
+  }
+};
+: '<rootDir>/src/__mocks__/async-storage.js',
+    '^@supersami/rn-foreground-service
+  }
+};
+: '<rootDir>/src/__mocks__/rn-foreground-service.js'
   }
 };
