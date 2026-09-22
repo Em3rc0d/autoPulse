@@ -99,7 +99,7 @@ export default function SettingsScreen() {
 
       <View style={styles.contract}>
         <Text style={styles.contractTitle}>{text('Driving UX contract','Contrato UX de conducción')}</Text>
-        <Text style={styles.contractText}>VOICE + COLOR + ICON → first. Text → evidence for later review.</Text>
+        <Text style={styles.contractText}>{text('VOICE + COLOR + ICON → first. Text → evidence for later review.', 'VOZ + COLOR + ICONO → primero. Texto → evidencia para revisar después.')}</Text>
       </View>
 
       {saving ? <Text style={styles.saving}>{text('Saving…','Guardando…')}</Text> : null}
