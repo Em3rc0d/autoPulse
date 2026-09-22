@@ -9,6 +9,7 @@
   <uses-permission android:name="android.permission.VIBRATE"/>
   <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
   <uses-permission android:name="android.permission.WAKE_LOCK"/>
   <!-- AutoPulse only opens the system media library; no V1 flow captures a photo with the camera. -->
   <uses-permission android:name="android.permission.CAMERA" tools:node="remove"/>
@@ -39,5 +40,10 @@
       </intent-filter>
     </activity>
     <activity android:name="com.facebook.react.devsupport.DevSettingsActivity" android:exported="false"/>
+    <service
+      android:name="com.supersami.foregroundservice.ForegroundService"
+      android:foregroundServiceType="connectedDevice"
+      tools:replace="android:foregroundServiceType"/>
+    <service android:name="com.supersami.foregroundservice.ForegroundServiceTask"/>
   </application>
 </manifest>
