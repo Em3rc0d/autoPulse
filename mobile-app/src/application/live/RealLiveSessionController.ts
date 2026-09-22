@@ -1,4 +1,3 @@
-import { AppState, NativeEventSubscription } from 'react-native';
 import type { Subscription } from 'react-native-ble-plx';
 import { RealObdController } from '../../infrastructure/ble/real/RealObdController';
 import {
@@ -9,6 +8,10 @@ import {
   activeBleController,
   ActiveConnection
 } from '../../infrastructure/ble/ActiveBleConnectionController';
+import {
+  startLiveForegroundRuntime,
+  stopLiveForegroundRuntime,
+} from '../../infrastructure/runtime/LiveForegroundRuntime';
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { ITelemetryBlockRepository } from '../../domain/telemetry/repositories/TelemetryBlockRepository';
 import {
@@ -38,11 +41,12 @@ const RECOVERY_DELAYS_MS = [0, 1500, 3500] as const;
 const RECOVERY_CONNECT_TIMEOUT_MS = 3500;
 
 /**
- * Release-1 lifecycle policy:
- * - Live acquisition is foreground-only.
+ * Runtime reliability policy:
+ * - Live acquisition is owned by the session runtime, not by screen visibility.
+ * - App backgrounding is not a terminal event; the Android foreground service keeps
+ *   the Live runtime eligible to continue while the UI is not visible.
  * - Temporary adapter/ECU transport failures receive a bounded recovery window.
  * - Recovery never fabricates telemetry; any missing interval remains missing evidence.
- * - Leaving the app while ACTIVE/RECOVERING still produces explicit interruption.
  * - Live polling is bounded to signals consumed by Driving View v2 so a weak link
  *   does not burn freshness budget on unrelated capability-catalog signals.
  */
@@ -59,7 +63,6 @@ export class RealLiveSessionController {
   private assembler: TelemetryBlockAssembler | null = null;
   private codec = new BinaryObd2V3Codec();
   private commitQueue: TelemetryCommitQueue | null = null;
-  private appStateSubscription: NativeEventSubscription | null = null;
   private bleDisconnectSubscription: Subscription | null = null;
 
   private terminalPromise: Promise<void> | null = null;
@@ -83,17 +86,27 @@ export class RealLiveSessionController {
     onRecordingError: (err: string) => void,
     onSessionTerminal?: (outcome: LiveSessionTerminalOutcome) => void
   ) {
-    if (this.currentState !== 'CREATED') return;
-    this.currentState = 'ACTIVE';
-    this.onUiUpdate = onUiUpdate;
-    this.onRecordingError = onRecordingError;
-    this.onSessionTerminal = onSessionTerminal ?? (outcome => {
+    const terminalHandler = onSessionTerminal ?? (outcome => {
       if (outcome.state === 'INTERRUPTED') {
         onRecordingError(`SESSION_INTERRUPTED:${outcome.reason ?? 'UNKNOWN'}`);
       }
     });
 
-    const conn = activeBleController.getConnection(this.connectionHandleId);
+    // Re-mounting the Live UI must only rebind observers. It must not create a
+    // second poller or terminate the session that is already owned by the runtime.
+    if (this.currentState !== 'CREATED') {
+      this.onUiUpdate = onUiUpdate;
+      this.onRecordingError = onRecordingError;
+      this.onSessionTerminal = terminalHandler;
+      return;
+    }
+
+    this.currentState = 'ACTIVE';
+    this.onUiUpdate = onUiUpdate;
+    this.onRecordingError = onRecordingError;
+    this.onSessionTerminal = terminalHandler;
+
+    const conn = activeBleController.claimConnection(this.connectionHandleId, 'LIVE');
     if (!conn) {
       await this.handleUnexpectedDisconnect('CONNECTION_LOST');
       return;
@@ -111,10 +124,7 @@ export class RealLiveSessionController {
 
     this.installTransport(conn);
 
-    this.appStateSubscription = AppState.addEventListener('change', nextState => {
-      this.handleAppStateChange(nextState);
-    });
-
+    startLiveForegroundRuntime(this.sessionId);
     this.recordingStatus = 'RECORDING';
     this.poller?.start(250);
   }
@@ -139,15 +149,6 @@ export class RealLiveSessionController {
       },
       event => this.handlePollerDiagnostic(event, conn)
     );
-  }
-
-  private handleAppStateChange(nextState: string) {
-    if (
-      nextState !== 'active' &&
-      (this.currentState === 'ACTIVE' || this.currentState === 'RECOVERING')
-    ) {
-      void this.handleUnexpectedDisconnect('APP_BACKGROUND');
-    }
   }
 
   private observePhysicalDisconnect(conn: ActiveConnection) {
@@ -260,7 +261,7 @@ export class RealLiveSessionController {
           const vehiclePathAlive = await this.probeVehiclePath(recoveredConnection);
           if (!vehiclePathAlive || this.terminalPromise) continue;
 
-          activeBleController.retainConnection(recoveredConnection);
+          activeBleController.retainConnection(recoveredConnection, 'LIVE');
           this.installTransport(recoveredConnection);
           this.currentState = 'ACTIVE';
           this.recordingStatus = 'RECORDING';
@@ -335,8 +336,6 @@ export class RealLiveSessionController {
     const wasRunning = this.currentState === 'ACTIVE' || this.currentState === 'RECOVERING';
     this.currentState = mode === 'NORMAL' ? 'STOPPING' : 'INTERRUPTED';
 
-    this.appStateSubscription?.remove();
-    this.appStateSubscription = null;
     this.bleDisconnectSubscription?.remove();
     this.bleDisconnectSubscription = null;
 
@@ -377,7 +376,17 @@ export class RealLiveSessionController {
     }
 
     this.obdController?.disconnect();
-    activeBleController.releaseConnection();
+    stopLiveForegroundRuntime(this.sessionId);
+
+    if (mode === 'NORMAL') {
+      // Keep the proven BLE connection alive and idle so the parked user can
+      // move directly from Live to Check without restarting the application.
+      activeBleController.releaseLease('LIVE');
+    } else {
+      // A terminal transport/runtime failure must not leave a zombie GATT handle.
+      await activeBleController.disconnectAndRelease();
+    }
+
     this.recordingStatus = 'CLOSED';
 
     if (mode === 'NORMAL' && !this.commitQueue?.getHasFailed() && !drainTimedOut) {
@@ -397,12 +406,10 @@ export class RealLiveSessionController {
   }
 
   public forceCleanup() {
-    if (
-      this.currentState === 'ACTIVE' ||
-      this.currentState === 'RECOVERING' ||
-      this.currentState === 'STOPPING'
-    ) {
-      void this.handleUnexpectedDisconnect('UNEXPECTED_UNMOUNT');
-    }
+    // UI unmount is no longer a session terminal condition. The runtime owns the
+    // Live session; a later screen mount can safely rebind observers via start().
+    this.onUiUpdate = null;
+    this.onRecordingError = null;
+    this.onSessionTerminal = null;
   }
 }
