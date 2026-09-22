@@ -14,6 +14,7 @@ import { useLocalContext } from '../infrastructure/hooks/useLocalContext';
 import { useProductDb } from '../infrastructure/hooks/useProductDb';
 import { useVehicle } from '../infrastructure/hooks/useVehicle';
 import { LiveSessionRepository } from '../infrastructure/database/product/repositories/live-session.repository';
+import { useAppLanguage } from '../application/i18n/AppLanguage';
 
 type SessionRow = {
   id: string;
@@ -52,6 +53,7 @@ function formatDuration(startedAt: number | null, endedAt: number | null): strin
 
 function SessionCard({ session, onOpen }: { session: SessionRow; onOpen: () => void }) {
   const { vehicle } = useVehicle(session.vehicleId);
+  const { text } = useAppLanguage();
   const timestamp = session.startedAt ?? session.createdAt;
   const terminal = TERMINAL_STATUSES.has(session.status);
   const reason = session.stopReason || session.failureCode;
@@ -66,7 +68,7 @@ function SessionCard({ session, onOpen }: { session: SessionRow; onOpen: () => v
     >
       <View style={styles.sessionTopRow}>
         <View style={styles.sessionIdentity}>
-          <Text style={styles.vehicleName}>{vehicle?.alias || 'Vehicle'}</Text>
+          <Text style={styles.vehicleName}>{vehicle?.alias || text('Vehicle', 'Vehículo')}</Text>
           <Text style={styles.sessionDate}>{new Date(timestamp).toLocaleString()}</Text>
         </View>
         <View style={[styles.statusPill, { borderColor: statusColor(session.status) }]}>
@@ -76,22 +78,22 @@ function SessionCard({ session, onOpen }: { session: SessionRow; onOpen: () => v
 
       <View style={styles.metricsRow}>
         <View style={styles.metricCell}>
-          <Text style={styles.metricLabel}>DURATION</Text>
+          <Text style={styles.metricLabel}>{text('DURATION', 'DURACIÓN')}</Text>
           <Text style={styles.metricValue}>{formatDuration(session.startedAt, session.endedAt)}</Text>
         </View>
         <View style={styles.metricCell}>
-          <Text style={styles.metricLabel}>BLOCKS</Text>
+          <Text style={styles.metricLabel}>{text('BLOCKS', 'BLOQUES')}</Text>
           <Text style={styles.metricValue}>{session.totalBlocks}</Text>
         </View>
         <View style={styles.metricCell}>
-          <Text style={styles.metricLabel}>READINGS</Text>
+          <Text style={styles.metricLabel}>{text('READINGS', 'LECTURAS')}</Text>
           <Text style={styles.metricValue}>{session.totalReadings}</Text>
         </View>
       </View>
 
-      {reason ? <Text style={styles.reasonText}>Termination: {reason}</Text> : null}
-      <Text style={styles.sessionIdText}>Session {session.id.substring(0, 8)}…</Text>
-      {terminal ? <Text style={styles.openHint}>Open reconstructed summary →</Text> : null}
+      {reason ? <Text style={styles.reasonText}>{text('Termination:', 'Finalización:')} {reason}</Text> : null}
+      <Text style={styles.sessionIdText}>{text('Session', 'Sesión')} {session.id.substring(0, 8)}…</Text>
+      {terminal ? <Text style={styles.openHint}>{text('Open reconstructed summary →', 'Abrir resumen reconstruido →')}</Text> : null}
     </TouchableOpacity>
   );
 }
@@ -104,6 +106,7 @@ export default function HistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { text } = useAppLanguage();
 
   const loadSessions = useCallback(async (refresh = false) => {
     if (!db || !context?.defaultWorkspaceId) {
@@ -121,7 +124,7 @@ export default function HistoryScreen() {
       setSessions(rows as SessionRow[]);
     } catch (err) {
       console.error('[HistoryScreen] Failed to load sessions:', err);
-      setError(err instanceof Error ? err.message : 'Could not load session history.');
+      setError(err instanceof Error ? err.message : text('Could not load session history.', 'No se pudo cargar el historial de sesiones.'));
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -152,33 +155,33 @@ export default function HistoryScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>DURABLE EVIDENCE</Text>
-        <Text style={styles.headerTitle}>Session History</Text>
-        <Text style={styles.headerSub}>Completed and interrupted Live sessions persisted on this device.</Text>
+        <Text style={styles.eyebrow}>{text("DURABLE EVIDENCE", "EVIDENCIA DURABLE")}</Text>
+        <Text style={styles.headerTitle}>{text("Session History", "Historial de sesiones")}</Text>
+        <Text style={styles.headerSub}>{text("Completed and interrupted Live sessions persisted on this device.", "Sesiones Live completadas e interrumpidas guardadas en este dispositivo.")}</Text>
       </View>
 
       {loading || contextLoading ? (
         <View style={styles.centerState}>
           <ActivityIndicator size="large" color="#00D1FF" />
-          <Text style={styles.stateText}>Loading persisted sessions…</Text>
+          <Text style={styles.stateText}>{text("Loading persisted sessions…", "Cargando sesiones guardadas…")}</Text>
         </View>
       ) : error ? (
         <View style={styles.centerState}>
-          <Text style={styles.errorTitle}>History unavailable</Text>
+          <Text style={styles.errorTitle}>{text("History unavailable", "Historial no disponible")}</Text>
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity style={styles.secondaryButton} onPress={() => void loadSessions()}>
-            <Text style={styles.secondaryButtonText}>Retry</Text>
+            <Text style={styles.secondaryButtonText}>{text("Retry", "Reintentar")}</Text>
           </TouchableOpacity>
         </View>
       ) : sessions.length === 0 ? (
         <View style={styles.centerState}>
           <Text style={styles.emptyIcon}>📡</Text>
-          <Text style={styles.emptyTitle}>No persisted sessions yet</Text>
+          <Text style={styles.emptyTitle}>{text("No persisted sessions yet", "Aún no hay sesiones guardadas")}</Text>
           <Text style={styles.emptyText}>
             Complete a real Live session and AutoPulse will keep its durable summary here.
           </Text>
           <TouchableOpacity style={styles.primaryButton} onPress={startLive}>
-            <Text style={styles.primaryButtonText}>Go to Garage</Text>
+            <Text style={styles.primaryButtonText}>{text("Go to Garage", "Ir al Garaje")}</Text>
           </TouchableOpacity>
         </View>
       ) : (
@@ -194,8 +197,8 @@ export default function HistoryScreen() {
           )}
         >
           <View style={styles.summaryRow}>
-            <Text style={styles.summaryText}>{sessions.length} recent session{sessions.length === 1 ? '' : 's'}</Text>
-            <Text style={styles.summaryHint}>Pull to refresh</Text>
+            <Text style={styles.summaryText}>{sessions.length} {sessions.length === 1 ? text('recent session', 'sesión reciente') : text('recent sessions', 'sesiones recientes')}</Text>
+            <Text style={styles.summaryHint}>{text("Pull to refresh", "Desliza para actualizar")}</Text>
           </View>
 
           {sessions.map(session => (
