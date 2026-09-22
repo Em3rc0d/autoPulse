@@ -1,8 +1,6 @@
-jest.mock('react-native', () => ({
-  AppState: {
-    addEventListener: jest.fn().mockReturnValue({ remove: jest.fn() }),
-    currentState: 'active'
-  }
+jest.mock('../../../infrastructure/runtime/LiveForegroundRuntime', () => ({
+  startLiveForegroundRuntime: jest.fn(),
+  stopLiveForegroundRuntime: jest.fn(),
 }));
 
 import { RealLiveSessionController } from '../RealLiveSessionController';
@@ -162,38 +160,32 @@ describe('RealLiveSessionController Integration', () => {
     expect(recovery).not.toHaveBeenCalled();
   });
 
-  it('App background uses the Release-1 APP_BACKGROUND interruption policy', async () => {
-    const ctrl = createController();
-    ctrl['currentState'] = 'ACTIVE';
-
-    (ctrl as any).handleAppStateChange('background');
-    await ctrl['terminalPromise'];
-
-    expect(mockSessionRepo.completeSession).not.toHaveBeenCalled();
-    expect(mockSessionRepo.interruptSession).toHaveBeenCalledTimes(1);
-    expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith('ws1', 'sess1', 'APP_BACKGROUND');
-    expect(ctrl['currentState']).toBe('INTERRUPTED');
-  });
-
-  it('Returning/remaining active does not terminate the session', () => {
-    const ctrl = createController();
-    ctrl['currentState'] = 'ACTIVE';
-
-    (ctrl as any).handleAppStateChange('active');
-
-    expect(ctrl['terminalPromise']).toBeNull();
-    expect(mockSessionRepo.interruptSession).not.toHaveBeenCalled();
-  });
-
-  it('Unexpected unmount produces INTERRUPTED once', async () => {
+  it('UI unmount/background boundary does not terminalize an active Live runtime', () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';
 
     ctrl.forceCleanup();
-    await ctrl['terminalPromise'];
 
-    expect(mockSessionRepo.interruptSession).toHaveBeenCalledTimes(1);
-    expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith('ws1', 'sess1', 'UNEXPECTED_UNMOUNT');
+    expect(ctrl['terminalPromise']).toBeNull();
+    expect(mockSessionRepo.completeSession).not.toHaveBeenCalled();
+    expect(mockSessionRepo.interruptSession).not.toHaveBeenCalled();
+    expect(ctrl['currentState']).toBe('ACTIVE');
+  });
+
+  it('rebinds UI observers on an already-active runtime without starting a second poller', async () => {
+    const ctrl = createController();
+    ctrl['currentState'] = 'ACTIVE';
+    const onUiUpdate = jest.fn();
+    const onRecordingError = jest.fn();
+    const onTerminal = jest.fn();
+
+    await ctrl.start(onUiUpdate, onRecordingError, onTerminal);
+
+    expect((ctrl as any).onUiUpdate).toBe(onUiUpdate);
+    expect((ctrl as any).onRecordingError).toBe(onRecordingError);
+    expect((ctrl as any).onSessionTerminal).toBe(onTerminal);
+    expect(mockPoller.start).not.toHaveBeenCalled();
+    expect(mockSessionRepo.interruptSession).not.toHaveBeenCalled();
   });
 
   it('Telemetry drain timeout prevents COMPLETED and records an explicit interruption reason', async () => {
