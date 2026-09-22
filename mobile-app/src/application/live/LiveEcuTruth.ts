@@ -10,6 +10,8 @@ export interface LiveEcuTruthInput {
   elapsedMs: number;
   sessionError?: string | null;
   delayedAfterMs?: number;
+  lastValidEcuSampleAgeMs?: number | null;
+  staleAfterMs?: number;
 }
 
 export interface LiveEcuTruthPresentation {
@@ -38,6 +40,8 @@ export function deriveLiveEcuTruth({
   elapsedMs,
   sessionError,
   delayedAfterMs = DEFAULT_FIRST_ECU_SAMPLE_DELAY_MS,
+  lastValidEcuSampleAgeMs = null,
+  staleAfterMs = 15_000,
 }: LiveEcuTruthInput): LiveEcuTruthPresentation {
   if (sessionError?.startsWith(RECOVERING_PREFIX)) {
     return {
@@ -59,10 +63,23 @@ export function deriveLiveEcuTruth({
   }
 
   if (hasValidEcuSample) {
+    if (
+      lastValidEcuSampleAgeMs !== null &&
+      Number.isFinite(lastValidEcuSampleAgeMs) &&
+      lastValidEcuSampleAgeMs > staleAfterMs
+    ) {
+      return {
+        state: 'ECU_DATA_DELAYED',
+        label: 'ECU DATA TEMPORARILY UNAVAILABLE',
+        detail: 'The adapter path is still active, but no fresh ECU-origin sample arrived inside the current acquisition budget.',
+        tone: 'delayed',
+      };
+    }
+
     return {
       state: 'LIVE_ECU_DATA',
       label: 'LIVE · ECU DATA',
-      detail: 'At least one valid ECU-origin observation has been received.',
+      detail: 'A fresh valid ECU-origin observation has been received.',
       tone: 'live',
     };
   }
