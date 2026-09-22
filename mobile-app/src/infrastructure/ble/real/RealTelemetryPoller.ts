@@ -15,6 +15,11 @@ export type PollerDiagnosticEvent =
       pid: string;
     }
   | {
+      type: 'PID_TEMPORARILY_UNAVAILABLE';
+      pid: string;
+      consecutiveNoData: number;
+    }
+  | {
       type: 'TRANSPORT_STALLED';
       pid: string;
       reason: StallReason;
@@ -54,12 +59,14 @@ export class RealTelemetryPoller {
   private consecutiveTransportFailures = 0;
   private consecutiveUnusableResponses = 0;
   private transportStallEmitted = false;
+  private fallbackProbeMode = false;
 
   constructor(
     controller: ObdCommandExecutor,
     supportedPids: string[],
     onData: (data: CommandResult) => void,
-    onDiagnostic?: (event: PollerDiagnosticEvent) => void
+    onDiagnostic?: (event: PollerDiagnosticEvent) => void,
+    acquisitionMode?: 'DISCOVERED' | 'FALLBACK'
   ) {
     this.controller = controller;
     const decodableRequests = new Set([
@@ -72,6 +79,9 @@ export class RealTelemetryPoller {
         .map(pid => String(pid).trim().toUpperCase())
         .filter(Boolean)
     )).filter(pid => decodableRequests.has(pid));
+
+    this.fallbackProbeMode = acquisitionMode === 'FALLBACK' ||
+      (acquisitionMode === undefined && this.supportedPids.length === 0);
 
     if (this.supportedPids.length === 0) {
       // Capability discovery can fail even while the vehicle path is usable.
@@ -224,13 +234,24 @@ export class RealTelemetryPoller {
       this.consecutiveFailures[pid] = (this.consecutiveFailures[pid] || 0) + 1;
 
       if (this.consecutiveFailures[pid] >= NO_DATA_RETIRE_THRESHOLD) {
-        console.log(`[RealTelemetryPoller] Retiring PID ${pid} after ${NO_DATA_RETIRE_THRESHOLD} consecutive NO_DATA`);
-        this.retirePid(pid);
-        this.onDiagnostic?.({ type: 'PID_RETIRED_NO_DATA', pid });
-        this.onData(result);
+        if (this.fallbackProbeMode) {
+          console.log(`[RealTelemetryPoller] Retiring fallback PID ${pid} after ${NO_DATA_RETIRE_THRESHOLD} consecutive NO_DATA`);
+          this.retirePid(pid);
+          this.onDiagnostic?.({ type: 'PID_RETIRED_NO_DATA', pid });
+          this.onData(result);
 
-        if (this.supportedPids.length === 0) this.stop();
-        return;
+          if (this.supportedPids.length === 0) this.stop();
+          return;
+        }
+
+        this.onDiagnostic?.({
+          type: 'PID_TEMPORARILY_UNAVAILABLE',
+          pid,
+          consecutiveNoData: this.consecutiveFailures[pid],
+        });
+        // A previously discovered/supported PID may be temporarily unavailable.
+        // Preserve it in the polling plan and allow later observations to recover it.
+        this.consecutiveFailures[pid] = 0;
       }
     } else {
       // "Consecutive NO_DATA" must be literal. Any other result breaks the streak.
