@@ -2,6 +2,7 @@ import React from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useVehicles } from '../../infrastructure/hooks/useVehicles';
+import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
 
 export default function CheckScreen() {
   const navigation = useNavigation<any>();
@@ -29,20 +30,38 @@ export default function CheckScreen() {
           </View>
 
           <Text style={styles.section}>Choose vehicle</Text>
-          {vehicles.map((vehicle: any) => (
-            <TouchableOpacity
-              key={vehicle.id}
-              style={styles.card}
-              onPress={() => navigation.navigate('CheckConnect', { vehicleId: vehicle.id })}
-              testID={`check-vehicle-${vehicle.id}`}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.vehicle}>{vehicle.alias || 'Vehicle'}</Text>
-                <Text style={styles.meta}>{[vehicle.make, vehicle.model, vehicle.year].filter(Boolean).join(' · ') || 'Garage vehicle'}</Text>
-              </View>
-              <Text style={styles.open}>Run Check →</Text>
-            </TouchableOpacity>
-          ))}
+          {vehicles.map((vehicle: any) => {
+            const retained = activeBleController.getActiveConnection();
+            const canReuse = Boolean(
+              retained &&
+              retained.vehicleId === vehicle.id &&
+              activeBleController.getOwner() === 'IDLE'
+            );
+
+            return (
+              <TouchableOpacity
+                key={vehicle.id}
+                style={styles.card}
+                onPress={() => canReuse && retained
+                  ? navigation.navigate('CheckRun', {
+                      vehicleId: vehicle.id,
+                      connectionHandleId: retained.connectionHandleId,
+                      adapterInstanceId: retained.adapterInstanceId,
+                    })
+                  : navigation.navigate('CheckConnect', { vehicleId: vehicle.id })}
+                testID={`check-vehicle-${vehicle.id}`}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.vehicle}>{vehicle.alias || 'Vehicle'}</Text>
+                  <Text style={styles.meta}>
+                    {[vehicle.make, vehicle.model, vehicle.year].filter(Boolean).join(' · ') || 'Garage vehicle'}
+                    {canReuse ? ' · OBD connected' : ''}
+                  </Text>
+                </View>
+                <Text style={styles.open}>{canReuse ? 'Use connected OBD →' : 'Run Check →'}</Text>
+              </TouchableOpacity>
+            );
+          })}
 
           <View style={styles.boundary}>
             <Text style={styles.boundaryTitle}>What this is not</Text>
