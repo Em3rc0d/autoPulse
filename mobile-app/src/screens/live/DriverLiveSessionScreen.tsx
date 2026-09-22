@@ -56,6 +56,7 @@ import {
   lifecyclePresentationAlert,
   type AlertEpisode,
 } from '../../domain/driver-intelligence/DriverAlertLifecycle';
+import { useAppLanguage } from '../../application/i18n/AppLanguage';
 
 function DriverModePanel({ disabled, compact = false }: { disabled: boolean; compact?: boolean }) {
   const { selectedMode, setSelectedMode, availableSignals } = useDriverMode();
@@ -98,11 +99,12 @@ function SafetyOrModePrimary({
   unresolved: boolean;
   presentation: DrivingModePresentation;
 }) {
+  const { text } = useAppLanguage();
   if (unresolved) {
     return (
       <View style={styles.primaryMetric}>
-        <Text style={styles.primaryStateText}>SIGNAL LOST</Text>
-        <Text style={styles.primaryLabel}>RECOVERY NOT CONFIRMED</Text>
+        <Text style={styles.primaryStateText}>{text('SIGNAL LOST', 'SEÑAL PERDIDA')}</Text>
+        <Text style={styles.primaryLabel}>{text('RECOVERY NOT CONFIRMED', 'RECUPERACIÓN NO CONFIRMADA')}</Text>
       </View>
     );
   }
@@ -126,12 +128,12 @@ function SafetyOrModePrimary({
 
   if (presentation.stateFirst && !alert) {
     const stateLabel = presentation.mode === 'FAMILY' && presentation.readiness === 'READY'
-      ? 'ALL CLEAR'
-      : 'NO ACTIVE ALERTS';
+      ? text('ALL CLEAR', 'TODO EN ORDEN')
+      : text('NO ACTIVE ALERTS', 'SIN ALERTAS ACTIVAS');
     return (
       <View style={styles.primaryMetric}>
         <Text numberOfLines={2} adjustsFontSizeToFit style={styles.primaryStateText}>{stateLabel}</Text>
-        <Text style={styles.primaryLabel}>{presentation.readiness} EVIDENCE</Text>
+        <Text style={styles.primaryLabel}>{presentation.readiness} {text('EVIDENCE', 'EVIDENCIA')}</Text>
       </View>
     );
   }
@@ -149,13 +151,14 @@ function SafetyOrModePrimary({
 }
 
 function SecondaryMetric({ metric }: { metric?: ResolvedDrivingMetric }) {
+  const { text } = useAppLanguage();
   const formatted = formatMetric(metric);
   return (
     <View style={styles.secondaryMetric}>
       <Text numberOfLines={1} adjustsFontSizeToFit style={styles.secondaryValue}>
         {formatted.value}{formatted.unit ? ` ${formatted.unit}` : ''}
       </Text>
-      <Text numberOfLines={1} adjustsFontSizeToFit style={styles.secondaryLabel}>{formatted.label || 'NO EVIDENCE'}</Text>
+      <Text numberOfLines={1} adjustsFontSizeToFit style={styles.secondaryLabel}>{formatted.label || text('NO EVIDENCE', 'SIN EVIDENCIA')}</Text>
     </View>
   );
 }
@@ -173,6 +176,7 @@ function DrivingPresentationSurface({
   presentation: DrivingModePresentation;
   voiceEnabled: boolean;
 }) {
+  const { language, text } = useAppLanguage();
   const unresolved = alertEpisode.state === 'UNRESOLVED';
   const severity = unresolved ? alertEpisode.peakSeverity : alert?.severity;
   const hasCurrentTelemetryEvidence = Boolean(
@@ -181,12 +185,12 @@ function DrivingPresentationSurface({
   const visualSeverity = severity ?? (motionState === 'UNKNOWN' ? 'S1_ADVISORY' : undefined);
   const tone = toneForSeverity(visualSeverity);
   const headline = alert
-    ? driverAlertPhrase(alert.key, 'en-US').replace(/\.$/, '')
+    ? driverAlertPhrase(alert.key, language).replace(/\.$/, '')
     : unresolved
-      ? 'CONDITION UNRESOLVED'
+      ? text('CONDITION UNRESOLVED', 'CONDICIÓN SIN RESOLVER')
       : motionState === 'UNKNOWN'
-        ? (hasCurrentTelemetryEvidence ? 'MOTION UNAVAILABLE' : 'WAITING FOR ECU DATA')
-        : 'NORMAL';
+        ? (hasCurrentTelemetryEvidence ? text('MOTION UNAVAILABLE', 'MOVIMIENTO NO DISPONIBLE') : text('WAITING FOR ECU DATA', 'ESPERANDO DATOS ECU'))
+        : text('NORMAL', 'NORMAL');
   const icon = alert?.icon ?? (unresolved || motionState === 'UNKNOWN' ? '▲' : '●');
   const secondaryA = presentation.stateFirst ? presentation.primary : presentation.secondaryA;
   const secondaryB = presentation.stateFirst ? presentation.secondaryA : presentation.secondaryB;
@@ -199,7 +203,7 @@ function DrivingPresentationSurface({
         <View style={styles.drivingStateCopy}>
           <Text numberOfLines={2} adjustsFontSizeToFit style={[styles.drivingHeadline, { color: tone.text }]}>{headline}</Text>
           <Text style={styles.drivingStateMeta}>
-            {motionState === 'UNKNOWN' ? 'MOTION EVIDENCE LIMITED · ' : ''}{presentation.readiness}
+            {motionState === 'UNKNOWN' ? text('MOTION EVIDENCE LIMITED · ', 'EVIDENCIA DE MOVIMIENTO LIMITADA · ') : ''}{presentation.readiness}
           </Text>
         </View>
       </View>
@@ -214,32 +218,33 @@ function DrivingPresentationSurface({
         </View>
       ) : (
         <View style={styles.safetyOverrideFooter}>
-          <Text style={styles.safetyOverrideText}>SAFETY OVERRIDE · MODE PRESERVED</Text>
+          <Text style={styles.safetyOverrideText}>{text('SAFETY OVERRIDE · MODE PRESERVED', 'PRIORIDAD DE SEGURIDAD · MODO CONSERVADO')}</Text>
         </View>
       )}
 
       <Text style={styles.drivingHint}>
-        Eyes on the road · {voiceEnabled ? 'voice alerts active' : 'voice alerts off'}
+        {text('Eyes on the road', 'Vista al camino')} · {voiceEnabled ? text('voice alerts active', 'alertas de voz activas') : text('voice alerts off', 'alertas de voz desactivadas')}
       </Text>
     </View>
   );
 }
 
 function LowDistractionTerminalSurface({ outcome }: { outcome: LiveSessionTerminalOutcome }) {
+  const { text } = useAppLanguage();
   return (
     <View style={styles.drivingSurface} testID="terminal-low-distraction">
       <View style={[styles.drivingState, { backgroundColor: '#332708', borderColor: '#f59e0b' }]}>
         <Text style={[styles.drivingIcon, { color: '#f59e0b' }]}>▲</Text>
         <View style={styles.drivingStateCopy}>
-          <Text style={[styles.drivingHeadline, { color: '#fde68a' }]}>SESSION {outcome.state}</Text>
-          <Text numberOfLines={1} style={styles.drivingStateMeta}>{outcome.reason ?? 'TELEMETRY ENDED'}</Text>
+          <Text style={[styles.drivingHeadline, { color: '#fde68a' }]}>{text('SESSION', 'SESIÓN')} {outcome.state}</Text>
+          <Text numberOfLines={1} style={styles.drivingStateMeta}>{outcome.reason ?? text('TELEMETRY ENDED', 'TELEMETRÍA FINALIZADA')}</Text>
         </View>
       </View>
       <View style={styles.primaryMetric}>
-        <Text style={styles.primaryStateText}>TELEMETRY LOST</Text>
-        <Text style={styles.primaryLabel}>DETAILS AVAILABLE WHEN PARKED</Text>
+        <Text style={styles.primaryStateText}>{text('TELEMETRY LOST', 'TELEMETRÍA PERDIDA')}</Text>
+        <Text style={styles.primaryLabel}>{text('DETAILS AVAILABLE WHEN PARKED', 'DETALLES DISPONIBLES AL ESTACIONAR')}</Text>
       </View>
-      <Text style={styles.drivingHint}>Eyes on the road</Text>
+      <Text style={styles.drivingHint}>{text('Eyes on the road', 'Vista al camino')}</Text>
     </View>
   );
 }
@@ -406,6 +411,7 @@ function DriverLiveSessionContent({
 
 export default function DriverLiveSessionScreen() {
   const route = useRoute<any>();
+  const { text } = useAppLanguage();
   const supportedPids = route.params?.supportedPids || [];
   const sessionId = route.params?.sessionId as string | undefined;
   const vehicleId = route.params?.vehicleId as string | undefined;
@@ -496,8 +502,8 @@ export default function DriverLiveSessionScreen() {
     return (
       <View style={styles.characterizationContainer}>
         <ActivityIndicator size="large" color="#10b981" />
-        <Text style={styles.characterizationTitle}>Checking vehicle…</Text>
-        <Text style={styles.characterizationText}>Read-only compatibility and diagnostic scan.</Text>
+        <Text style={styles.characterizationTitle}>{text('Checking vehicle…', 'Comprobando vehículo…')}</Text>
+        <Text style={styles.characterizationText}>{text('Read-only compatibility and diagnostic scan.', 'Compatibilidad y diagnóstico de solo lectura.')}</Text>
       </View>
     );
   }
