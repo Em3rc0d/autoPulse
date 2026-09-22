@@ -18,19 +18,23 @@ import {
 } from '../../application/check/live/CheckPilotPresentation';
 import { formatDecodedPidObservation } from '../../application/check/intelligence/Mode01ValueDecoder';
 import type { DiagnosticConcernV2 } from '../../application/check/intelligence/DiagnosticConcernEngine';
+import { useAppLanguage } from '../../application/i18n/AppLanguage';
 
 type UiState = 'IDLE' | 'RUNNING' | 'CANCELLING' | 'COMPLETE' | 'ERROR' | 'CANCELLED';
 
-const stageLabel: Record<CheckPhysicalPilotStageV4, string> = {
-  PREPARING_ADAPTER: 'Preparing read-only adapter channel',
-  NEGOTIATING_PROTOCOL: 'Discovering vehicle protocol',
-  RUNNING_STANDARD_SCAN: 'Reading standard ECU diagnostic evidence',
-  RUNNING_DIRECT_PID_CORROBORATION: 'Corroborating exact Mode 01 observations',
-  SEALING_PILOT_RESULT: 'Sealing core diagnostic evidence',
-  PLANNING_TARGETED_EVIDENCE: 'Selecting relevant ECU evidence',
-  RUNNING_TARGETED_EVIDENCE: 'Reading targeted diagnostic evidence',
-  CORRELATING_DIAGNOSTIC_EVIDENCE: 'Correlating ECU evidence',
-};
+function stageLabel(stage: CheckPhysicalPilotStageV4, text: (english: string, spanish: string) => string): string {
+  const labels: Record<CheckPhysicalPilotStageV4, [string, string]> = {
+    PREPARING_ADAPTER: ['Preparing read-only adapter channel', 'Preparando canal de solo lectura'],
+    NEGOTIATING_PROTOCOL: ['Discovering vehicle protocol', 'Detectando protocolo del vehículo'],
+    RUNNING_STANDARD_SCAN: ['Reading standard ECU diagnostic evidence', 'Leyendo evidencia diagnóstica ECU estándar'],
+    RUNNING_DIRECT_PID_CORROBORATION: ['Corroborating exact Mode 01 observations', 'Corroborando observaciones exactas de Mode 01'],
+    SEALING_PILOT_RESULT: ['Sealing core diagnostic evidence', 'Sellando evidencia diagnóstica'],
+    PLANNING_TARGETED_EVIDENCE: ['Selecting relevant ECU evidence', 'Seleccionando evidencia ECU relevante'],
+    RUNNING_TARGETED_EVIDENCE: ['Reading targeted diagnostic evidence', 'Leyendo evidencia diagnóstica dirigida'],
+    CORRELATING_DIAGNOSTIC_EVIDENCE: ['Correlating ECU evidence', 'Correlacionando evidencia ECU'],
+  };
+  return text(...labels[stage]);
+}
 
 function toneStyle(tone: 'POSITIVE' | 'ATTENTION' | 'NEUTRAL') {
   if (tone === 'POSITIVE') return styles.positive;
@@ -43,6 +47,7 @@ function statusLabel(statuses: DiagnosticConcernV2['statuses']): string {
 }
 
 function ConcernCard({ concern }: { concern: DiagnosticConcernV2 }) {
+  const { text } = useAppLanguage();
   return (
     <View style={styles.concernCard}>
       <View style={styles.rowBetween}>
@@ -52,18 +57,18 @@ function ConcernCard({ concern }: { concern: DiagnosticConcernV2 }) {
         </View>
         <Text style={styles.warningMark}>!</Text>
       </View>
-      <Text style={styles.confirmed}>ECU event confirmed</Text>
+      <Text style={styles.confirmed}>{text('ECU event confirmed', 'Evento ECU confirmado')}</Text>
       {concern.relatedEvidence.length > 0 ? (
         <View style={styles.evidenceInset}>
-          <Text style={styles.smallHeading}>Related evidence</Text>
+          <Text style={styles.smallHeading}>{text('Related evidence', 'Evidencia relacionada')}</Text>
           {concern.relatedEvidence.slice(0, 5).map(item => (
             <Text key={`${concern.code}-${item.requestId}`} style={styles.compactLine}>{formatDecodedPidObservation(item)}</Text>
           ))}
         </View>
-      ) : <Text style={styles.muted}>No additional targeted PID evidence was established for this concern.</Text>}
-      <Text style={styles.smallHeading}>Possible systems</Text>
+      ) : <Text style={styles.muted}>{text('No additional targeted PID evidence was established for this concern.', 'No se estableció evidencia PID dirigida adicional para esta condición.')}</Text>}
+      <Text style={styles.smallHeading}>{text('Possible systems', 'Sistemas posibles')}</Text>
       <Text style={styles.body}>{concern.possibleSystemGroups.join(' · ')}</Text>
-      <Text style={styles.causeLimit}>Exact cause not established</Text>
+      <Text style={styles.causeLimit}>{text('Exact cause not established', 'Causa exacta no establecida')}</Text>
       {concern.limitations.map(item => <Text key={item} style={styles.muted}>• {item}</Text>)}
     </View>
   );
@@ -75,6 +80,7 @@ export default function CheckRunScreen() {
   const vehicleId = route.params?.vehicleId as string | undefined;
   const connectionHandleId = route.params?.connectionHandleId as string | undefined;
   const { vehicle } = useVehicle(vehicleId);
+  const { text } = useAppLanguage();
   const [uiState, setUiState] = useState<UiState>('IDLE');
   const [stage, setStage] = useState<CheckPhysicalPilotStageV4 | null>(null);
   const [result, setResult] = useState<CheckPhysicalPilotV4Result | null>(null);
@@ -92,7 +98,7 @@ export default function CheckRunScreen() {
 
   const run = async () => {
     if (!connectionHandleId) {
-      setError('The retained OBD connection is no longer available. Reconnect the adapter.');
+      setError(text('The retained OBD connection is no longer available. Reconnect the adapter.', 'La conexión OBD ya no está disponible. Reconecta el adaptador.'));
       setUiState('ERROR');
       return;
     }
@@ -101,8 +107,8 @@ export default function CheckRunScreen() {
     if (!connection) {
       const owner = activeBleController.getOwner();
       setError(owner === 'LIVE'
-        ? 'The OBD adapter is still in use by Live. Stop the Live session before running Check.'
-        : 'The retained OBD connection is no longer available. Reconnect the adapter.');
+        ? text('The OBD adapter is still in use by Live. Stop the Live session before running Check.', 'El adaptador OBD sigue en uso por Live. Detén la sesión Live antes de ejecutar Check.')
+        : text('The retained OBD connection is no longer available. Reconnect the adapter.', 'La conexión OBD ya no está disponible. Reconecta el adaptador.'));
       setUiState('ERROR');
       return;
     }
@@ -128,7 +134,7 @@ export default function CheckRunScreen() {
         setUiState('CANCELLED');
         setError(null);
       } else {
-        setError(reason instanceof Error ? reason.message : 'Check stopped safely.');
+        setError(reason instanceof Error ? reason.message : text('Check stopped safely.', 'Check se detuvo de forma segura.'));
         setUiState('ERROR');
       }
     } finally {
@@ -156,21 +162,21 @@ export default function CheckRunScreen() {
         <Text style={styles.back} onPress={() => navigation.goBack()}>← Check</Text>
         <View style={styles.headerRow}>
           <View style={styles.flex}>
-            <Text style={styles.eyebrow}>ECU CHECK · V4.1</Text>
-            <Text style={styles.title}>{vehicle?.alias ?? 'Vehicle'} Check</Text>
+            <Text style={styles.eyebrow}>ECU CHECK · V4.2 QA</Text>
+            <Text style={styles.title}>{vehicle?.alias ?? text('Vehicle', 'Vehículo')} Check</Text>
           </View>
-          <Text style={styles.readOnlyBadge}>READ ONLY</Text>
+          <Text style={styles.readOnlyBadge}>{text('READ ONLY', 'SOLO LECTURA')}</Text>
         </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
         {uiState === 'IDLE' ? (
           <View style={styles.panel}>
-            <Text style={styles.panelTitle}>Ready</Text>
-            <Text style={styles.body}>AutoPulse will read standard ECU diagnostics, readiness and only the PID evidence selected for this vehicle and its reported concerns.</Text>
-            <Text style={styles.safetyText}>Parked vehicle only. Clear, reset, control, coding and write operations remain blocked.</Text>
+            <Text style={styles.panelTitle}>{text('Ready', 'Listo')}</Text>
+            <Text style={styles.body}>{text('AutoPulse will read standard ECU diagnostics, readiness and only the PID evidence selected for this vehicle and its reported concerns.', 'AutoPulse leerá diagnóstico ECU estándar, readiness y sólo la evidencia PID seleccionada para este vehículo y sus condiciones reportadas.')}</Text>
+            <Text style={styles.safetyText}>{text('Parked vehicle only. Clear, reset, control, coding and write operations remain blocked.', 'Sólo con el vehículo estacionado. Borrado, reset, control, codificación y escritura permanecen bloqueados.')}</Text>
             <TouchableOpacity style={styles.primary} onPress={() => void run()} testID="run-physical-check">
-              <Text style={styles.primaryText}>Run Check</Text>
+              <Text style={styles.primaryText}>{text('Run Check', 'Ejecutar Check')}</Text>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -178,68 +184,72 @@ export default function CheckRunScreen() {
         {(uiState === 'RUNNING' || uiState === 'CANCELLING') ? (
           <View style={styles.panel}>
             <ActivityIndicator size="large" color="#4ade80" />
-            <Text style={styles.panelTitle}>{uiState === 'CANCELLING' ? 'Cancelling safely…' : stage ? stageLabel[stage] : 'Running Check…'}</Text>
-            <Text style={styles.body}>Serial · bounded · descriptor-gated · no blind PID sweep</Text>
-            {uiState === 'RUNNING' ? <TouchableOpacity style={styles.secondary} onPress={cancel}><Text style={styles.secondaryText}>Cancel Check</Text></TouchableOpacity> : null}
+            <Text style={styles.panelTitle}>{uiState === 'CANCELLING' ? text('Cancelling safely…', 'Cancelando de forma segura…') : stage ? stageLabel(stage, text) : text('Running Check…', 'Ejecutando Check…')}</Text>
+            <Text style={styles.body}>{text('Serial · bounded · descriptor-gated · no blind PID sweep', 'Serial · acotado · autorizado por descriptor · sin barrido ciego de PID')}</Text>
+            {uiState === 'RUNNING' ? <TouchableOpacity style={styles.secondary} onPress={cancel}><Text style={styles.secondaryText}>{text('Cancel Check', 'Cancelar Check')}</Text></TouchableOpacity> : null}
           </View>
         ) : null}
 
-        {uiState === 'CANCELLED' ? <View style={styles.panel}><Text style={styles.panelTitle}>Check cancelled</Text><Text style={styles.body}>No additional request will be issued.</Text></View> : null}
+        {uiState === 'CANCELLED' ? <View style={styles.panel}><Text style={styles.panelTitle}>{text('Check cancelled', 'Check cancelado')}</Text><Text style={styles.body}>{text('No additional request will be issued.', 'No se enviarán más solicitudes.')}</Text></View> : null}
 
         {uiState === 'ERROR' ? (
           <View style={styles.panel}>
-            <Text style={styles.errorTitle}>Check stopped safely</Text>
+            <Text style={styles.errorTitle}>{text('Check stopped safely', 'Check se detuvo de forma segura')}</Text>
             <Text style={styles.body}>{error}</Text>
-            <TouchableOpacity style={styles.secondary} onPress={() => void run()}><Text style={styles.secondaryText}>Retry Check</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.secondary} onPress={() => void run()}><Text style={styles.secondaryText}>{text('Retry Check', 'Reintentar Check')}</Text></TouchableOpacity>
           </View>
         ) : null}
 
         {result && uiState === 'COMPLETE' && scanPresentation && capabilityPresentation ? (
           <>
             <View style={issueCount > 0 ? styles.summaryAttention : styles.summaryGood}>
-              <Text style={styles.summaryKicker}>{issueCount > 0 ? `${issueCount} diagnostic issue${issueCount === 1 ? '' : 's'} reported` : 'No diagnostic codes reported'}</Text>
-              <Text style={styles.body}>{issueCount > 0 ? 'ECU-recorded conditions are shown below with targeted evidence. Root cause is not assumed.' : 'The successfully scanned standard DTC services did not report a code.'}</Text>
+              <Text style={styles.summaryKicker}>{issueCount > 0
+  ? text(`${issueCount} diagnostic issue${issueCount === 1 ? '' : 's'} reported`, `${issueCount} incidencia${issueCount === 1 ? '' : 's'} diagnóstica${issueCount === 1 ? '' : 's'} reportada${issueCount === 1 ? '' : 's'}`)
+  : text('No diagnostic codes reported', 'No se reportaron códigos de diagnóstico')}</Text>
+              <Text style={styles.body}>{issueCount > 0
+  ? text('ECU-recorded conditions are shown below with targeted evidence. Root cause is not assumed.', 'Las condiciones registradas por la ECU se muestran con evidencia dirigida. No se asume la causa raíz.')
+  : text('The successfully scanned standard DTC services did not report a code.', 'Los servicios DTC estándar escaneados correctamente no reportaron códigos.')}</Text>
               <Text style={styles.scopeNote}>{scanPresentation.label} · {result.protocol}</Text>
             </View>
 
             {result.concerns.map(concern => <ConcernCard key={concern.concernId} concern={concern} />)}
 
             <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Current ECU evidence</Text>
+              <Text style={styles.panelTitle}>{text('Current ECU evidence', 'Evidencia ECU actual')}</Text>
               {result.decodedPidEvidence.length > 0 ? result.decodedPidEvidence.map(item => (
                 <View key={`${item.requestId}-${item.sourceEndpointId ?? 'u'}`} style={styles.metricRow}>
                   <Text style={styles.metricLabel}>{item.name}</Text>
                   <Text style={styles.metricValue}>{formatDecodedPidObservation(item).replace(`${item.signals[0]?.label}: `, '')}</Text>
                 </View>
-              )) : <Text style={styles.muted}>No promoted current-data value was established.</Text>}
+              )) : <Text style={styles.muted}>{text('No promoted current-data value was established.', 'No se estableció ningún valor actual promovido.')}</Text>}
               <Text style={targetedExecutionIncomplete ? styles.targetedUnavailable : styles.walletNote}>
-                {selectedTargetedCount} targeted PID request{selectedTargetedCount === 1 ? '' : 's'} selected · {executedTargetedCount} executed. {targetedExecutionIncomplete ? 'Targeted evidence was not fully acquired in this run. ' : ''}No blind sweep.
+                {selectedTargetedCount} {text('targeted PID request', 'solicitud PID dirigida')}{selectedTargetedCount === 1 ? '' : 's'} {text('selected', 'seleccionadas')} · {executedTargetedCount} {text('executed', 'ejecutadas')}. {targetedExecutionIncomplete ? text('Targeted evidence was not fully acquired in this run. ', 'La evidencia dirigida no se adquirió completamente en esta ejecución. ') : ''}{text('No blind sweep.', 'Sin barrido ciego.')}
               </Text>
             </View>
 
             <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Emissions readiness</Text>
+              <Text style={styles.panelTitle}>{text('Emissions readiness', 'Readiness de emisiones')}</Text>
               {result.readiness ? (
                 <>
                   <View style={styles.metricRow}><Text style={styles.metricLabel}>MIL</Text><Text style={result.readiness.milOn ? styles.attention : styles.positive}>{result.readiness.milOn ? 'ON' : 'OFF'}</Text></View>
-                  <View style={styles.metricRow}><Text style={styles.metricLabel}>Confirmed DTC count</Text><Text style={styles.metricValue}>{result.readiness.confirmedDtcCount}</Text></View>
+                  <View style={styles.metricRow}><Text style={styles.metricLabel}>{text('Confirmed DTC count', 'DTC confirmados')}</Text><Text style={styles.metricValue}>{result.readiness.confirmedDtcCount}</Text></View>
                   {result.readiness.monitors.map(monitor => (
                     <View key={monitor.id} style={styles.metricRow}><Text style={styles.metricLabel}>{monitor.label}</Text><Text style={monitor.state === 'READY' ? styles.positive : monitor.state === 'NOT_READY' ? styles.attention : styles.neutral}>{monitor.state.replace('_', ' ')}</Text></View>
                   ))}
                 </>
-              ) : <Text style={styles.muted}>{targetedExecutionIncomplete && result.targetedEvidencePlan.requests.some(item => item.pid === '01') ? 'Readiness was selected but not executed successfully in this run.' : 'Readiness was not established from a validated PID 0101 response.'}</Text>}
-              <Text style={styles.scopeNote}>NOT READY means the monitor has not completed; it does not mean the monitor failed.</Text>
+              ) : <Text style={styles.muted}>{targetedExecutionIncomplete && result.targetedEvidencePlan.requests.some(item => item.pid === '01') ? text('Readiness was selected but not executed successfully in this run.', 'Readiness fue seleccionado pero no se ejecutó correctamente en esta sesión.') : text('Readiness was not established from a validated PID 0101 response.', 'Readiness no se estableció a partir de una respuesta validada del PID 0101.')}</Text>}
+              <Text style={styles.scopeNote}>{text('NOT READY means the monitor has not completed; it does not mean the monitor failed.', 'NOT READY significa que el monitor no completó su ciclo; no significa que haya fallado.')}</Text>
             </View>
 
             <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Standard OBD coverage</Text>
-              <View style={styles.metricRow}><Text style={styles.metricLabel}>PID capability</Text><Text style={toneStyle(capabilityPresentation.tone)}>{capabilityPresentation.label}</Text></View>
+              <Text style={styles.panelTitle}>{text('Standard OBD coverage', 'Cobertura OBD estándar')}</Text>
+              <View style={styles.metricRow}><Text style={styles.metricLabel}>{text('PID capability', 'Capacidad PID')}</Text><Text style={toneStyle(capabilityPresentation.tone)}>{capabilityPresentation.label}</Text></View>
               <Text style={styles.muted}>{capabilityPresentation.detail}</Text>
               {result.scan.dtcResults.map((dtc, index) => {
                 const presented = presentDtcResult(dtc);
                 return (
                   <View key={`${dtc.status}-${index}`} style={styles.serviceRow}>
-                    <Text style={styles.metricLabel}>{dtc.status === 'STORED' ? 'Stored DTCs' : dtc.status === 'PENDING' ? 'Pending DTCs' : 'Permanent DTCs'}</Text>
+                    <Text style={styles.metricLabel}>{dtc.status === 'STORED' ? text('Stored DTCs', 'DTC almacenados') : dtc.status === 'PENDING' ? text('Pending DTCs', 'DTC pendientes') : text('Permanent DTCs', 'DTC permanentes')}</Text>
                     <Text style={toneStyle(presented.tone)}>{presented.label}</Text>
                   </View>
                 );
@@ -247,17 +257,17 @@ export default function CheckRunScreen() {
             </View>
 
             <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Scope</Text>
-              <Text style={styles.muted}>Standard OBD evidence only. Unsupported modules are not called healthy. Mode 06 and Freeze Frame remain gated rather than guessed.</Text>
+              <Text style={styles.panelTitle}>{text('Scope', 'Alcance')}</Text>
+              <Text style={styles.muted}>{text('Standard OBD evidence only. Unsupported modules are not called healthy. Mode 06 and Freeze Frame remain gated rather than guessed.', 'Sólo evidencia OBD estándar. Los módulos no soportados no se consideran sanos. Mode 06 y Freeze Frame permanecen bloqueados antes que ser inferidos.')}</Text>
             </View>
 
             <TouchableOpacity style={styles.technicalToggle} onPress={() => setShowTechnical(value => !value)} testID="toggle-check-technical-details">
-              <Text style={styles.technicalToggleText}>{showTechnical ? 'Hide technical evidence' : 'Show technical evidence'}</Text>
+              <Text style={styles.technicalToggleText}>{showTechnical ? text('Hide technical evidence', 'Ocultar evidencia técnica') : text('Show technical evidence', 'Mostrar evidencia técnica')}</Text>
             </TouchableOpacity>
 
             {showTechnical ? (
               <View style={styles.panel}>
-                <Text style={styles.panelTitle}>Technical evidence</Text>
+                <Text style={styles.panelTitle}>{text('Technical evidence', 'Evidencia técnica')}</Text>
                 <Text style={styles.meta}>Pilot: {result.pilotVersion}</Text>
                 <Text style={styles.meta}>Protocol evidence: {result.protocolEvidence || 'not retained'}</Text>
                 <Text style={styles.meta}>Core commands: {result.scanCommandCount}</Text>
