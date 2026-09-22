@@ -13,6 +13,7 @@ import { useProductDb } from '../../infrastructure/hooks/useProductDb';
 import { useVehicle } from '../../infrastructure/hooks/useVehicle';
 import { AdapterRepository } from '../../infrastructure/database/product/repositories/adapter.repository';
 import { AdapterCapabilitySnapshotRepository } from '../../infrastructure/database/product/repositories/adapter-capability-snapshot.repository';
+import { useAppLanguage } from '../../application/i18n/AppLanguage';
 
 type ProbeOutput = { result: ProbeResult; device?: any; handshakeComb?: any };
 type UiState = 'IDLE' | 'SEARCHING' | 'PROBING' | 'SUPPORTED' | 'FAILED';
@@ -27,6 +28,7 @@ export default function CheckConnectObdScreen() {
   const { devices, isScanning, error: discoveryError, startScan, stopScan } = useAdapterDiscovery();
   const db = useProductDb();
   const { context } = useLocalContext();
+  const { text } = useAppLanguage();
 
   const [uiState, setUiState] = useState<UiState>('IDLE');
   const [probeOutput, setProbeOutput] = useState<ProbeOutput | null>(null);
@@ -42,7 +44,7 @@ export default function CheckConnectObdScreen() {
   const probeDevice = async (deviceId: string) => {
     stopScan();
     if (!manager) {
-      setMessage('Bluetooth manager unavailable.');
+      setMessage(text('Bluetooth manager unavailable.', 'Administrador Bluetooth no disponible.'));
       setUiState('FAILED');
       return;
     }
@@ -54,7 +56,7 @@ export default function CheckConnectObdScreen() {
     setProbeOutput(output);
     if (output.result.verdict === ProbeVerdict.SUPPORTED || output.result.verdict === ProbeVerdict.SUPPORTED_WITH_PROFILE) {
       setUiState('SUPPORTED');
-      setMessage('Read-only diagnostic channel available.');
+      setMessage(text('Read-only diagnostic channel available.', 'Canal diagnóstico de solo lectura disponible.'));
       return;
     }
     setUiState('FAILED');
@@ -63,7 +65,7 @@ export default function CheckConnectObdScreen() {
 
   const useForCheck = async () => {
     if (!vehicleId || !probeOutput?.device || !probeOutput.handshakeComb || !db || !context) {
-      setMessage('Check connection context is incomplete.');
+      setMessage(text('Check connection context is incomplete.', 'El contexto de conexión de Check está incompleto.'));
       setUiState('FAILED');
       return;
     }
@@ -93,7 +95,7 @@ export default function CheckConnectObdScreen() {
       });
       navigation.navigate('CheckRun', { vehicleId, connectionHandleId, adapterInstanceId: adapter.id });
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not retain the Check connection.');
+      setMessage(error instanceof Error ? error.message : text('Could not retain the Check connection.', 'No se pudo conservar la conexión para Check.'));
       setUiState('FAILED');
     }
   };
@@ -108,27 +110,27 @@ export default function CheckConnectObdScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.back} onPress={() => navigation.goBack()}>← Check</Text>
-        <Text style={styles.eyebrow}>PHYSICAL PILOT · READ ONLY</Text>
-        <Text style={styles.title}>Connect OBD adapter</Text>
-        <Text style={styles.subtitle}>{vehicle?.alias ?? 'Vehicle'} · connect only while the vehicle is parked.</Text>
+        <Text style={styles.eyebrow}>{text("PHYSICAL PILOT · READ ONLY", "PILOTO FÍSICO · SOLO LECTURA")}</Text>
+        <Text style={styles.title}>{text("Connect OBD adapter", "Conectar adaptador OBD")}</Text>
+        <Text style={styles.subtitle}>{vehicle?.alias ?? text('Vehicle', 'Vehículo')} · {text('connect only while the vehicle is parked.', 'conecta sólo con el vehículo estacionado.')}</Text>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.notice}>
-          <Text style={styles.noticeTitle}>Stationary use only</Text>
-          <Text style={styles.noticeText}>Do not interact with AutoPulse while driving. This pilot never clears codes, resets modules or sends control commands.</Text>
+          <Text style={styles.noticeTitle}>{text("Stationary use only", "Sólo con el vehículo estacionado")}</Text>
+          <Text style={styles.noticeText}>{text("Do not interact with AutoPulse while driving. This pilot never clears codes, resets modules or sends control commands.", "No interactúes con AutoPulse mientras conduces. Este piloto nunca borra códigos, reinicia módulos ni envía comandos de control.")}</Text>
         </View>
 
         {uiState === 'IDLE' && (
           <TouchableOpacity style={styles.primary} onPress={beginScan} testID="check-scan-adapters">
-            <Text style={styles.primaryText}>Scan for adapters</Text>
+            <Text style={styles.primaryText}>{text("Scan for adapters", "Buscar adaptadores")}</Text>
           </TouchableOpacity>
         )}
 
         {(uiState === 'SEARCHING' || isScanning) && (
           <View style={styles.panel}>
             <ActivityIndicator color="#4ade80" />
-            <Text style={styles.panelTitle}>Select your OBD adapter</Text>
+            <Text style={styles.panelTitle}>{text("Select your OBD adapter", "Selecciona tu adaptador OBD")}</Text>
             {devices.map(device => (
               <TouchableOpacity key={device.id} style={styles.device} onPress={() => void probeDevice(device.id)}>
                 <Text style={styles.deviceName}>{device.name || 'Unknown device'}</Text>
@@ -140,28 +142,28 @@ export default function CheckConnectObdScreen() {
         )}
 
         {uiState === 'PROBING' && (
-          <View style={styles.panel}><ActivityIndicator color="#4ade80" /><Text style={styles.panelTitle}>Verifying adapter channel…</Text><Text style={styles.meta}>{message}</Text></View>
+          <View style={styles.panel}><ActivityIndicator color="#4ade80" /><Text style={styles.panelTitle}>{text("Verifying adapter channel…", "Verificando canal del adaptador…")}</Text><Text style={styles.meta}>{message}</Text></View>
         )}
 
         {uiState === 'SUPPORTED' && (
           <View style={styles.panel}>
-            <Text style={styles.good}>ADAPTER CHANNEL READY</Text>
+            <Text style={styles.good}>{text("ADAPTER CHANNEL READY", "CANAL DEL ADAPTADOR LISTO")}</Text>
             <Text style={styles.panelText}>{message}</Text>
             <TouchableOpacity style={styles.primary} onPress={() => void useForCheck()} testID="check-use-adapter">
-              <Text style={styles.primaryText}>Continue to Check</Text>
+              <Text style={styles.primaryText}>{text("Continue to Check", "Continuar a Check")}</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {uiState === 'FAILED' && (
           <View style={styles.panel}>
-            <Text style={styles.error}>CHECK CONNECTION BLOCKED</Text>
+            <Text style={styles.error}>{text("CHECK CONNECTION BLOCKED", "CONEXIÓN DE CHECK BLOQUEADA")}</Text>
             <Text style={styles.panelText}>{message}</Text>
-            <TouchableOpacity style={styles.secondary} onPress={beginScan}><Text style={styles.secondaryText}>Try another adapter</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.secondary} onPress={beginScan}><Text style={styles.secondaryText}>{text("Try another adapter", "Probar otro adaptador")}</Text></TouchableOpacity>
           </View>
         )}
 
-        <TouchableOpacity style={styles.cancel} onPress={cancel}><Text style={styles.cancelText}>Cancel</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.cancel} onPress={cancel}><Text style={styles.cancelText}>{text("Cancel", "Cancelar")}</Text></TouchableOpacity>
       </ScrollView>
     </View>
   );
