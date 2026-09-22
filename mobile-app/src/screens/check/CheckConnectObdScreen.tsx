@@ -88,6 +88,8 @@ export default function CheckConnectObdScreen() {
         writeCharacteristic: probeOutput.handshakeComb.writeCharacteristic,
         receiveCharacteristic: probeOutput.handshakeComb.receiveCharacteristic,
         profileId: probeOutput.result.matchedProfileId,
+        vehicleId,
+        adapterInstanceId: adapter.id,
       });
       navigation.navigate('CheckRun', { vehicleId, connectionHandleId, adapterInstanceId: adapter.id });
     } catch (error) {
