@@ -36,7 +36,7 @@ describe('RealTelemetryPoller', () => {
     await Promise.resolve();
   };
 
-  it('retires a PID after 3 truly consecutive NO_DATA', async () => {
+  it('quarantines a PID after 3 truly consecutive NO_DATA and later re-probes it', async () => {
     mockExecutor.executeCommand.mockResolvedValue(result('NO_DATA'));
 
     const poller = new RealTelemetryPoller(mockExecutor, ['010C'], onData, onDiagnostic);
@@ -47,11 +47,18 @@ describe('RealTelemetryPoller', () => {
     await Promise.resolve();
 
     expect(onData).toHaveBeenCalledTimes(3);
-    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({ type: 'PID_RETIRED_NO_DATA', pid: '010C' }));
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({ type: 'PID_QUARANTINED_NO_DATA', pid: '010C' }));
     expect(onDiagnostic).toHaveBeenCalledTimes(1);
 
     jest.advanceTimersByTime(100);
     expect(mockExecutor.executeCommand).toHaveBeenCalledTimes(3);
+
+    jest.advanceTimersByTime(30_000);
+    await Promise.resolve();
+    jest.advanceTimersByTime(20);
+    await Promise.resolve();
+    expect(mockExecutor.executeCommand.mock.calls.length).toBeGreaterThan(3);
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({ type: 'PID_REPROBE_RESUMED', pid: '010C' }));
   });
 
   it('normalizes discovered Tier-1 requests, deduplicates and rejects unknown requests', async () => {
@@ -117,7 +124,7 @@ describe('RealTelemetryPoller', () => {
 
     for (let i = 0; i < 4; i++) await advanceOne();
 
-    expect(onDiagnostic).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'PID_RETIRED_NO_DATA' }));
+    expect(onDiagnostic).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'PID_QUARANTINED_NO_DATA' }));
     expect(mockExecutor.executeCommand).toHaveBeenCalledTimes(5);
     poller.stop();
   });
