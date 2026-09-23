@@ -7,6 +7,7 @@ import {
   type DriverPreferences,
 } from '../../application/settings/DriverPreferences';
 import type { VoiceLanguage } from '../../domain/driver-intelligence/DriverAlertLexicon';
+import { setUiLanguage, uiText } from '../../application/localization/UiLanguage';
 
 export default function SettingsScreen() {
   const [preferences, setPreferences] = useState<DriverPreferences>(DEFAULT_DRIVER_PREFERENCES);
@@ -16,7 +17,7 @@ export default function SettingsScreen() {
   useEffect(() => {
     let mounted = true;
     loadDriverPreferences()
-      .then(value => { if (mounted) setPreferences(value); })
+      .then(value => { if (mounted) { setPreferences(value); setUiLanguage(value.voiceLanguage); } })
       .finally(() => { if (mounted) setLoading(false); });
     return () => { mounted = false; };
   }, []);
@@ -32,7 +33,11 @@ export default function SettingsScreen() {
     }
   };
 
-  const setLanguage = (voiceLanguage: VoiceLanguage) => void persist({ voiceLanguage });
+  const setLanguage = (voiceLanguage: VoiceLanguage) => {
+    setUiLanguage(voiceLanguage);
+    void persist({ voiceLanguage });
+  };
+  const t = (en: string, es: string) => uiText(preferences.voiceLanguage, en, es);
 
   if (loading) {
     return (
@@ -44,15 +49,15 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.eyebrow}>DRIVER COMMUNICATION</Text>
-      <Text style={styles.title}>Settings</Text>
-      <Text style={styles.lead}>While driving, AutoPulse communicates with short voice alerts and glanceable states. Detailed explanations stay on parked screens.</Text>
+      <Text style={styles.eyebrow}>{t('DRIVER COMMUNICATION','COMUNICACIÓN CON EL CONDUCTOR')}</Text>
+      <Text style={styles.title}>{t('Settings','Configuración')}</Text>
+      <Text style={styles.lead}>{t('While driving, AutoPulse communicates with short voice alerts and glanceable states. Detailed explanations stay on parked screens.','Mientras conduces, AutoPulse usa alertas de voz breves y estados fáciles de ver. Las explicaciones detalladas quedan para cuando estés estacionado.')}</Text>
 
       <View style={styles.card}>
         <View style={styles.row}>
           <View style={styles.rowCopy}>
-            <Text style={styles.label}>Voice alerts</Text>
-            <Text style={styles.hint}>Short, controlled phrases only.</Text>
+            <Text style={styles.label}>{t('Voice alerts','Alertas de voz')}</Text>
+            <Text style={styles.hint}>{t('Short, controlled phrases only.','Solo frases breves y controladas.')}</Text>
           </View>
           <Switch
             value={preferences.voiceAlertsEnabled}
@@ -62,16 +67,16 @@ export default function SettingsScreen() {
           />
         </View>
 
-        <Text style={styles.sectionLabel}>VOICE LANGUAGE</Text>
+        <Text style={styles.sectionLabel}>{t('VOICE LANGUAGE','IDIOMA DE LA APP Y VOZ')}</Text>
         <View style={styles.languageRow}>
           <LanguageButton label="English" active={preferences.voiceLanguage === 'en-US'} onPress={() => setLanguage('en-US')} />
           <LanguageButton label="Español" active={preferences.voiceLanguage === 'es-ES'} onPress={() => setLanguage('es-ES')} />
         </View>
-        <Text style={styles.defaultNote}>English is the default language.</Text>
+        <Text style={styles.defaultNote}>{t('English is the default language.','El inglés es el idioma predeterminado.')}</Text>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Alert levels</Text>
+        <Text style={styles.cardTitle}>{t('Alert levels','Niveles de alerta')}</Text>
         <AlertToggle
           title="Critical"
           description="Immediate safety state. Kept enabled by default."
@@ -93,11 +98,11 @@ export default function SettingsScreen() {
       </View>
 
       <View style={styles.contract}>
-        <Text style={styles.contractTitle}>Driving UX contract</Text>
+        <Text style={styles.contractTitle}>{t('Driving UX contract','Contrato UX de conducción')}</Text>
         <Text style={styles.contractText}>VOICE + COLOR + ICON → first. Text → evidence for later review.</Text>
       </View>
 
-      {saving ? <Text style={styles.saving}>Saving…</Text> : null}
+      {saving ? <Text style={styles.saving}>{t('Saving…','Guardando…')}</Text> : null}
     </ScrollView>
   );
 }
