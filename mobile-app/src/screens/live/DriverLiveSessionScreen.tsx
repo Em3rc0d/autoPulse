@@ -182,7 +182,7 @@ function DrivingPresentationSurface({
     : unresolved
       ? 'CONDITION UNRESOLVED'
       : motionState === 'UNKNOWN'
-        ? 'TELEMETRY DEGRADED'
+        ? 'MOTION DATA LIMITED'
         : 'NORMAL';
   const icon = alert?.icon ?? (unresolved || motionState === 'UNKNOWN' ? '▲' : '●');
   const secondaryA = presentation.stateFirst ? presentation.primary : presentation.secondaryA;
