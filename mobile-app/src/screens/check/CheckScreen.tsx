@@ -2,51 +2,72 @@ import React from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useVehicles } from '../../infrastructure/hooks/useVehicles';
+import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
+import { useAppLanguage } from '../../application/i18n/AppLanguage';
 
 export default function CheckScreen() {
   const navigation = useNavigation<any>();
   const { vehicles, loading, error, refresh } = useVehicles();
+  const { text } = useAppLanguage();
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.eyebrow}>ECU DIAGNOSTICS · READ ONLY</Text>
+        <Text style={styles.eyebrow}>{text("ECU DIAGNOSTICS · READ ONLY", "DIAGNÓSTICO ECU · SOLO LECTURA")}</Text>
         <Text style={styles.title}>Check</Text>
-        <Text style={styles.subtitle}>Ask the vehicle's ECU what diagnostic evidence it reports now. No prior Live session is required.</Text>
+        <Text style={styles.subtitle}>{text("Ask the vehicle's ECU what diagnostic evidence it reports now. No prior Live session is required.", "Consulta qué evidencia diagnóstica reporta la ECU ahora. No necesitas una sesión Live previa.")}</Text>
       </View>
 
       {loading ? (
-        <View style={styles.center}><ActivityIndicator size="large" color="#4ade80" /><Text style={styles.centerText}>Loading vehicles…</Text></View>
+        <View style={styles.center}><ActivityIndicator size="large" color="#4ade80" /><Text style={styles.centerText}>{text("Loading vehicles…", "Cargando vehículos…")}</Text></View>
       ) : error ? (
-        <View style={styles.center}><Text style={styles.error}>Could not load Garage vehicles.</Text><TouchableOpacity style={styles.secondary} onPress={() => void refresh()}><Text style={styles.secondaryText}>Retry</Text></TouchableOpacity></View>
+        <View style={styles.center}><Text style={styles.error}>{text("Could not load Garage vehicles.", "No se pudieron cargar los vehículos del Garaje.")}</Text><TouchableOpacity style={styles.secondary} onPress={() => void refresh()}><Text style={styles.secondaryText}>{text("Retry", "Reintentar")}</Text></TouchableOpacity></View>
       ) : vehicles.length === 0 ? (
-        <View style={styles.center}><Text style={styles.emptyTitle}>Add a vehicle first</Text><Text style={styles.centerText}>Check needs a Garage vehicle for report context, but it does not need a Live session.</Text></View>
+        <View style={styles.center}><Text style={styles.emptyTitle}>{text("Add a vehicle first", "Agrega un vehículo primero")}</Text><Text style={styles.centerText}>{text("Check needs a Garage vehicle for report context, but it does not need a Live session.", "Check necesita un vehículo del Garaje para el contexto del reporte, pero no necesita una sesión Live.")}</Text></View>
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.notice}>
-            <Text style={styles.noticeTitle}>Physical pilot</Text>
-            <Text style={styles.noticeText}>Park the vehicle before starting. The first activated set is descriptor-gated standard OBD: PID capability plus DTC services supported by the proven protocol/parser path.</Text>
+            <Text style={styles.noticeTitle}>{text("Physical pilot", "Piloto físico")}</Text>
+            <Text style={styles.noticeText}>{text("Park the vehicle before starting. The first activated set is descriptor-gated standard OBD: PID capability plus DTC services supported by the proven protocol/parser path.", "Estaciona el vehículo antes de iniciar. Check usa OBD estándar de solo lectura y únicamente comandos promovidos por seguridad.")}</Text>
           </View>
 
-          <Text style={styles.section}>Choose vehicle</Text>
-          {vehicles.map((vehicle: any) => (
-            <TouchableOpacity
-              key={vehicle.id}
-              style={styles.card}
-              onPress={() => navigation.navigate('CheckConnect', { vehicleId: vehicle.id })}
-              testID={`check-vehicle-${vehicle.id}`}
-            >
-              <View style={{ flex: 1 }}>
-                <Text style={styles.vehicle}>{vehicle.alias || 'Vehicle'}</Text>
-                <Text style={styles.meta}>{[vehicle.make, vehicle.model, vehicle.year].filter(Boolean).join(' · ') || 'Garage vehicle'}</Text>
-              </View>
-              <Text style={styles.open}>Run Check →</Text>
-            </TouchableOpacity>
-          ))}
+          <Text style={styles.section}>{text("Choose vehicle", "Elige vehículo")}</Text>
+          {vehicles.map((vehicle: any) => {
+            const retained = activeBleController.getActiveConnection();
+            const canReuse = Boolean(
+              retained &&
+              retained.vehicleId === vehicle.id &&
+              activeBleController.getOwner() === 'IDLE'
+            );
+
+            return (
+              <TouchableOpacity
+                key={vehicle.id}
+                style={styles.card}
+                onPress={() => canReuse && retained
+                  ? navigation.navigate('CheckRun', {
+                      vehicleId: vehicle.id,
+                      connectionHandleId: retained.connectionHandleId,
+                      adapterInstanceId: retained.adapterInstanceId,
+                    })
+                  : navigation.navigate('CheckConnect', { vehicleId: vehicle.id })}
+                testID={`check-vehicle-${vehicle.id}`}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.vehicle}>{vehicle.alias || text('Vehicle', 'Vehículo')}</Text>
+                  <Text style={styles.meta}>
+                    {[vehicle.make, vehicle.model, vehicle.year].filter(Boolean).join(' · ') || text('Garage vehicle', 'Vehículo del Garaje')}
+                    {canReuse ? text(' · OBD connected', ' · OBD conectado') : ''}
+                  </Text>
+                </View>
+                <Text style={styles.open}>{canReuse ? text('Use connected OBD →', 'Usar OBD conectado →') : text('Run Check →', 'Ejecutar Check →')}</Text>
+              </TouchableOpacity>
+            );
+          })}
 
           <View style={styles.boundary}>
-            <Text style={styles.boundaryTitle}>What this is not</Text>
-            <Text style={styles.boundaryText}>Check does not create a mechanical PASS/FAIL verdict. No DTCs reported by scanned services does not mean the whole vehicle is healthy. ABS, SRS, transmission and manufacturer-enhanced modules are not inferred.</Text>
+            <Text style={styles.boundaryTitle}>{text("What this is not", "Qué no es")}</Text>
+            <Text style={styles.boundaryText}>{text("Check does not create a mechanical PASS/FAIL verdict. No DTCs reported by scanned services does not mean the whole vehicle is healthy. ABS, SRS, transmission and manufacturer-enhanced modules are not inferred.", "Check no emite un veredicto mecánico PASS/FAIL. Que no aparezcan DTC en los servicios escaneados no significa que todo el vehículo esté sano. ABS, SRS, transmisión y módulos del fabricante no se infieren.")}</Text>
           </View>
         </ScrollView>
       )}

@@ -19,6 +19,20 @@ describe('LiveEcuTruth', () => {
       .toBe('LIVE_ECU_DATA');
   });
 
+  it('does not keep claiming live forever after ECU observations go stale', () => {
+    const state = deriveLiveEcuTruth({
+      hasValidEcuSample: true,
+      elapsedMs: 60_000,
+      lastValidEcuSampleAgeMs: 12_000,
+      staleAfterMs: 5_000,
+    });
+
+    expect(state.state).toBe('ECU_DATA_DELAYED');
+    expect(state.label).toBe('ECU DATA TEMPORARILY UNAVAILABLE');
+    expect(state.detail).toContain('no fresh ECU-origin sample');
+    expect(state.tone).toBe('delayed');
+  });
+
   it('shows bounded connection recovery as amber instead of terminal failure', () => {
     const state = deriveLiveEcuTruth({
       hasValidEcuSample: true,

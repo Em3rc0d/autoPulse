@@ -23,6 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
 
       - name: Use Node.js
@@ -110,7 +111,7 @@ jobs:
           sha256sum package-lock.json | awk '{print $1}' > .release/package-lock.sha256
           sha256sum .release/apk-effective-permissions.txt | awk '{print $1}' > .release/apk-permissions.sha256
 
-      - name: Enforce Android Permission Contract V1
+      - name: Enforce Android Permission Contract V2
         id: permission_contract
         run: |
           set -euo pipefail
@@ -131,6 +132,7 @@ jobs:
           android.permission.BLUETOOTH_CONNECT
           android.permission.BLUETOOTH_SCAN
           android.permission.FOREGROUND_SERVICE
+          android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE
           android.permission.INTERNET
           android.permission.POST_NOTIFICATIONS
           android.permission.READ_EXTERNAL_STORAGE
@@ -148,6 +150,7 @@ jobs:
           android.permission.BLUETOOTH_CONNECT
           android.permission.BLUETOOTH_SCAN
           android.permission.FOREGROUND_SERVICE
+          android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE
           android.permission.INTERNET
           android.permission.POST_NOTIFICATIONS
           android.permission.VIBRATE
@@ -168,11 +171,11 @@ jobs:
           cat .release/apk-permission-missing-required.txt
 
           test ! -s .release/apk-permission-unexpected.txt || {
-            echo 'ERROR: APK declares permission(s) outside Android Permission Contract V1.'
+            echo 'ERROR: APK declares permission(s) outside Android Permission Contract V2.'
             exit 1
           }
           test ! -s .release/apk-permission-missing-required.txt || {
-            echo 'ERROR: APK is missing permission(s) required by Android Permission Contract V1.'
+            echo 'ERROR: APK is missing permission(s) required by Android Permission Contract V2.'
             exit 1
           }
 
@@ -208,7 +211,7 @@ jobs:
         env:
           AP_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           AP_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          AP_CI_SHA: ${{ github.sha }}
+          AP_CI_SHA: ${{ github.event.pull_request.head.sha }}
           AP_PR_NUMBER: ${{ github.event.pull_request.number }}
           AP_RUN_ID: ${{ github.run_id }}
           AP_RUN_ATTEMPT: ${{ github.run_attempt }}

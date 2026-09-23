@@ -36,10 +36,10 @@ describe('RealTelemetryPoller', () => {
     await Promise.resolve();
   };
 
-  it('retires a PID after 3 truly consecutive NO_DATA', async () => {
+  it('retires a fallback-probe PID after 3 truly consecutive NO_DATA', async () => {
     mockExecutor.executeCommand.mockResolvedValue(result('NO_DATA'));
 
-    const poller = new RealTelemetryPoller(mockExecutor, ['010C'], onData, onDiagnostic);
+    const poller = new RealTelemetryPoller(mockExecutor, ['010C'], onData, onDiagnostic, 'FALLBACK');
     poller.start(10);
 
     await advanceOne();
@@ -52,6 +52,33 @@ describe('RealTelemetryPoller', () => {
 
     jest.advanceTimersByTime(100);
     expect(mockExecutor.executeCommand).toHaveBeenCalledTimes(3);
+  });
+
+  it('keeps a discovered PID after temporary NO_DATA and allows later recovery', async () => {
+    mockExecutor.executeCommand
+      .mockResolvedValue(result('SUCCESS_DECODED'))
+      .mockResolvedValueOnce(result('NO_DATA'))
+      .mockResolvedValueOnce(result('NO_DATA'))
+      .mockResolvedValueOnce(result('NO_DATA'))
+      .mockResolvedValueOnce(result('SUCCESS_DECODED'));
+
+    const poller = new RealTelemetryPoller(mockExecutor, ['010C'], onData, onDiagnostic, 'DISCOVERED');
+    poller.start(10);
+
+    for (let i = 0; i < 4; i++) await advanceOne();
+
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'PID_TEMPORARILY_UNAVAILABLE',
+      pid: '010C',
+      consecutiveNoData: 3,
+    }));
+    expect(onDiagnostic).not.toHaveBeenCalledWith(expect.objectContaining({
+      type: 'PID_RETIRED_NO_DATA',
+      pid: '010C',
+    }));
+    expect(mockExecutor.executeCommand).toHaveBeenCalledTimes(5);
+    expect(onData).toHaveBeenLastCalledWith(expect.objectContaining({ status: 'SUCCESS_DECODED' }));
+    poller.stop();
   });
 
   it('normalizes discovered Tier-1 requests, deduplicates and rejects unknown requests', async () => {

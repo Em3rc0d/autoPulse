@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useAppLanguage } from '../../../application/i18n/AppLanguage';
 import {
   DRIVING_MODE_ORDER,
   DRIVING_MODE_PRESENTATION,
@@ -33,7 +34,19 @@ const modeState = (
 };
 
 export function DriverModeSelector({ selectedMode, availableSignals, onSelectMode, disabled = false, compact = false }: Props) {
+  const { text } = useAppLanguage();
   const presentation = DRIVING_MODE_PRESENTATION[selectedMode];
+  const translateMode = (label: string) => {
+    const translations: Record<string, string> = {
+      'Essential': 'Esencial',
+      'Family': 'Familia',
+      'Family / Daily': 'Familia / Diario',
+      'Performance': 'Rendimiento',
+      'Off-Road': 'Todo terreno',
+      'Diagnostic': 'Diagnóstico',
+    };
+    return text(label, translations[label] ?? label);
+  };
   const dimensions = resolveModeDecisionDimensions(selectedMode, availableSignals)
     .filter(dimension => dimension.coverage !== 'UNKNOWN');
   const state = modeState(selectedMode, availableSignals);
@@ -43,7 +56,7 @@ export function DriverModeSelector({ selectedMode, availableSignals, onSelectMod
   if (compact) {
     return (
       <View style={styles.compactRow}>
-        <Text style={styles.compactEyebrow}>MODE</Text>
+        <Text style={styles.compactEyebrow}>{text('MODE', 'MODO')}</Text>
         <TouchableOpacity
           style={styles.compactButton}
           onPress={() => {
@@ -55,7 +68,7 @@ export function DriverModeSelector({ selectedMode, availableSignals, onSelectMod
           testID="driver-mode-compact-selector"
         >
           <Text style={styles.compactIcon}>{presentation.icon}</Text>
-          <Text style={styles.compactLabel}>{presentation.shortLabel}</Text>
+          <Text style={styles.compactLabel}>{translateMode(presentation.shortLabel)}</Text>
           <Text style={styles.compactChevron}>›</Text>
         </TouchableOpacity>
       </View>
@@ -66,15 +79,15 @@ export function DriverModeSelector({ selectedMode, availableSignals, onSelectMod
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <View style={styles.modeIdentity}>
-          <Text style={styles.eyebrow}>DRIVER MODE</Text>
-          <Text style={styles.activeMode}>{presentation.label}</Text>
+          <Text style={styles.eyebrow}>{text('DRIVER MODE', 'MODO DE CONDUCCIÓN')}</Text>
+          <Text style={styles.activeMode}>{translateMode(presentation.label)}</Text>
         </View>
         {dimensions.length > 0 ? (
           <Text style={styles.coverageSummary}>
-            <Text style={styles.readyText}>{readyCount} READY</Text>
-            {partialCount > 0 ? <Text style={styles.partialText}> · {partialCount} PARTIAL</Text> : null}
+            <Text style={styles.readyText}>{readyCount} {text('READY', 'LISTO')}</Text>
+            {partialCount > 0 ? <Text style={styles.partialText}> · {partialCount} {text('PARTIAL', 'PARCIAL')}</Text> : null}
           </Text>
-        ) : state ? <Text style={styles.coverageSummary}>{state}</Text> : null}
+        ) : state ? <Text style={styles.coverageSummary}>{state === 'READY' ? text('READY', 'LISTO') : text('ADAPTIVE', 'ADAPTATIVO')}</Text> : null}
       </View>
 
       <View style={styles.modeRow}>
@@ -91,7 +104,7 @@ export function DriverModeSelector({ selectedMode, availableSignals, onSelectMod
               disabled={disabled}
             >
               <Text style={[styles.modeIcon, active && styles.modeTextActive]}>{item.icon}</Text>
-              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65} style={[styles.modeLabel, active && styles.modeTextActive]}>{item.shortLabel}</Text>
+              <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.65} style={[styles.modeLabel, active && styles.modeTextActive]}>{translateMode(item.shortLabel)}</Text>
             </TouchableOpacity>
           );
         })}

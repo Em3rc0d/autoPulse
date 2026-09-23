@@ -7,11 +7,13 @@ import {
   type DriverPreferences,
 } from '../../application/settings/DriverPreferences';
 import type { VoiceLanguage } from '../../domain/driver-intelligence/DriverAlertLexicon';
+import { useAppLanguage } from '../../application/i18n/AppLanguage';
 
 export default function SettingsScreen() {
   const [preferences, setPreferences] = useState<DriverPreferences>(DEFAULT_DRIVER_PREFERENCES);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const { text } = useAppLanguage();
 
   useEffect(() => {
     let mounted = true;
@@ -32,7 +34,10 @@ export default function SettingsScreen() {
     }
   };
 
-  const setLanguage = (voiceLanguage: VoiceLanguage) => void persist({ voiceLanguage });
+  const setLanguage = (voiceLanguage: VoiceLanguage) => void persist({
+    voiceLanguage,
+    appLanguage: voiceLanguage,
+  });
 
   if (loading) {
     return (
@@ -44,15 +49,15 @@ export default function SettingsScreen() {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.eyebrow}>DRIVER COMMUNICATION</Text>
-      <Text style={styles.title}>Settings</Text>
-      <Text style={styles.lead}>While driving, AutoPulse communicates with short voice alerts and glanceable states. Detailed explanations stay on parked screens.</Text>
+      <Text style={styles.eyebrow}>{text('DRIVER COMMUNICATION','COMUNICACIÓN CON EL CONDUCTOR')}</Text>
+      <Text style={styles.title}>{text('Settings','Ajustes')}</Text>
+      <Text style={styles.lead}>{text('While driving, AutoPulse communicates with short voice alerts and glanceable states. Detailed explanations stay on parked screens.','Al conducir, AutoPulse usa alertas de voz breves y estados fáciles de ver. Las explicaciones detalladas quedan para cuando estés estacionado.')}</Text>
 
       <View style={styles.card}>
         <View style={styles.row}>
           <View style={styles.rowCopy}>
-            <Text style={styles.label}>Voice alerts</Text>
-            <Text style={styles.hint}>Short, controlled phrases only.</Text>
+            <Text style={styles.label}>{text('Voice alerts','Alertas de voz')}</Text>
+            <Text style={styles.hint}>{text('Short, controlled phrases only.','Sólo frases breves y controladas.')}</Text>
           </View>
           <Switch
             value={preferences.voiceAlertsEnabled}
@@ -62,42 +67,42 @@ export default function SettingsScreen() {
           />
         </View>
 
-        <Text style={styles.sectionLabel}>VOICE LANGUAGE</Text>
+        <Text style={styles.sectionLabel}>{text('VOICE LANGUAGE','IDIOMA DE APP Y VOZ')}</Text>
         <View style={styles.languageRow}>
           <LanguageButton label="English" active={preferences.voiceLanguage === 'en-US'} onPress={() => setLanguage('en-US')} />
           <LanguageButton label="Español" active={preferences.voiceLanguage === 'es-ES'} onPress={() => setLanguage('es-ES')} />
         </View>
-        <Text style={styles.defaultNote}>English is the default language.</Text>
+        <Text style={styles.defaultNote}>{text('English is the default language.','El inglés es el idioma predeterminado.')}</Text>
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Alert levels</Text>
+        <Text style={styles.cardTitle}>{text('Alert levels','Niveles de alerta')}</Text>
         <AlertToggle
-          title="Critical"
-          description="Immediate safety state. Kept enabled by default."
+          title={text('Critical', 'Crítico')}
+          description={text('Immediate safety state. Kept enabled by default.', 'Estado de seguridad inmediato. Se mantiene activo por defecto.')}
           value={preferences.criticalAlertsEnabled}
           onChange={value => void persist({ criticalAlertsEnabled: value })}
         />
         <AlertToggle
-          title="Attention"
-          description="Conditions that require driver awareness."
+          title={text('Attention', 'Atención')}
+          description={text('Conditions that require driver awareness.', 'Condiciones que requieren atención del conductor.')}
           value={preferences.attentionAlertsEnabled}
           onChange={value => void persist({ attentionAlertsEnabled: value })}
         />
         <AlertToggle
-          title="Advisory"
-          description="Low-priority voice. Off by default to avoid chatter."
+          title={text('Advisory', 'Aviso')}
+          description={text('Low-priority voice. Off by default to avoid chatter.', 'Voz de baja prioridad. Desactivada por defecto para evitar ruido.')}
           value={preferences.advisoryAlertsEnabled}
           onChange={value => void persist({ advisoryAlertsEnabled: value })}
         />
       </View>
 
       <View style={styles.contract}>
-        <Text style={styles.contractTitle}>Driving UX contract</Text>
-        <Text style={styles.contractText}>VOICE + COLOR + ICON → first. Text → evidence for later review.</Text>
+        <Text style={styles.contractTitle}>{text('Driving UX contract','Contrato UX de conducción')}</Text>
+        <Text style={styles.contractText}>{text('VOICE + COLOR + ICON → first. Text → evidence for later review.', 'VOZ + COLOR + ICONO → primero. Texto → evidencia para revisar después.')}</Text>
       </View>
 
-      {saving ? <Text style={styles.saving}>Saving…</Text> : null}
+      {saving ? <Text style={styles.saving}>{text('Saving…','Guardando…')}</Text> : null}
     </ScrollView>
   );
 }

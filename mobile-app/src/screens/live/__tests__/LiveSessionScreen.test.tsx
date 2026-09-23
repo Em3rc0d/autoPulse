@@ -50,6 +50,14 @@ jest.mock('../../../application/config', () => ({
   },
 }));
 
+jest.mock('../../../application/i18n/AppLanguage', () => ({
+  useAppLanguage: () => ({
+    language: 'en-US',
+    isSpanish: false,
+    text: (english: string) => english,
+  }),
+}));
+
 describe('LiveSessionScreen', () => {
   it('renders the bounded live signal set and keeps ECU and adapter voltage separate', () => {
     const { getByText } = render(<LiveSessionScreen />);

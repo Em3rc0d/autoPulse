@@ -14,6 +14,7 @@ import { LiveSessionRepository } from '../../infrastructure/database/product/rep
 import { AdapterRepository } from '../../infrastructure/database/product/repositories/adapter.repository';
 import { AdapterCapabilitySnapshotRepository } from '../../infrastructure/database/product/repositories/adapter-capability-snapshot.repository';
 import { AppConfig } from '../../application/config';
+import { useAppLanguage } from '../../application/i18n/AppLanguage';
 
 type ProbeUiState =
   | 'IDLE' | 'SEARCHING' | 'DEVICE_SELECTED' | 'CONNECTING'
@@ -27,6 +28,7 @@ export default function ConnectObdScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const vehicleId = route.params?.vehicleId;
+  const { text } = useAppLanguage();
 
   const { vehicle, loading: vehicleLoading } = useVehicle(vehicleId);
 
@@ -144,6 +146,8 @@ export default function ConnectObdScreen() {
         writeCharacteristic: probeResult.handshakeComb.writeCharacteristic,
         receiveCharacteristic: probeResult.handshakeComb.receiveCharacteristic,
         profileId: probeResult.result.matchedProfileId,
+        vehicleId,
+        adapterInstanceId: adapter.id,
       });
 
       navigation.navigate('Initialization', {
@@ -187,17 +191,17 @@ export default function ConnectObdScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>OBD2 Connection</Text>
+        <Text style={styles.title}>{text("OBD2 Connection", "Conexión OBD2")}</Text>
         {vehicleLoading || contextLoading ? (
-          <Text style={styles.subtitle}>Loading context...</Text>
+          <Text style={styles.subtitle}>{text("Loading context...", "Cargando contexto...")}</Text>
         ) : vehicle && localContext ? (
           <View>
             <Text style={styles.vehicleAlias}>{vehicle.alias}</Text>
             <Text style={styles.subtitle}>{vehicle.make} {vehicle.model} · {vehicle.year}</Text>
-            <Text style={styles.technicalText}>{vehicleId ? vehicleId.substring(0, 8) : 'No vehicle'}... | W: {localContext.defaultWorkspaceId.substring(0,8)}</Text>
+            <Text style={styles.technicalText}>{vehicleId ? vehicleId.substring(0, 8) : text('No vehicle', 'Sin vehículo')}... | W: {localContext.defaultWorkspaceId.substring(0,8)}</Text>
           </View>
         ) : (
-          <Text style={styles.subtitle}>Context unavailable</Text>
+          <Text style={styles.subtitle}>{text("Context unavailable", "Contexto no disponible")}</Text>
         )}
       </View>
 
@@ -205,28 +209,28 @@ export default function ConnectObdScreen() {
         {!localContext && !contextLoading && (
            <View style={styles.stateContainer}>
              <Text style={styles.errorText}>LOCAL_CONTEXT_UNAVAILABLE</Text>
-             <Text style={styles.instruction}>The app context could not be loaded. Database might be corrupt.</Text>
+             <Text style={styles.instruction}>{text("The app context could not be loaded. Database might be corrupt.", "No se pudo cargar el contexto de la app. La base de datos podría estar dañada.")}</Text>
            </View>
         )}
 
         {localContext && uiState === 'IDLE' && (
           <View style={styles.stateContainer}>
-            <Text style={styles.instruction}>Plug the adapter into the OBD2 port and turn on the ignition.</Text>
+            <Text style={styles.instruction}>{text("Plug the adapter into the OBD2 port and turn on the ignition.", "Conecta el adaptador al puerto OBD2 y enciende el contacto.")}</Text>
 
             {bleError && <Text style={styles.errorText}>{bleError}</Text>}
 
             <TouchableOpacity style={styles.primaryButton} onPress={handleStartScan}>
-              <Text style={styles.primaryButtonText}>Scan for Adapters</Text>
+              <Text style={styles.primaryButtonText}>{text("Scan for Adapters", "Buscar adaptadores")}</Text>
             </TouchableOpacity>
 
             {AppConfig.INTERNAL_TOOLS_ENABLED && (
               <>
                 <TouchableOpacity style={styles.secondaryButton} onPress={startVirtualConnection}>
-                  <Text style={styles.secondaryButtonText}>Use Virtual Adapter (Dev)</Text>
+                  <Text style={styles.secondaryButtonText}>{text("Use Virtual Adapter (Dev)", "Usar adaptador virtual (Dev)")}</Text>
                 </TouchableOpacity>
 
                 <View style={styles.replayBox}>
-                  <Text style={styles.replayLabel}>LAPTOP REPLAY HOST</Text>
+                  <Text style={styles.replayLabel}>{text("LAPTOP REPLAY HOST", "HOST DE REPLAY")}</Text>
                   <TextInput
                     style={styles.replayInput}
                     value={replayHost}
@@ -237,7 +241,7 @@ export default function ConnectObdScreen() {
                     autoCorrect={false}
                   />
                   <TouchableOpacity style={styles.secondaryButton} onPress={startLaptopReplay}>
-                    <Text style={styles.secondaryButtonText}>Connect to Laptop Replay</Text>
+                    <Text style={styles.secondaryButtonText}>{text("Connect to Laptop Replay", "Conectar a replay")}</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -248,11 +252,11 @@ export default function ConnectObdScreen() {
         {(uiState === 'SEARCHING' || isScanning) && (
           <View style={styles.stateContainer}>
             <ActivityIndicator size="large" color="#4ade80" />
-            <Text style={styles.statusText}>Searching for OBD2 devices...</Text>
+            <Text style={styles.statusText}>{text("Searching for OBD2 devices...", "Buscando dispositivos OBD2...")}</Text>
 
             <View style={styles.deviceList}>
               {devices.map((d) => (
-                <TouchableOpacity key={d.id} style={styles.deviceCard} onPress={() => connectToDevice(d.id, d.name || 'Unknown Device')}>
+                <TouchableOpacity key={d.id} style={styles.deviceCard} onPress={() => connectToDevice(d.id, d.name || text('Unknown Device', 'Dispositivo desconocido'))}>
                   <Text style={styles.deviceName}>{d.name || 'Unknown Device'}</Text>
                   <Text style={styles.deviceInfo}>{d.id} | RSSI: {d.rssi}</Text>
                 </TouchableOpacity>
@@ -260,7 +264,7 @@ export default function ConnectObdScreen() {
             </View>
 
             <TouchableOpacity style={styles.secondaryButton} onPress={handleCancel}>
-              <Text style={styles.secondaryButtonText}>Cancel</Text>
+              <Text style={styles.secondaryButtonText}>{text("Cancel", "Cancelar")}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -270,13 +274,13 @@ export default function ConnectObdScreen() {
             <ActivityIndicator size="large" color="#60a5fa" />
             <Text style={styles.deviceName}>{selectedDeviceName}</Text>
             <Text style={styles.statusText}>
-              {uiState === 'CONNECTING' ? 'Connecting to device...' :
-               uiState === 'DISCOVERING_SERVICES' ? 'Discovering services...' :
-               uiState === 'INSPECTING_GATT' ? 'Inspecting GATT characteristics...' :
-               'Testing OBD2 channels...'}
+              {uiState === 'CONNECTING' ? text('Connecting to device...', 'Conectando al dispositivo...') :
+               uiState === 'DISCOVERING_SERVICES' ? text('Discovering services...', 'Detectando servicios...') :
+               uiState === 'INSPECTING_GATT' ? text('Inspecting GATT characteristics...', 'Inspeccionando características GATT...') :
+               text('Testing OBD2 channels...', 'Probando canales OBD2...')}
             </Text>
             <TouchableOpacity style={styles.secondaryButton} onPress={handleCancel}>
-              <Text style={styles.secondaryButtonText}>Cancel Probe</Text>
+              <Text style={styles.secondaryButtonText}>{text("Cancel Probe", "Cancelar prueba")}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -287,21 +291,21 @@ export default function ConnectObdScreen() {
               <Text style={styles.successIcon}>✓</Text>
             </View>
             <Text style={styles.deviceName}>{selectedDeviceName}</Text>
-            <Text style={styles.statusTextSuccess}>Adapter Compatible</Text>
+            <Text style={styles.statusTextSuccess}>{text("Adapter Compatible", "Adaptador compatible")}</Text>
 
             <View style={styles.probeSummary}>
-              <Text style={styles.probeText}>Compatibility: {probeResult?.result.compatibilityGrade}</Text>
-              <Text style={styles.probeText}>Profile: {probeResult?.result.matchedProfileId || probeResult?.result.profileMatch}</Text>
-              <Text style={styles.probeText}>Handshake: {probeResult?.result.commandUsed?.trim()} ➔ {probeResult?.result.sanitizedResponse || 'OK'}</Text>
-              <Text style={styles.probeText}>Latency: {probeResult?.result.latencyMs}ms</Text>
+              <Text style={styles.probeText}>{text('Compatibility:', 'Compatibilidad:')} {probeResult?.result.compatibilityGrade}</Text>
+              <Text style={styles.probeText}>{text('Profile:', 'Perfil:')} {probeResult?.result.matchedProfileId || probeResult?.result.profileMatch}</Text>
+              <Text style={styles.probeText}>{text('Handshake:', 'Handshake:')} {probeResult?.result.commandUsed?.trim()} ➔ {probeResult?.result.sanitizedResponse || 'OK'}</Text>
+              <Text style={styles.probeText}>{text('Latency:', 'Latencia:')} {probeResult?.result.latencyMs}ms</Text>
             </View>
 
             <TouchableOpacity style={styles.primaryButton} onPress={confirmAndUseAdapter}>
-              <Text style={styles.primaryButtonText}>Use this adapter</Text>
+              <Text style={styles.primaryButtonText}>{text("Use this adapter", "Usar este adaptador")}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.secondaryButton} onPress={() => setUiState('IDLE')}>
-              <Text style={styles.secondaryButtonText}>Choose another</Text>
+              <Text style={styles.secondaryButtonText}>{text("Choose another", "Elegir otro")}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -312,14 +316,14 @@ export default function ConnectObdScreen() {
               <Text style={[styles.successIcon, { color: '#eab308' }]}>?</Text>
             </View>
             <Text style={styles.deviceName}>{selectedDeviceName}</Text>
-            <Text style={[styles.statusTextSuccess, { color: '#eab308' }]}>Unknown Device</Text>
-            <Text style={styles.instruction}>The device connects, but did not respond to standard OBD2 initialization.</Text>
+            <Text style={[styles.statusTextSuccess, { color: '#eab308' }]}>{text("Unknown Device", "Dispositivo desconocido")}</Text>
+            <Text style={styles.instruction}>{text("The device connects, but did not respond to standard OBD2 initialization.", "El dispositivo conecta, pero no respondió a la inicialización OBD2 estándar.")}</Text>
 
             <TouchableOpacity style={styles.primaryButton} onPress={() => connectToDevice(probeResult?.result.deviceId || '', selectedDeviceName)}>
-              <Text style={styles.primaryButtonText}>Retry compatibility test</Text>
+              <Text style={styles.primaryButtonText}>{text("Retry compatibility test", "Reintentar prueba de compatibilidad")}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.secondaryButton} onPress={() => setUiState('IDLE')}>
-              <Text style={styles.secondaryButtonText}>Go back</Text>
+              <Text style={styles.secondaryButtonText}>{text("Go back", "Volver")}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -327,13 +331,13 @@ export default function ConnectObdScreen() {
         {(uiState === 'INCOMPATIBLE' || uiState === 'FAILED' || uiState === 'CANCELLED') && (
           <View style={styles.stateContainer}>
             <Text style={styles.errorText}>
-              {uiState === 'CANCELLED' ? 'Probe Cancelled' : uiState === 'INCOMPATIBLE' ? 'Incompatible Device' : 'Probe Failed'}
+              {uiState === 'CANCELLED' ? text('Probe Cancelled', 'Prueba cancelada') : uiState === 'INCOMPATIBLE' ? text('Incompatible Device', 'Dispositivo incompatible') : text('Probe Failed', 'Prueba fallida')}
             </Text>
             <Text style={styles.instruction}>
-              {probeResult?.result.failureReason || 'Ensure the adapter is an ELM327 BLE compatible device.'}
+              {probeResult?.result.failureReason || text('Ensure the adapter is an ELM327 BLE compatible device.', 'Asegúrate de que el adaptador sea un dispositivo BLE compatible con ELM327.')}
             </Text>
             <TouchableOpacity style={styles.primaryButton} onPress={() => setUiState('IDLE')}>
-              <Text style={styles.primaryButtonText}>Scan Again</Text>
+              <Text style={styles.primaryButtonText}>{text("Scan Again", "Buscar de nuevo")}</Text>
             </TouchableOpacity>
           </View>
         )}

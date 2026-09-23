@@ -5,11 +5,14 @@ import { useVehicle } from '../../infrastructure/hooks/useVehicle';
 import { useSessionSummary } from '../../infrastructure/hooks/useSessionSummary';
 import { useLocalContext } from '../../infrastructure/hooks/useLocalContext';
 import { SessionIntegrityState } from '../../domain/telemetry/models/sessionSummaryResult';
+import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
+import { useAppLanguage } from '../../application/i18n/AppLanguage';
 
 export default function SessionSummaryScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { vehicleId, sessionId, duration = 0, isVirtual } = route.params || {};
+  const { text } = useAppLanguage();
 
   const { context } = useLocalContext();
   const workspaceId = context?.defaultWorkspaceId;
@@ -33,9 +36,22 @@ export default function SessionSummaryScreen() {
   };
 
   const handleCheck = () => {
+    const retained = activeBleController.getActiveConnection();
+    const canReuse = Boolean(
+      retained &&
+      retained.vehicleId === vehicleId &&
+      activeBleController.getOwner() === 'IDLE'
+    );
+
     navigation.navigate('Check', {
-      screen: 'VehicleCheckReport',
-      params: { sessionId, vehicleId },
+      screen: canReuse ? 'CheckRun' : 'CheckConnect',
+      params: canReuse && retained
+        ? {
+            vehicleId,
+            connectionHandleId: retained.connectionHandleId,
+            adapterInstanceId: retained.adapterInstanceId,
+          }
+        : { vehicleId },
     });
   };
 
@@ -43,7 +59,7 @@ export default function SessionSummaryScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Session Summary</Text>
+          <Text style={styles.title}>{text("Session Summary", "Resumen de sesión")}</Text>
         </View>
 
         <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
@@ -51,27 +67,27 @@ export default function SessionSummaryScreen() {
             <View style={[styles.statusIcon, { borderColor: '#60a5fa' }]}>
               <Text style={[styles.statusIconText, { color: '#60a5fa' }]}>✓</Text>
             </View>
-            <Text style={styles.subtitle}>Simulation Saved</Text>
-            <Text style={styles.terminationText}>Development placebo only</Text>
+            <Text style={styles.subtitle}>{text("Simulation Saved", "Simulación guardada")}</Text>
+            <Text style={styles.terminationText}>{text("Development placebo only", "Sólo simulación de desarrollo")}</Text>
           </View>
 
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Identity</Text>
+            <Text style={styles.cardTitle}>{text("Identity", "Identidad")}</Text>
             <View style={styles.divider} />
             <View style={styles.row}>
-              <Text style={styles.label}>Vehicle:</Text>
-              <Text style={styles.value}>{vehicle ? vehicle.alias : (vehicleId ? vehicleId.substring(0,8) : 'Unknown')}</Text>
+              <Text style={styles.label}>{text("Vehicle:", "Vehículo:")}</Text>
+              <Text style={styles.value}>{vehicle ? vehicle.alias : (vehicleId ? vehicleId.substring(0,8) : text('Unknown', 'Desconocido'))}</Text>
             </View>
             <View style={styles.row}>
-              <Text style={styles.label}>Session ID:</Text>
+              <Text style={styles.label}>{text("Session ID:", "ID de sesión:")}</Text>
               <Text style={styles.value}>{sessionId?.substring(0, 8)}...</Text>
             </View>
             <View style={styles.row}>
-              <Text style={styles.label}>Acquisition Mode:</Text>
+              <Text style={styles.label}>{text("Acquisition Mode:", "Modo de adquisición:")}</Text>
               <Text style={[styles.value, { color: '#60a5fa' }]}>VIRTUAL_PREVIEW</Text>
             </View>
             <View style={styles.row}>
-              <Text style={styles.label}>Duration:</Text>
+              <Text style={styles.label}>{text("Duration:", "Duración:")}</Text>
               <Text style={styles.value}>{formatTime(duration)}</Text>
             </View>
           </View>
@@ -79,7 +95,7 @@ export default function SessionSummaryScreen() {
 
         <View style={styles.footer}>
           <TouchableOpacity style={styles.primaryButton} onPress={handleDone}>
-            <Text style={styles.primaryButtonText}>Done</Text>
+            <Text style={styles.primaryButtonText}>{text("Done", "Listo")}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -90,13 +106,13 @@ export default function SessionSummaryScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Session Summary</Text>
+          <Text style={styles.title}>{text("Session Summary", "Resumen de sesión")}</Text>
         </View>
         <View style={styles.content}>
-          <Text style={styles.errorText}>Failed to reconstruct session.</Text>
+          <Text style={styles.errorText}>{text("Failed to reconstruct session.", "No se pudo reconstruir la sesión.")}</Text>
           <Text style={styles.errorDetails}>{error.message}</Text>
           <TouchableOpacity style={styles.primaryButton} onPress={handleDone}>
-            <Text style={styles.primaryButtonText}>Go Back</Text>
+            <Text style={styles.primaryButtonText}>{text("Go Back", "Volver")}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -107,13 +123,13 @@ export default function SessionSummaryScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Session Summary</Text>
+          <Text style={styles.title}>{text("Session Summary", "Resumen de sesión")}</Text>
         </View>
         <View style={styles.content}>
           <ActivityIndicator size="large" color="#4ade80" style={{ marginBottom: 16 }} />
-          <Text style={styles.subtitle}>Reconstructing session...</Text>
+          <Text style={styles.subtitle}>{text("Reconstructing session...", "Reconstruyendo sesión...")}</Text>
           <Text style={styles.progressText}>{Math.round(progress * 100)}%</Text>
-          <Text style={styles.loadingDetail}>Reading persisted telemetry</Text>
+          <Text style={styles.loadingDetail}>{text("Reading persisted telemetry", "Leyendo telemetría persistida")}</Text>
         </View>
       </View>
     );
@@ -134,7 +150,7 @@ export default function SessionSummaryScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Session Summary</Text>
+        <Text style={styles.title}>{text("Session Summary", "Resumen de sesión")}</Text>
       </View>
 
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent}>
@@ -145,102 +161,102 @@ export default function SessionSummaryScreen() {
             </Text>
           </View>
           <Text style={styles.subtitle}>
-            {isComplete ? 'Session Completed' : `Session ${summary.integrityState}`}
+            {isComplete ? text('Session Completed', 'Sesión completada') : `${text('Session', 'Sesión')} ${summary.integrityState}`}
           </Text>
           {summary.terminationReason && (
-            <Text style={styles.terminationText}>Reason: {summary.terminationReason}</Text>
+            <Text style={styles.terminationText}>{text('Reason:', 'Motivo:')} {summary.terminationReason}</Text>
           )}
         </View>
 
         <View style={styles.checkCallout}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.checkEyebrow}>NEXT</Text>
-            <Text style={styles.checkTitle}>Review with Check</Text>
-            <Text style={styles.checkText}>Build a sealed evidence report from this exact persisted session.</Text>
+            <Text style={styles.checkEyebrow}>{text("NEXT", "SIGUIENTE")}</Text>
+            <Text style={styles.checkTitle}>{text("Run ECU Check", "Ejecutar ECU Check")}</Text>
+            <Text style={styles.checkText}>{text("Start a fresh read-only ECU scan. The completed Live session remains immutable.", "Inicia un nuevo escaneo ECU de solo lectura. La sesión Live completada permanece inmutable.")}</Text>
           </View>
           <Text style={styles.checkArrow}>→</Text>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Identity</Text>
+          <Text style={styles.cardTitle}>{text("Identity", "Identidad")}</Text>
           <View style={styles.divider} />
 
           <View style={styles.row}>
-            <Text style={styles.label}>Vehicle:</Text>
+            <Text style={styles.label}>{text("Vehicle:", "Vehículo:")}</Text>
             <Text style={styles.value}>{vehicle ? vehicle.alias : vehicleId?.substring(0,8)}</Text>
           </View>
           <View style={styles.row}>
-            <Text style={styles.label}>Session ID:</Text>
+            <Text style={styles.label}>{text("Session ID:", "ID de sesión:")}</Text>
             <Text style={styles.value}>{sessionId?.substring(0, 8)}...</Text>
           </View>
           <View style={styles.row}>
-            <Text style={styles.label}>Acquisition Mode:</Text>
+            <Text style={styles.label}>{text("Acquisition Mode:", "Modo de adquisición:")}</Text>
             <Text style={[styles.value, { color: '#60a5fa' }]}>{summary.acquisitionMode}</Text>
           </View>
           <View style={styles.row}>
-            <Text style={styles.label}>Duration:</Text>
+            <Text style={styles.label}>{text("Duration:", "Duración:")}</Text>
             <Text style={styles.value}>{formatTime(summary.durationSeconds || 0)}</Text>
           </View>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Persistence & Integrity</Text>
+          <Text style={styles.cardTitle}>{text("Persistence & Integrity", "Persistencia e integridad")}</Text>
           <View style={styles.divider} />
 
           <View style={styles.row}>
-            <Text style={styles.label}>Integrity State:</Text>
+            <Text style={styles.label}>{text("Integrity State:", "Estado de integridad:")}</Text>
             <Text style={[styles.value, { color: getIntegrityColor(summary.integrityState) }]}>
               {summary.integrityState}
             </Text>
           </View>
           <View style={styles.row}>
-            <Text style={styles.label}>Total Blocks:</Text>
+            <Text style={styles.label}>{text("Total Blocks:", "Bloques totales:")}</Text>
             <Text style={styles.value}>{summary.foundBlocksCount} / {summary.expectedBlocksCount}</Text>
           </View>
           {(summary.partialBlocksCount > 0 || summary.corruptedBlocksCount > 0) && (
             <View style={styles.row}>
-              <Text style={styles.label}>Partial / Corrupted:</Text>
+              <Text style={styles.label}>{text("Partial / Corrupted:", "Parciales / Corruptos:")}</Text>
               <Text style={styles.value}>{summary.partialBlocksCount} / {summary.corruptedBlocksCount}</Text>
             </View>
           )}
           <View style={styles.row}>
-            <Text style={styles.label}>Total Readings:</Text>
+            <Text style={styles.label}>{text("Total Readings:", "Lecturas totales:")}</Text>
             <Text style={styles.value}>{summary.totalReadingsCount}</Text>
           </View>
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Metrics</Text>
+          <Text style={styles.cardTitle}>{text("Metrics", "Métricas")}</Text>
           <View style={styles.divider} />
 
           {Object.values(summary.signalSummaries).length === 0 ? (
-            <Text style={styles.noDataText}>No valid readings acquired.</Text>
+            <Text style={styles.noDataText}>{text("No valid readings acquired.", "No se adquirieron lecturas válidas.")}</Text>
           ) : (
             Object.values(summary.signalSummaries).map(sig => (
               <View key={sig.signalId} style={styles.metricBlock}>
-                <Text style={styles.metricName}>Signal {sig.signalId}</Text>
+                <Text style={styles.metricName}>{text('Signal', 'Señal')} {sig.signalId}</Text>
                 {sig.validReadingsCount > 0 ? (
                   <View style={styles.metricStats}>
                     <View style={styles.statCol}>
-                      <Text style={styles.statLabel}>Min</Text>
+                      <Text style={styles.statLabel}>{text("Min", "Mín")}</Text>
                       <Text style={styles.statValue}>{formatValue(sig.min, 1)}</Text>
                     </View>
                     <View style={styles.statCol}>
-                      <Text style={styles.statLabel}>Avg</Text>
+                      <Text style={styles.statLabel}>{text("Avg", "Prom")}</Text>
                       <Text style={styles.statValue}>{formatValue(sig.avg, 1)}</Text>
                     </View>
                     <View style={styles.statCol}>
-                      <Text style={styles.statLabel}>Max</Text>
+                      <Text style={styles.statLabel}>{text("Max", "Máx")}</Text>
                       <Text style={styles.statValue}>{formatValue(sig.max, 1)}</Text>
                     </View>
                   </View>
                 ) : (
-                  <Text style={styles.statValueDim}>No valid data points.</Text>
+                  <Text style={styles.statValueDim}>{text("No valid data points.", "Sin puntos de datos válidos.")}</Text>
                 )}
                 <View style={styles.metricFoot}>
-                  <Text style={styles.metricFootText}>Valid: {sig.validReadingsCount}</Text>
-                  <Text style={styles.metricFootText}>No Data: {sig.noDataCount}</Text>
-                  <Text style={styles.metricFootText}>Invalid: {sig.invalidCount}</Text>
+                  <Text style={styles.metricFootText}>{text('Valid:', 'Válidas:')} {sig.validReadingsCount}</Text>
+                  <Text style={styles.metricFootText}>{text('No Data:', 'Sin datos:')} {sig.noDataCount}</Text>
+                  <Text style={styles.metricFootText}>{text('Invalid:', 'Inválidas:')} {sig.invalidCount}</Text>
                 </View>
               </View>
             ))
@@ -250,10 +266,10 @@ export default function SessionSummaryScreen() {
 
       <View style={styles.footer}>
         <TouchableOpacity style={styles.checkButton} onPress={handleCheck} testID="session-summary-open-check">
-          <Text style={styles.checkButtonText}>Open Check</Text>
+          <Text style={styles.checkButtonText}>{text("Open Check", "Abrir Check")}</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.secondaryButton} onPress={handleDone}>
-          <Text style={styles.secondaryButtonText}>History</Text>
+          <Text style={styles.secondaryButtonText}>{text("History", "Historial")}</Text>
         </TouchableOpacity>
       </View>
     </View>
