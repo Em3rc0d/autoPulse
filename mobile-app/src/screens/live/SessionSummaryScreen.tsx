@@ -5,11 +5,12 @@ import { useVehicle } from '../../infrastructure/hooks/useVehicle';
 import { useSessionSummary } from '../../infrastructure/hooks/useSessionSummary';
 import { useLocalContext } from '../../infrastructure/hooks/useLocalContext';
 import { SessionIntegrityState } from '../../domain/telemetry/models/sessionSummaryResult';
+import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
 
 export default function SessionSummaryScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
-  const { vehicleId, sessionId, duration = 0, isVirtual } = route.params || {};
+  const { vehicleId, sessionId, duration = 0, isVirtual, connectionHandleId } = route.params || {};
 
   const { context } = useLocalContext();
   const workspaceId = context?.defaultWorkspaceId;
@@ -33,9 +34,13 @@ export default function SessionSummaryScreen() {
   };
 
   const handleCheck = () => {
-    navigation.navigate('Check', {
-      screen: 'VehicleCheckReport',
-      params: { sessionId, vehicleId },
+    const retained = connectionHandleId ? activeBleController.getConnection(connectionHandleId) : null;
+    navigation.navigate('Check', retained ? {
+      screen: 'CheckRun',
+      params: { vehicleId, connectionHandleId },
+    } : {
+      screen: 'CheckConnect',
+      params: { vehicleId },
     });
   };
 
@@ -156,7 +161,7 @@ export default function SessionSummaryScreen() {
           <View style={{ flex: 1 }}>
             <Text style={styles.checkEyebrow}>NEXT</Text>
             <Text style={styles.checkTitle}>Review with Check</Text>
-            <Text style={styles.checkText}>Build a sealed evidence report from this exact persisted session.</Text>
+            <Text style={styles.checkText}>Run a fresh read-only ECU Check. The retained adapter is reused when still available.</Text>
           </View>
           <Text style={styles.checkArrow}>→</Text>
         </View>
