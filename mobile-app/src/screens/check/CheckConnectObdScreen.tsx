@@ -32,6 +32,8 @@ export default function CheckConnectObdScreen() {
   const [probeOutput, setProbeOutput] = useState<ProbeOutput | null>(null);
   const [activeProbe, setActiveProbe] = useState<BleCompatibilityProbe | null>(null);
   const [message, setMessage] = useState<string>('');
+  const retainedConnection = activeBleController.getActiveConnection();
+  const retainedReusable = Boolean(retainedConnection && activeBleController.getOwner() === 'IDLE');
 
   const beginScan = () => {
     setMessage('');
@@ -117,9 +119,23 @@ export default function CheckConnectObdScreen() {
           <Text style={styles.noticeText}>Do not interact with AutoPulse while driving. This pilot never clears codes, resets modules or sends control commands.</Text>
         </View>
 
+        {uiState === 'IDLE' && retainedReusable && retainedConnection ? (
+          <View style={styles.panel}>
+            <Text style={styles.good}>OBD ADAPTER STILL CONNECTED</Text>
+            <Text style={styles.panelText}>Reuse the adapter from the completed Live session without restarting AutoPulse.</Text>
+            <TouchableOpacity
+              style={styles.primary}
+              onPress={() => navigation.navigate('CheckRun', { vehicleId, connectionHandleId: retainedConnection.connectionHandleId })}
+              testID="check-use-retained-adapter"
+            >
+              <Text style={styles.primaryText}>Use connected adapter</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {uiState === 'IDLE' && (
           <TouchableOpacity style={styles.primary} onPress={beginScan} testID="check-scan-adapters">
-            <Text style={styles.primaryText}>Scan for adapters</Text>
+            <Text style={styles.primaryText}>{retainedReusable ? 'Scan for another adapter' : 'Scan for adapters'}</Text>
           </TouchableOpacity>
         )}
 
