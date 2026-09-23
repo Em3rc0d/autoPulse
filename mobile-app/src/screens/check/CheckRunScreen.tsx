@@ -18,6 +18,7 @@ import {
 } from '../../application/check/live/CheckPilotPresentation';
 import { formatDecodedPidObservation } from '../../application/check/intelligence/Mode01ValueDecoder';
 import type { DiagnosticConcernV2 } from '../../application/check/intelligence/DiagnosticConcernEngine';
+import { uiText, useUiLanguage } from '../../application/localization/UiLanguage';
 
 type UiState = 'IDLE' | 'RUNNING' | 'CANCELLING' | 'COMPLETE' | 'ERROR' | 'CANCELLED';
 
@@ -55,15 +56,15 @@ function ConcernCard({ concern }: { concern: DiagnosticConcernV2 }) {
       <Text style={styles.confirmed}>ECU event confirmed</Text>
       {concern.relatedEvidence.length > 0 ? (
         <View style={styles.evidenceInset}>
-          <Text style={styles.smallHeading}>Related evidence</Text>
+          <Text style={styles.smallHeading}>{t('Related evidence','Evidencia relacionada')}</Text>
           {concern.relatedEvidence.slice(0, 5).map(item => (
             <Text key={`${concern.code}-${item.requestId}`} style={styles.compactLine}>{formatDecodedPidObservation(item)}</Text>
           ))}
         </View>
       ) : <Text style={styles.muted}>No additional targeted PID evidence was established for this concern.</Text>}
-      <Text style={styles.smallHeading}>Possible systems</Text>
+      <Text style={styles.smallHeading}>{t('Possible systems','Sistemas posibles')}</Text>
       <Text style={styles.body}>{concern.possibleSystemGroups.join(' · ')}</Text>
-      <Text style={styles.causeLimit}>Exact cause not established</Text>
+      <Text style={styles.causeLimit}>{t('Exact cause not established','Causa exacta no establecida')}</Text>
       {concern.limitations.map(item => <Text key={item} style={styles.muted}>• {item}</Text>)}
     </View>
   );
@@ -71,6 +72,8 @@ function ConcernCard({ concern }: { concern: DiagnosticConcernV2 }) {
 
 export default function CheckRunScreen() {
   const navigation = useNavigation<any>();
+  const language = useUiLanguage();
+  const t = (en: string, es: string) => uiText(language, en, es);
   const route = useRoute<any>();
   const vehicleId = route.params?.vehicleId as string | undefined;
   const connectionHandleId = route.params?.connectionHandleId as string | undefined;
@@ -155,18 +158,18 @@ export default function CheckRunScreen() {
             <Text style={styles.eyebrow}>ECU CHECK · V4.1</Text>
             <Text style={styles.title}>{vehicle?.alias ?? 'Vehicle'} Check</Text>
           </View>
-          <Text style={styles.readOnlyBadge}>READ ONLY</Text>
+          <Text style={styles.readOnlyBadge}>{t('READ ONLY','SOLO LECTURA')}</Text>
         </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
         {uiState === 'IDLE' ? (
           <View style={styles.panel}>
-            <Text style={styles.panelTitle}>Ready</Text>
+            <Text style={styles.panelTitle}>{t('Ready','Listo')}</Text>
             <Text style={styles.body}>AutoPulse will read standard ECU diagnostics, readiness and only the PID evidence selected for this vehicle and its reported concerns.</Text>
-            <Text style={styles.safetyText}>Parked vehicle only. Clear, reset, control, coding and write operations remain blocked.</Text>
+            <Text style={styles.safetyText}>{t('Parked vehicle only. Clear, reset, control, coding and write operations remain blocked.','Solo con el vehículo estacionado. Borrado, reinicio, control, codificación y escritura permanecen bloqueados.')}</Text>
             <TouchableOpacity style={styles.primary} onPress={() => void run()} testID="run-physical-check">
-              <Text style={styles.primaryText}>Run Check</Text>
+              <Text style={styles.primaryText}>{t('Run Check','Ejecutar Check')}</Text>
             </TouchableOpacity>
           </View>
         ) : null}
@@ -176,17 +179,17 @@ export default function CheckRunScreen() {
             <ActivityIndicator size="large" color="#4ade80" />
             <Text style={styles.panelTitle}>{uiState === 'CANCELLING' ? 'Cancelling safely…' : stage ? stageLabel[stage] : 'Running Check…'}</Text>
             <Text style={styles.body}>Serial · bounded · descriptor-gated · no blind PID sweep</Text>
-            {uiState === 'RUNNING' ? <TouchableOpacity style={styles.secondary} onPress={cancel}><Text style={styles.secondaryText}>Cancel Check</Text></TouchableOpacity> : null}
+            {uiState === 'RUNNING' ? <TouchableOpacity style={styles.secondary} onPress={cancel}><Text style={styles.secondaryText}>{t('Cancel Check','Cancelar Check')}</Text></TouchableOpacity> : null}
           </View>
         ) : null}
 
-        {uiState === 'CANCELLED' ? <View style={styles.panel}><Text style={styles.panelTitle}>Check cancelled</Text><Text style={styles.body}>No additional request will be issued.</Text></View> : null}
+        {uiState === 'CANCELLED' ? <View style={styles.panel}><Text style={styles.panelTitle}>{t('Check cancelled','Check cancelado')}</Text><Text style={styles.body}>{t('No additional request will be issued.','No se enviarán solicitudes adicionales.')}</Text></View> : null}
 
         {uiState === 'ERROR' ? (
           <View style={styles.panel}>
-            <Text style={styles.errorTitle}>Check stopped safely</Text>
+            <Text style={styles.errorTitle}>{t('Check stopped safely','Check detenido de forma segura')}</Text>
             <Text style={styles.body}>{error}</Text>
-            <TouchableOpacity style={styles.secondary} onPress={() => void run()}><Text style={styles.secondaryText}>Retry Check</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.secondary} onPress={() => void run()}><Text style={styles.secondaryText}>{t('Retry Check','Reintentar Check')}</Text></TouchableOpacity>
           </View>
         ) : null}
 
@@ -201,20 +204,20 @@ export default function CheckRunScreen() {
             {result.concerns.map(concern => <ConcernCard key={concern.concernId} concern={concern} />)}
 
             <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Current ECU evidence</Text>
+              <Text style={styles.panelTitle}>{t('Current ECU evidence','Evidencia actual de ECU')}</Text>
               {result.decodedPidEvidence.length > 0 ? result.decodedPidEvidence.map(item => (
                 <View key={`${item.requestId}-${item.sourceEndpointId ?? 'u'}`} style={styles.metricRow}>
                   <Text style={styles.metricLabel}>{item.name}</Text>
                   <Text style={styles.metricValue}>{formatDecodedPidObservation(item).replace(`${item.signals[0]?.label}: `, '')}</Text>
                 </View>
-              )) : <Text style={styles.muted}>No promoted current-data value was established.</Text>}
+              )) : <Text style={styles.muted}>{t('No promoted current-data value was established.','No se estableció un valor actual promovido.')}</Text>}
               <Text style={targetedExecutionIncomplete ? styles.targetedUnavailable : styles.walletNote}>
                 {selectedTargetedCount} targeted PID request{selectedTargetedCount === 1 ? '' : 's'} selected · {executedTargetedCount} executed. {targetedExecutionIncomplete ? 'Targeted evidence was not fully acquired in this run. ' : ''}No blind sweep.
               </Text>
             </View>
 
             <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Emissions readiness</Text>
+              <Text style={styles.panelTitle}>{t('Emissions readiness','Preparación de emisiones')}</Text>
               {result.readiness ? (
                 <>
                   <View style={styles.metricRow}><Text style={styles.metricLabel}>MIL</Text><Text style={result.readiness.milOn ? styles.attention : styles.positive}>{result.readiness.milOn ? 'ON' : 'OFF'}</Text></View>
@@ -228,7 +231,7 @@ export default function CheckRunScreen() {
             </View>
 
             <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Standard OBD coverage</Text>
+              <Text style={styles.panelTitle}>{t('Standard OBD coverage','Cobertura OBD estándar')}</Text>
               <View style={styles.metricRow}><Text style={styles.metricLabel}>PID capability</Text><Text style={toneStyle(capabilityPresentation.tone)}>{capabilityPresentation.label}</Text></View>
               <Text style={styles.muted}>{capabilityPresentation.detail}</Text>
               {result.scan.dtcResults.map((dtc, index) => {
@@ -243,7 +246,7 @@ export default function CheckRunScreen() {
             </View>
 
             <View style={styles.panel}>
-              <Text style={styles.panelTitle}>Scope</Text>
+              <Text style={styles.panelTitle}>{t('Scope','Alcance')}</Text>
               <Text style={styles.muted}>Standard OBD evidence only. Unsupported modules are not called healthy. Mode 06 and Freeze Frame remain gated rather than guessed.</Text>
             </View>
 
@@ -253,7 +256,7 @@ export default function CheckRunScreen() {
 
             {showTechnical ? (
               <View style={styles.panel}>
-                <Text style={styles.panelTitle}>Technical evidence</Text>
+                <Text style={styles.panelTitle}>{t('Technical evidence','Evidencia técnica')}</Text>
                 <Text style={styles.meta}>Pilot: {result.pilotVersion}</Text>
                 <Text style={styles.meta}>Protocol evidence: {result.protocolEvidence || 'not retained'}</Text>
                 <Text style={styles.meta}>Core commands: {result.scanCommandCount}</Text>
