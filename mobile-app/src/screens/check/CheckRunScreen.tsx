@@ -43,7 +43,7 @@ function statusLabel(statuses: DiagnosticConcernV2['statuses']): string {
   return statuses.join(' + ');
 }
 
-function ConcernCard({ concern }: { concern: DiagnosticConcernV2 }) {
+function ConcernCard({ concern, t }: { concern: DiagnosticConcernV2; t: (en: string, es: string) => string }) {
   return (
     <View style={styles.concernCard}>
       <View style={styles.rowBetween}>
@@ -201,7 +201,7 @@ export default function CheckRunScreen() {
               <Text style={styles.scopeNote}>{scanPresentation.label} · {result.protocol}</Text>
             </View>
 
-            {result.concerns.map(concern => <ConcernCard key={concern.concernId} concern={concern} />)}
+            {result.concerns.map(concern => <ConcernCard key={concern.concernId} concern={concern} t={t} />)}
 
             <View style={styles.panel}>
               <Text style={styles.panelTitle}>{t('Current ECU evidence','Evidencia actual de ECU')}</Text>
