@@ -78,20 +78,20 @@ export default function SettingsScreen() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{t('Alert levels','Niveles de alerta')}</Text>
         <AlertToggle
-          title="Critical"
-          description="Immediate safety state. Kept enabled by default."
+          title={t('Critical','Crítico')}
+          description={t('Immediate safety state. Kept enabled by default.','Estado de seguridad inmediato. Activado por defecto.')}
           value={preferences.criticalAlertsEnabled}
           onChange={value => void persist({ criticalAlertsEnabled: value })}
         />
         <AlertToggle
-          title="Attention"
-          description="Conditions that require driver awareness."
+          title={t('Attention','Atención')}
+          description={t('Conditions that require driver awareness.','Condiciones que requieren atención del conductor.')}
           value={preferences.attentionAlertsEnabled}
           onChange={value => void persist({ attentionAlertsEnabled: value })}
         />
         <AlertToggle
-          title="Advisory"
-          description="Low-priority voice. Off by default to avoid chatter."
+          title={t('Advisory','Aviso')}
+          description={t('Low-priority voice. Off by default to avoid chatter.','Voz de baja prioridad. Desactivada por defecto para evitar ruido.')}
           value={preferences.advisoryAlertsEnabled}
           onChange={value => void persist({ advisoryAlertsEnabled: value })}
         />
@@ -99,7 +99,7 @@ export default function SettingsScreen() {
 
       <View style={styles.contract}>
         <Text style={styles.contractTitle}>{t('Driving UX contract','Contrato UX de conducción')}</Text>
-        <Text style={styles.contractText}>VOICE + COLOR + ICON → first. Text → evidence for later review.</Text>
+        <Text style={styles.contractText}>{t('VOICE + COLOR + ICON → first. Text → evidence for later review.','VOZ + COLOR + ICONO → primero. Texto → evidencia para revisión posterior.')}</Text>
       </View>
 
       {saving ? <Text style={styles.saving}>{t('Saving…','Guardando…')}</Text> : null}
