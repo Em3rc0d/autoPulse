@@ -11,7 +11,12 @@ type StallReason = 'TIMEOUT' | 'WRITE_FAILED' | 'DISCONNECTED' | 'UNUSABLE_RESPO
 
 export type PollerDiagnosticEvent =
   | {
-      type: 'PID_RETIRED_NO_DATA';
+      type: 'PID_QUARANTINED_NO_DATA';
+      pid: string;
+      retryAfterMs: number;
+    }
+  | {
+      type: 'PID_REPROBE_RESUMED';
       pid: string;
     }
   | {
@@ -23,7 +28,8 @@ export type PollerDiagnosticEvent =
 
 const TRANSPORT_FAILURE_THRESHOLD = 3;
 const UNUSABLE_RESPONSE_THRESHOLD = 6;
-const NO_DATA_RETIRE_THRESHOLD = 3;
+const NO_DATA_QUARANTINE_THRESHOLD = 3;
+const NO_DATA_REPROBE_AFTER_MS = 30_000;
 
 const isTransportFailure = (result: CommandResult) =>
   result.status === 'TIMEOUT' ||
@@ -54,6 +60,7 @@ export class RealTelemetryPoller {
   private consecutiveTransportFailures = 0;
   private consecutiveUnusableResponses = 0;
   private transportStallEmitted = false;
+  private quarantinedUntil: Record<string, number> = {};
 
   constructor(
     controller: ObdCommandExecutor,
@@ -99,7 +106,28 @@ export class RealTelemetryPoller {
         return;
       }
 
-      const pid = this.supportedPids[this.currentPidIndex] ?? this.supportedPids[0];
+      const now = Date.now();
+      let pid: string | null = null;
+      for (let offset = 0; offset < this.supportedPids.length; offset++) {
+        const index = (this.currentPidIndex + offset) % this.supportedPids.length;
+        const candidate = this.supportedPids[index];
+        const until = this.quarantinedUntil[candidate] ?? 0;
+        if (until <= now) {
+          if (until > 0) {
+            delete this.quarantinedUntil[candidate];
+            this.consecutiveFailures[candidate] = 0;
+            this.onDiagnostic?.({ type: 'PID_REPROBE_RESUMED', pid: candidate });
+          }
+          pid = candidate;
+          this.currentPidIndex = (index + 1) % this.supportedPids.length;
+          break;
+        }
+      }
+
+      if (!pid) {
+        scheduleNext();
+        return;
+      }
 
       // A controller that already reports disconnected must not silently stop.
       // Surface one explicit stall so the session controller can enter bounded recovery.
@@ -108,8 +136,6 @@ export class RealTelemetryPoller {
         this.stop();
         return;
       }
-
-      this.currentPidIndex = (this.currentPidIndex + 1) % this.supportedPids.length;
 
       const isAT = pid.startsWith('AT');
       const request: CommandRequest = {
@@ -207,29 +233,22 @@ export class RealTelemetryPoller {
     }
   }
 
-  private retirePid(pid: string) {
-    const indexToRemove = this.supportedPids.indexOf(pid);
-    if (indexToRemove === -1) return;
-
-    this.supportedPids.splice(indexToRemove, 1);
-    this.currentPidIndex = this.supportedPids.length === 0
-      ? 0
-      : this.currentPidIndex % this.supportedPids.length;
-  }
-
   private handleResult(pid: string, result: CommandResult) {
     this.observeLinkHealth(pid, result);
 
     if (result.status === 'NO_DATA') {
       this.consecutiveFailures[pid] = (this.consecutiveFailures[pid] || 0) + 1;
 
-      if (this.consecutiveFailures[pid] >= NO_DATA_RETIRE_THRESHOLD) {
-        console.log(`[RealTelemetryPoller] Retiring PID ${pid} after ${NO_DATA_RETIRE_THRESHOLD} consecutive NO_DATA`);
-        this.retirePid(pid);
-        this.onDiagnostic?.({ type: 'PID_RETIRED_NO_DATA', pid });
+      if (this.consecutiveFailures[pid] >= NO_DATA_QUARANTINE_THRESHOLD) {
+        console.log(`[RealTelemetryPoller] Quarantining PID ${pid} after ${NO_DATA_QUARANTINE_THRESHOLD} consecutive NO_DATA`);
+        this.quarantinedUntil[pid] = Date.now() + NO_DATA_REPROBE_AFTER_MS;
+        this.consecutiveFailures[pid] = 0;
+        this.onDiagnostic?.({
+          type: 'PID_QUARANTINED_NO_DATA',
+          pid,
+          retryAfterMs: NO_DATA_REPROBE_AFTER_MS,
+        });
         this.onData(result);
-
-        if (this.supportedPids.length === 0) this.stop();
         return;
       }
     } else {
