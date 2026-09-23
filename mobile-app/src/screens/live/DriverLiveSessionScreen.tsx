@@ -225,7 +225,7 @@ function DrivingPresentationSurface({
   );
 }
 
-function LowDistractionTerminalSurface({ outcome }: { outcome: LiveSessionTerminalOutcome }) {
+function LowDistractionTerminalSurface({ outcome, language }: { outcome: LiveSessionTerminalOutcome; language: VoiceLanguage }) {
   return (
     <View style={styles.drivingSurface} testID="terminal-low-distraction">
       <View style={[styles.drivingState, { backgroundColor: '#332708', borderColor: '#f59e0b' }]}>
@@ -236,10 +236,10 @@ function LowDistractionTerminalSurface({ outcome }: { outcome: LiveSessionTermin
         </View>
       </View>
       <View style={styles.primaryMetric}>
-        <Text style={styles.primaryStateText}>TELEMETRY LOST</Text>
-        <Text style={styles.primaryLabel}>DETAILS AVAILABLE WHEN PARKED</Text>
+        <Text style={styles.primaryStateText}>{language === 'es-ES' ? 'TELEMETRÍA PERDIDA' : 'TELEMETRY LOST'}</Text>
+        <Text style={styles.primaryLabel}>{language === 'es-ES' ? 'DETALLES DISPONIBLES AL ESTACIONAR' : 'DETAILS AVAILABLE WHEN PARKED'}</Text>
       </View>
-      <Text style={styles.drivingHint}>Eyes on the road</Text>
+      <Text style={styles.drivingHint}>{language === 'es-ES' ? 'Vista al camino' : 'Eyes on the road'}</Text>
     </View>
   );
 }
@@ -378,7 +378,7 @@ function DriverLiveSessionContent({
       {!terminalOutcome ? <DriverModePanel disabled={false} compact={lowDistraction} /> : null}
 
       {showCompactTerminal && terminalOutcome ? (
-        <LowDistractionTerminalSurface outcome={terminalOutcome} />
+        <LowDistractionTerminalSurface outcome={terminalOutcome} language={preferences.voiceLanguage} />
       ) : lowDistraction ? (
         <DrivingPresentationSurface
           alert={effectiveAlert}
