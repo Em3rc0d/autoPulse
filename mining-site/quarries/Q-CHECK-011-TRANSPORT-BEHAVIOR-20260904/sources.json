@@ -1,0 +1,35 @@
+{
+  "quarry_id": "Q-CHECK-011-TRANSPORT-BEHAVIOR-20260904",
+  "status": "SEMANTIC_BOUNDARY_CLOSED_TIMING_FIXTURES_OPEN",
+  "captured_on": "2026-09-04",
+  "scope": "Transport/adapter behavior relevant to safe standard OBD Check scans",
+  "sources": [
+    {
+      "id": "SRC-ELM327-DATASHEET",
+      "kind": "ADAPTER_VENDOR_TECHNICAL_DOCUMENTATION",
+      "name": "ELM327 OBD to RS232 Interpreter Datasheet",
+      "url": "https://www.elmelectronics.com/wp-content/uploads/2017/01/ELM327DS.pdf",
+      "role": "Primary implementation-facing evidence for adapter-managed protocol translation, variable/multiple responses, NO DATA, response-count warnings, legacy pacing cautions, bus initiation/wakeup, headers, ISO15765 framing examples, and Response Pending behavior."
+    },
+    {
+      "id": "SRC-AUTOPULSE-DIAGNOSTIC-CONNECTOR",
+      "kind": "CURRENT_REPOSITORY_EVIDENCE",
+      "path": "mobile-app/src/domain/diagnostics/DiagnosticConnector.ts",
+      "role": "Hardware-neutral request/response and transport abstraction consumed by Check."
+    },
+    {
+      "id": "SRC-AUTOPULSE-REAL-OBD-PIPELINE",
+      "kind": "CURRENT_REPOSITORY_EVIDENCE",
+      "path": "mobile-app/src/infrastructure/ble/real/pipeline/",
+      "role": "Current ELM accumulation/classification/normalization/frame-parsing path that future Check transport fixtures must exercise rather than replace."
+    }
+  ],
+  "promotion": {
+    "semantic_boundary": "CLOSED",
+    "budget_dimensions": "CLOSED",
+    "concrete_timing_values": "OPEN",
+    "fixtures": "OPEN",
+    "physical_can_evidence": "OPEN",
+    "runtime": "BLOCKED"
+  }
+}

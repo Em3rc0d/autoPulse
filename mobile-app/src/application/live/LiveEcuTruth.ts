@@ -92,9 +92,10 @@ export function commandResultContainsValidEcuSample(result: {
   if (result.status !== 'SUCCESS_DECODED') return false;
   if (!result.request?.family?.startsWith('OBD_MODE_')) return false;
 
-  return Boolean(result.decodedValues?.some(decoded => {
-    if (decoded.value === null || decoded.value === undefined) return false;
-    if (typeof decoded.value === 'number') return Number.isFinite(decoded.value);
-    return true;
-  }));
+  // Live state is unlocked only by finite numeric ECU evidence. Capability bitmaps,
+  // strings, arrays, NaN and Infinity may be valid decoder artifacts elsewhere, but
+  // they are not a live driving observation and must not make the UI claim LIVE ECU DATA.
+  return Boolean(result.decodedValues?.some(decoded =>
+    typeof decoded.value === 'number' && Number.isFinite(decoded.value)
+  ));
 }

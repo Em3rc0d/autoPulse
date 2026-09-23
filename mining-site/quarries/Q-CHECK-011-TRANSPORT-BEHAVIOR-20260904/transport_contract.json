@@ -1,0 +1,38 @@
+{
+  "contract_id": "CHECK-TRANSPORT-BEHAVIOR-V0",
+  "status": "RESEARCH_CANDIDATE_NOT_RUNTIME",
+  "rules": {
+    "serial_execution_default": true,
+    "fixed_response_count_default": false,
+    "no_data_is_zero": false,
+    "response_pending_is_failure": false,
+    "domain_owns_bus_initialization": false,
+    "connector_owns_protocol_framing": true,
+    "endpoint_attribution_requires_source_visibility": true
+  },
+  "budget_dimensions": [
+    "maxRequestsPerStage",
+    "minInterCommandDelayMs",
+    "requestTimeoutMs",
+    "responsePendingExtensionPolicy",
+    "maxRetries",
+    "retryBackoffMs",
+    "maxConsecutiveHardFailures",
+    "stageDeadlineMs",
+    "overallDeadlineMs"
+  ],
+  "protocols_first_class": [
+    "ISO_14230_KWP",
+    "ISO_9141_2",
+    "ISO_15765_CAN"
+  ],
+  "known_special_cases": [
+    "KWP_OR_CAN_7F_SERVICE_78_RESPONSE_PENDING",
+    "CAN_DTC_ITEM_COUNT_BYTE",
+    "MULTI_ECU_FUNCTIONAL_RESPONSE",
+    "MULTILINE_OR_SEGMENTED_RESPONSE",
+    "HEADERS_MAY_BE_REQUIRED_FOR_ATTRIBUTION"
+  ],
+  "timing_values": "OPEN_PHYSICAL_EVIDENCE_REQUIRED",
+  "runtime_gate": "BLOCKED_UNTIL_TRANSPORT_FIXTURES_AND_BUDGET_VALUES"
+}

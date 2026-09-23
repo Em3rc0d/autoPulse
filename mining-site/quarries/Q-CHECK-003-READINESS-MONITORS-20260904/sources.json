@@ -1,0 +1,33 @@
+{
+  "quarry_id": "Q-CHECK-003-READINESS-MONITORS-20260904",
+  "status": "SEMANTIC_BOUNDARY_CLOSED_NORMATIVE_FIXTURES_OPEN",
+  "captured_on": "2026-09-04",
+  "scope": "MIL, DTC count, monitor support and readiness semantics for AutoPulse Check",
+  "sources": [
+    {
+      "id": "SRC-ELM327-DATASHEET",
+      "kind": "ADAPTER_VENDOR_TECHNICAL_DOCUMENTATION",
+      "name": "ELM327 OBD to RS232 Interpreter Datasheet",
+      "url": "https://www.elmelectronics.com/wp-content/uploads/2017/01/ELM327DS.pdf",
+      "role": "Primary implementation-facing evidence for PID 0101 MIL bit, confirmed-DTC count and per-module/header attribution caveat."
+    },
+    {
+      "id": "SRC-WIKIPEDIA-OBD2-PIDS",
+      "kind": "SECONDARY_REFERENCE",
+      "url": "https://en.wikipedia.org/wiki/OBD-II_PIDs",
+      "role": "Secondary cross-reference for PID 0101/0141 bitwise readiness layout, spark/compression distinction, and support-vs-completion semantics."
+    },
+    {
+      "id": "SRC-AUTOPULSE-ELM-DIAGNOSTIC-CONNECTOR",
+      "kind": "CURRENT_REPOSITORY_EVIDENCE",
+      "path": "mobile-app/src/infrastructure/diagnostics/ElmBleDiagnosticConnector.ts",
+      "role": "Current implementation already exposes MIL and confirmed DTC count only, deliberately deferring detailed readiness decoding."
+    }
+  ],
+  "promotion": {
+    "domain_semantics": "CLOSED",
+    "normative_bit_table_crosscheck": "OPEN",
+    "fixtures": "OPEN",
+    "runtime": "BLOCKED"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "quarry_id": "Q-CHECK-010-DTC-PID-CORRELATION-20260904",
+  "status": "SEMANTICS_CLOSED_RULE_CORPUS_OPEN",
+  "runtime_authorized": false,
+  "closed": [
+    "dtc_is_not_pid",
+    "targeted_evidence_is_capability_intersection",
+    "current_freeze_mode06_history_sources_remain_separate",
+    "cooccurrence_is_not_causation",
+    "event_condition_and_cause_confidence_are_separate",
+    "missing_evidence_reduces_confidence"
+  ],
+  "open_gates": [
+    "versioned_rule_corpus",
+    "positive_negative_insufficient_fixtures",
+    "confidence_regression_tests"
+  ]
+}

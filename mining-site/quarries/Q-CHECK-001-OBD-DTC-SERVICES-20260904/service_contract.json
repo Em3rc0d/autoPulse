@@ -1,0 +1,49 @@
+{
+  "contract_id": "CHECK-DTC-SERVICE-SEMANTICS-V0",
+  "status": "RESEARCH_CANDIDATE_NOT_RUNTIME",
+  "services": [
+    {
+      "mode": "03",
+      "positive_response_service": "43",
+      "status_semantic": "STORED",
+      "has_pid": false,
+      "safety_family": "READ_ONLY_PROVEN",
+      "parser_notes": [
+        "DTC data is decoded in two-byte pairs after transport/service envelope normalization.",
+        "0000 pairs are padding and are not emitted as DTCs.",
+        "ISO15765/CAN may include a DTC-item-count byte after response service and requires a transport-aware envelope parser."
+      ]
+    },
+    {
+      "mode": "07",
+      "positive_response_service": "47",
+      "status_semantic": "PENDING",
+      "has_pid": false,
+      "safety_family": "READ_ONLY_PROVEN",
+      "parser_notes": [
+        "Service-aware fixture coverage is required before runtime promotion."
+      ]
+    },
+    {
+      "mode": "0A",
+      "positive_response_service": "4A",
+      "status_semantic": "PERMANENT",
+      "has_pid": false,
+      "safety_family": "READ_ONLY_PROVEN",
+      "parser_notes": [
+        "Service-aware fixture coverage is required before runtime promotion."
+      ]
+    }
+  ],
+  "result_states": [
+    "SUCCESS_WITH_CODES",
+    "SUCCESS_ZERO_CODES",
+    "NO_DATA",
+    "TIMEOUT",
+    "INVALID_RESPONSE",
+    "NEGATIVE_RESPONSE",
+    "DISCONNECTED",
+    "UNSUPPORTED"
+  ],
+  "runtime_gate": "BLOCKED_UNTIL_FIXTURES"
+}
