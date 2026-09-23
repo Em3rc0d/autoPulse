@@ -1,4 +1,3 @@
-import { AppState, NativeEventSubscription } from 'react-native';
 import type { Subscription } from 'react-native-ble-plx';
 import { RealObdController } from '../../infrastructure/ble/real/RealObdController';
 import {
@@ -24,6 +23,7 @@ import { CommandResult, CommandRequest } from '../../infrastructure/ble/real/pip
 import { ObdAcquisitionMapper } from '../../domain/telemetry/factories/ObdAcquisitionMapper';
 import { TelemetryBlockAssembler } from '../../domain/telemetry/logic/TelemetryBlockAssembler';
 import { BinaryObd2V3Codec } from '../../infrastructure/telemetry-codecs/binary-obd2-v3/BinaryObd2V3Codec';
+import { startLiveForegroundService, stopLiveForegroundService } from './LiveForegroundService';
 
 export type RecordingStatus = 'NOT_STARTED' | 'RECORDING' | 'FLUSHING' | 'DEGRADED' | 'FAILED' | 'CLOSED';
 
@@ -39,10 +39,10 @@ const RECOVERY_CONNECT_TIMEOUT_MS = 3500;
 
 /**
  * Release-1 lifecycle policy:
- * - Live acquisition is foreground-only.
+ * - App visibility is not a terminal transport event.
  * - Temporary adapter/ECU transport failures receive a bounded recovery window.
  * - Recovery never fabricates telemetry; any missing interval remains missing evidence.
- * - Leaving the app while ACTIVE/RECOVERING still produces explicit interruption.
+ * - A connected-device foreground service owns background eligibility.
  * - Live polling is bounded to signals consumed by Driving View v2 so a weak link
  *   does not burn freshness budget on unrelated capability-catalog signals.
  */
@@ -59,7 +59,6 @@ export class RealLiveSessionController {
   private assembler: TelemetryBlockAssembler | null = null;
   private codec = new BinaryObd2V3Codec();
   private commitQueue: TelemetryCommitQueue | null = null;
-  private appStateSubscription: NativeEventSubscription | null = null;
   private bleDisconnectSubscription: Subscription | null = null;
 
   private terminalPromise: Promise<void> | null = null;
@@ -93,11 +92,13 @@ export class RealLiveSessionController {
       }
     });
 
-    const conn = activeBleController.getConnection(this.connectionHandleId);
+    const conn = activeBleController.claimConnection(this.connectionHandleId, 'LIVE');
     if (!conn) {
-      await this.handleUnexpectedDisconnect('CONNECTION_LOST');
+      await this.handleUnexpectedDisconnect('CONNECTION_UNAVAILABLE_OR_LEASED');
       return;
     }
+
+    startLiveForegroundService();
 
     this.recordingStartedAt = Date.now();
     this.assembler = new TelemetryBlockAssembler(this.sessionId, this.recordingStartedAt, 5000);
@@ -111,9 +112,6 @@ export class RealLiveSessionController {
 
     this.installTransport(conn);
 
-    this.appStateSubscription = AppState.addEventListener('change', nextState => {
-      this.handleAppStateChange(nextState);
-    });
 
     this.recordingStatus = 'RECORDING';
     this.poller?.start(250);
@@ -141,14 +139,6 @@ export class RealLiveSessionController {
     );
   }
 
-  private handleAppStateChange(nextState: string) {
-    if (
-      nextState !== 'active' &&
-      (this.currentState === 'ACTIVE' || this.currentState === 'RECOVERING')
-    ) {
-      void this.handleUnexpectedDisconnect('APP_BACKGROUND');
-    }
-  }
 
   private observePhysicalDisconnect(conn: ActiveConnection) {
     this.bleDisconnectSubscription?.remove();
@@ -260,7 +250,7 @@ export class RealLiveSessionController {
           const vehiclePathAlive = await this.probeVehiclePath(recoveredConnection);
           if (!vehiclePathAlive || this.terminalPromise) continue;
 
-          activeBleController.retainConnection(recoveredConnection);
+          activeBleController.retainConnection(recoveredConnection, 'LIVE');
           this.installTransport(recoveredConnection);
           this.currentState = 'ACTIVE';
           this.recordingStatus = 'RECORDING';
@@ -335,8 +325,6 @@ export class RealLiveSessionController {
     const wasRunning = this.currentState === 'ACTIVE' || this.currentState === 'RECOVERING';
     this.currentState = mode === 'NORMAL' ? 'STOPPING' : 'INTERRUPTED';
 
-    this.appStateSubscription?.remove();
-    this.appStateSubscription = null;
     this.bleDisconnectSubscription?.remove();
     this.bleDisconnectSubscription = null;
 
@@ -377,10 +365,16 @@ export class RealLiveSessionController {
     }
 
     this.obdController?.disconnect();
-    activeBleController.releaseConnection();
+    const completedCleanly = mode === 'NORMAL' && !this.commitQueue?.getHasFailed() && !drainTimedOut;
+    if (completedCleanly) {
+      activeBleController.releaseClaim('LIVE');
+    } else {
+      await activeBleController.disconnectAndRelease();
+    }
+    stopLiveForegroundService();
     this.recordingStatus = 'CLOSED';
 
-    if (mode === 'NORMAL' && !this.commitQueue?.getHasFailed() && !drainTimedOut) {
+    if (completedCleanly) {
       await this.sessionRepo.completeSession(this.workspaceId, this.sessionId);
       this.currentState = 'COMPLETED';
       this.onSessionTerminal?.({ state: 'COMPLETED' });
