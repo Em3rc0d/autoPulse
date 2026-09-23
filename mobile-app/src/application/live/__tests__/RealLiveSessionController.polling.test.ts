@@ -1,8 +1,6 @@
-jest.mock('react-native', () => ({
-  AppState: {
-    addEventListener: jest.fn().mockReturnValue({ remove: jest.fn() }),
-    currentState: 'active',
-  },
+jest.mock('../LiveForegroundService', () => ({
+  startLiveForegroundService: jest.fn(),
+  stopLiveForegroundService: jest.fn(),
 }));
 
 import { RealLiveSessionController } from '../RealLiveSessionController';
