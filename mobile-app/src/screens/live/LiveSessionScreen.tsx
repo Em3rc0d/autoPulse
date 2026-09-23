@@ -65,6 +65,7 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
   const [terminalOutcome, setTerminalOutcome] = useState<LiveSessionTerminalOutcome | null>(null);
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
+  const initialAdapterVoltageValue = parseInitialAdapterVoltage(initialAdapterVoltage);
   const useGeneric = AppConfig.GENERIC_ADVISORY_PROFILES_ENABLED;
   const fallbackRequestCount = 6;
   const effectiveRequestCount = Math.max(
@@ -83,8 +84,6 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
   const productDb = useProductDb();
   const { context: localContext } = useLocalContext();
   const isStopping = React.useRef(false);
-  const initialAdapterVoltageValue = parseInitialAdapterVoltage(initialAdapterVoltage);
-
   const applyDecodedValues = (decodedValues: readonly { type: string; value: unknown; unit?: string }[] | null | undefined) => {
     const readings = routeLiveDecodedValues(decodedValues);
     if (readings.length === 0) return;
