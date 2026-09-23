@@ -11,7 +11,6 @@ import {
   Vibration,
   View,
 } from 'react-native';
-import ReactNativeForegroundService from '@supersami/rn-foreground-service';
 import { useKeepAwake } from 'expo-keep-awake';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { LineChart } from 'react-native-chart-kit';
@@ -67,13 +66,19 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
   const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   const useGeneric = AppConfig.GENERIC_ADVISORY_PROFILES_ENABLED;
-  const rpmTracker = useSignalTracker('ENGINE_RPM', useGeneric ? DEMO_PROFILES.ENGINE_RPM : { ...DEMO_PROFILES.ENGINE_RPM, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
-  const speedTracker = useSignalTracker('VEHICLE_SPEED', useGeneric ? DEMO_PROFILES.VEHICLE_SPEED : { ...DEMO_PROFILES.VEHICLE_SPEED, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
-  const coolantTracker = useSignalTracker('ENGINE_COOLANT', useGeneric ? DEMO_PROFILES.ENGINE_COOLANT : { ...DEMO_PROFILES.ENGINE_COOLANT, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
-  const loadTracker = useSignalTracker('ENGINE_LOAD', useGeneric ? DEMO_PROFILES.ENGINE_LOAD : { ...DEMO_PROFILES.ENGINE_LOAD, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
-  const throttleTracker = useSignalTracker('THROTTLE_POSITION', useGeneric ? DEMO_PROFILES.THROTTLE_POSITION : { ...DEMO_PROFILES.THROTTLE_POSITION, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
-  const ecuVoltageTracker = useSignalTracker('ECU_VOLTAGE', useGeneric ? DEMO_PROFILES.CONTROL_VOLTAGE : { ...DEMO_PROFILES.CONTROL_VOLTAGE, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
-  const adapterVoltageTracker = useSignalTracker('ADAPTER_VOLTAGE', useGeneric ? DEMO_PROFILES.CONTROL_VOLTAGE : { ...DEMO_PROFILES.CONTROL_VOLTAGE, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, 1500);
+  const fallbackRequestCount = 6;
+  const effectiveRequestCount = Math.max(
+    1,
+    Array.isArray(supportedPids) && supportedPids.length > 0 ? supportedPids.length : fallbackRequestCount,
+  ) + (initialAdapterVoltageValue !== null ? 1 : 0);
+  const expectedSignalCycleMs = Math.max(1800, Math.min(9000, effectiveRequestCount * 800));
+  const rpmTracker = useSignalTracker('ENGINE_RPM', useGeneric ? DEMO_PROFILES.ENGINE_RPM : { ...DEMO_PROFILES.ENGINE_RPM, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, expectedSignalCycleMs);
+  const speedTracker = useSignalTracker('VEHICLE_SPEED', useGeneric ? DEMO_PROFILES.VEHICLE_SPEED : { ...DEMO_PROFILES.VEHICLE_SPEED, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, expectedSignalCycleMs);
+  const coolantTracker = useSignalTracker('ENGINE_COOLANT', useGeneric ? DEMO_PROFILES.ENGINE_COOLANT : { ...DEMO_PROFILES.ENGINE_COOLANT, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, expectedSignalCycleMs);
+  const loadTracker = useSignalTracker('ENGINE_LOAD', useGeneric ? DEMO_PROFILES.ENGINE_LOAD : { ...DEMO_PROFILES.ENGINE_LOAD, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, expectedSignalCycleMs);
+  const throttleTracker = useSignalTracker('THROTTLE_POSITION', useGeneric ? DEMO_PROFILES.THROTTLE_POSITION : { ...DEMO_PROFILES.THROTTLE_POSITION, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, expectedSignalCycleMs);
+  const ecuVoltageTracker = useSignalTracker('ECU_VOLTAGE', useGeneric ? DEMO_PROFILES.CONTROL_VOLTAGE : { ...DEMO_PROFILES.CONTROL_VOLTAGE, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, expectedSignalCycleMs);
+  const adapterVoltageTracker = useSignalTracker('ADAPTER_VOLTAGE', useGeneric ? DEMO_PROFILES.CONTROL_VOLTAGE : { ...DEMO_PROFILES.CONTROL_VOLTAGE, bands: [], calibrationStatus: 'NOT_CALIBRATED' }, expectedSignalCycleMs);
 
   const productDb = useProductDb();
   const { context: localContext } = useLocalContext();
@@ -160,26 +165,10 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
         }
       }
 
-      try {
-        ReactNativeForegroundService.start({
-          id: 1234,
-          title: 'AutoPulse',
-          message: 'OBD2 session active. Waiting for or reading vehicle data…',
-          icon: 'ic_launcher',
-          button: false,
-          button2: false,
-          setOnlyAlertOnce: 'true',
-          color: '#000000',
-        });
-      } catch (err) {
-        console.warn('Failed to start foreground service', err);
-      }
     }
 
     requestPermissions();
-    return () => {
-      if (Platform.OS === 'android') ReactNativeForegroundService.stopAll();
-    };
+    return () => undefined;
   }, []);
 
   useEffect(() => {
@@ -294,6 +283,7 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
     sessionId,
     duration: secondsElapsed,
     isVirtual: adapterMode !== 'REAL_BLE',
+    connectionHandleId,
   });
 
   const handleStop = async () => {
