@@ -166,24 +166,26 @@ function DrivingPresentationSurface({
   motionState,
   presentation,
   voiceEnabled,
+  language,
 }: {
   alert: DriverAlertDefinition | null;
   alertEpisode: AlertEpisode;
   motionState: MotionState;
   presentation: DrivingModePresentation;
   voiceEnabled: boolean;
+  language: VoiceLanguage;
 }) {
   const unresolved = alertEpisode.state === 'UNRESOLVED';
   const severity = unresolved ? alertEpisode.peakSeverity : alert?.severity;
   const visualSeverity = severity ?? (motionState === 'UNKNOWN' ? 'S1_ADVISORY' : undefined);
   const tone = toneForSeverity(visualSeverity);
   const headline = alert
-    ? driverAlertPhrase(alert.key, 'en-US').replace(/\.$/, '')
+    ? driverAlertPhrase(alert.key, language).replace(/\.$/, '')
     : unresolved
-      ? 'CONDITION UNRESOLVED'
+      ? (language === 'es-ES' ? 'CONDICIÓN SIN RESOLVER' : 'CONDITION UNRESOLVED')
       : motionState === 'UNKNOWN'
-        ? 'MOTION DATA LIMITED'
-        : 'NORMAL';
+        ? (language === 'es-ES' ? 'DATOS DE MOVIMIENTO LIMITADOS' : 'MOTION DATA LIMITED')
+        : (language === 'es-ES' ? 'NORMAL' : 'NORMAL');
   const icon = alert?.icon ?? (unresolved || motionState === 'UNKNOWN' ? '▲' : '●');
   const secondaryA = presentation.stateFirst ? presentation.primary : presentation.secondaryA;
   const secondaryB = presentation.stateFirst ? presentation.secondaryA : presentation.secondaryB;
@@ -196,7 +198,7 @@ function DrivingPresentationSurface({
         <View style={styles.drivingStateCopy}>
           <Text numberOfLines={2} adjustsFontSizeToFit style={[styles.drivingHeadline, { color: tone.text }]}>{headline}</Text>
           <Text style={styles.drivingStateMeta}>
-            {motionState === 'UNKNOWN' ? 'MOTION UNKNOWN · ' : ''}{presentation.readiness}
+            {motionState === 'UNKNOWN' ? (language === 'es-ES' ? 'MOVIMIENTO DESCONOCIDO · ' : 'MOTION UNKNOWN · ') : ''}{presentation.readiness}
           </Text>
         </View>
       </View>
@@ -211,12 +213,12 @@ function DrivingPresentationSurface({
         </View>
       ) : (
         <View style={styles.safetyOverrideFooter}>
-          <Text style={styles.safetyOverrideText}>SAFETY OVERRIDE · MODE PRESERVED</Text>
+          <Text style={styles.safetyOverrideText}>{language === 'es-ES' ? 'PRIORIDAD DE SEGURIDAD · MODO CONSERVADO' : 'SAFETY OVERRIDE · MODE PRESERVED'}</Text>
         </View>
       )}
 
       <Text style={styles.drivingHint}>
-        Eyes on the road · {voiceEnabled ? 'voice alerts active' : 'voice alerts off'}
+        {language === 'es-ES' ? 'Vista al camino' : 'Eyes on the road'} · {voiceEnabled ? (language === 'es-ES' ? 'alertas de voz activas' : 'voice alerts active') : (language === 'es-ES' ? 'alertas de voz desactivadas' : 'voice alerts off')}
       </Text>
     </View>
   );
@@ -383,6 +385,7 @@ function DriverLiveSessionContent({
           motionState={motion.state}
           presentation={presentation}
           voiceEnabled={preferences.voiceAlertsEnabled}
+          language={preferences.voiceLanguage}
         />
       ) : (
         <>
