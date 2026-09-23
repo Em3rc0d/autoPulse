@@ -87,6 +87,7 @@ export default function CheckRunScreen() {
   useEffect(() => () => {
     cancellationRef.current.cancel();
     controllerRef.current?.disconnect();
+    activeBleController.releaseClaim('CHECK');
     if (connection) {
       void connection.device.cancelConnection().catch(() => undefined);
       activeBleController.releaseConnection();
@@ -96,6 +97,12 @@ export default function CheckRunScreen() {
   const run = async () => {
     if (!connection || !connectionHandleId) {
       setError('The retained OBD connection is no longer available. Reconnect the adapter.');
+      setUiState('ERROR');
+      return;
+    }
+    const leasedConnection = activeBleController.claimConnection(connectionHandleId, 'CHECK');
+    if (!leasedConnection) {
+      setError('The OBD adapter is currently owned by another AutoPulse workflow.');
       setUiState('ERROR');
       return;
     }
