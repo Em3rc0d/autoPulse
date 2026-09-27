@@ -12,6 +12,9 @@ export interface ActiveConnection {
   profileId?: string;
 }
 
+const RECONNECT_TIMEOUT_MS = 5000;
+const RECONNECT_SETTLE_MS = 250;
+
 class ActiveBleConnectionController {
   private activeConnection: ActiveConnection | null = null;
   private owner: ConnectionOwner = 'IDLE';
@@ -32,6 +35,42 @@ class ActiveBleConnectionController {
 
   releaseClaim(owner: Exclude<ConnectionOwner, 'IDLE'>) {
     if (this.owner === owner) this.owner = 'IDLE';
+  }
+
+  /**
+   * Rebuilds only the BLE transport for the workflow that already owns the lease.
+   * This is deliberately bounded and does not issue ECU/OBD commands. The caller
+   * must renegotiate the ELM/vehicle path after this returns.
+   */
+  async reconnectClaimedConnection(
+    handleId: string,
+    owner: Exclude<ConnectionOwner, 'IDLE'>,
+  ): Promise<ActiveConnection | null> {
+    const current = this.activeConnection;
+    if (!current || current.connectionHandleId !== handleId || this.owner !== owner) return null;
+
+    try {
+      try {
+        if (await current.device.isConnected()) {
+          await current.device.cancelConnection();
+        }
+      } catch {
+        // A stale native BLE handle is already equivalent to disconnected.
+      }
+
+      await new Promise(resolve => setTimeout(resolve, RECONNECT_SETTLE_MS));
+      const device = await current.device.connect({ timeout: RECONNECT_TIMEOUT_MS });
+      await device.discoverAllServicesAndCharacteristics();
+
+      const recovered: ActiveConnection = { ...current, device };
+      this.activeConnection = recovered;
+      this.notify();
+      return recovered;
+    } catch (error) {
+      console.warn('[ActiveBleConnectionController] Claimed transport recovery failed', error);
+      await this.disconnectAndRelease();
+      return null;
+    }
   }
 
   releaseConnection() {
