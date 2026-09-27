@@ -34,6 +34,36 @@ class ActiveBleConnectionController {
     if (this.owner === owner) this.owner = 'IDLE';
   }
 
+  /**
+   * A retained handle is only reusable when the physical BLE link is still alive.
+   * Never let an IDLE bookkeeping state masquerade as a usable adapter connection.
+   */
+  async getReusableIdleConnection(): Promise<ActiveConnection | null> {
+    const connection = this.activeConnection;
+    if (!connection || this.owner !== 'IDLE') return null;
+
+    try {
+      if (await connection.device.isConnected()) return connection;
+    } catch (error) {
+      console.warn('[ActiveBleConnectionController] Retained connection health check failed', error);
+    }
+
+    // Drop stale state before a new scan/connect attempt. This is deliberately
+    // idempotent so recovery never requires killing the application process.
+    if (this.activeConnection?.connectionHandleId === connection.connectionHandleId) {
+      this.activeConnection = null;
+      this.owner = 'IDLE';
+      this.notify();
+    }
+    return null;
+  }
+
+  async prepareForFreshConnection() {
+    if (this.owner !== 'IDLE') return false;
+    await this.disconnectAndRelease();
+    return true;
+  }
+
   releaseConnection() {
     this.activeConnection = null;
     this.owner = 'IDLE';
