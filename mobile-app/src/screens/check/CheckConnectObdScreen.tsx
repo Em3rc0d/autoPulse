@@ -87,6 +87,15 @@ export default function CheckConnectObdScreen() {
       );
 
       const connectionHandleId = `check_${Math.random().toString(36).slice(2, 11)}`;
+
+      // If the user deliberately selected a different adapter, retire the old
+      // idle transport before replacing the broker entry. Otherwise the old
+      // native BLE connection can survive orphaned until process restart.
+      const previous = activeBleController.getActiveConnection();
+      if (previous && previous.device.id !== probeOutput.device.id) {
+        await activeBleController.disconnectAndRelease();
+      }
+
       activeBleController.retainConnection({
         connectionHandleId,
         device: probeOutput.device,
