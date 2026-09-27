@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useKeepAwake } from 'expo-keep-awake';
@@ -35,13 +35,50 @@ export default function CheckConnectObdScreen() {
   const [probeOutput, setProbeOutput] = useState<ProbeOutput | null>(null);
   const [activeProbe, setActiveProbe] = useState<BleCompatibilityProbe | null>(null);
   const [message, setMessage] = useState<string>('');
-  const retainedConnection = activeBleController.getActiveConnection();
+  const [retainedConnection, setRetainedConnection] = useState(activeBleController.getActiveConnection());
   const retainedReusable = Boolean(retainedConnection && activeBleController.getOwner() === 'IDLE');
 
-  const beginScan = () => {
+  useEffect(() => {
+    let mounted = true;
+    const refreshRetainedConnection = async () => {
+      const reusable = await activeBleController.getReusableIdleConnection();
+      if (mounted) setRetainedConnection(reusable);
+    };
+    void refreshRetainedConnection();
+    const unsubscribe = activeBleController.subscribe(connection => {
+      if (mounted) setRetainedConnection(connection);
+    });
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, []);
+
+  const beginScan = async () => {
     setMessage('');
+    // A stale or intentionally replaced retained link must not compete with the
+    // next BLE connect. Fresh scan is an explicit handoff boundary.
+    const ready = await activeBleController.prepareForFreshConnection();
+    if (!ready) {
+      setMessage(t('The adapter is still in use by another AutoPulse workflow. Finish it before reconnecting.','El adaptador aún está en uso por otro flujo de AutoPulse. Finalízalo antes de reconectar.'));
+      setUiState('FAILED');
+      return;
+    }
+    setRetainedConnection(null);
     startScan();
     setUiState('SEARCHING');
+  };
+
+  const useRetainedForCheck = async () => {
+    if (!vehicleId) return;
+    const reusable = await activeBleController.getReusableIdleConnection();
+    if (!reusable) {
+      setRetainedConnection(null);
+      setMessage(t('The previous OBD link expired. AutoPulse cleared it; scan again without restarting the app.','El enlace OBD anterior expiró. AutoPulse lo limpió; vuelve a buscar sin reiniciar la app.'));
+      setUiState('FAILED');
+      return;
+    }
+    navigation.navigate('CheckRun', { vehicleId, connectionHandleId: reusable.connectionHandleId });
   };
 
   const probeDevice = async (deviceId: string) => {
@@ -128,7 +165,7 @@ export default function CheckConnectObdScreen() {
             <Text style={styles.panelText}>{t('Reuse the adapter from the completed Live session without restarting AutoPulse.','Reutiliza el adaptador de la sesión Live terminada sin reiniciar AutoPulse.')}</Text>
             <TouchableOpacity
               style={styles.primary}
-              onPress={() => navigation.navigate('CheckRun', { vehicleId, connectionHandleId: retainedConnection.connectionHandleId })}
+              onPress={() => void useRetainedForCheck()}
               testID="check-use-retained-adapter"
             >
               <Text style={styles.primaryText}>{t('Use connected adapter','Usar adaptador conectado')}</Text>
@@ -137,7 +174,7 @@ export default function CheckConnectObdScreen() {
         ) : null}
 
         {uiState === 'IDLE' && (
-          <TouchableOpacity style={styles.primary} onPress={beginScan} testID="check-scan-adapters">
+          <TouchableOpacity style={styles.primary} onPress={() => void beginScan()} testID="check-scan-adapters">
             <Text style={styles.primaryText}>{retainedReusable ? t('Scan for another adapter','Buscar otro adaptador') : t('Scan for adapters','Buscar adaptadores')}</Text>
           </TouchableOpacity>
         )}
@@ -174,7 +211,7 @@ export default function CheckConnectObdScreen() {
           <View style={styles.panel}>
             <Text style={styles.error}>{t('CHECK CONNECTION BLOCKED','CONEXIÓN DE CHECK BLOQUEADA')}</Text>
             <Text style={styles.panelText}>{message}</Text>
-            <TouchableOpacity style={styles.secondary} onPress={beginScan}><Text style={styles.secondaryText}>{t('Try another adapter','Probar otro adaptador')}</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.secondary} onPress={() => void beginScan()}><Text style={styles.secondaryText}>{t('Try another adapter','Probar otro adaptador')}</Text></TouchableOpacity>
           </View>
         )}
 
