@@ -1,0 +1,37 @@
+{
+  "quarry_id": "Q-CHECK-001-OBD-DTC-SERVICES-20260904",
+  "status": "SEMANTIC_BOUNDARY_CLOSED_FIXTURES_OPEN",
+  "captured_on": "2026-09-04",
+  "scope": "Standard OBD read-only DTC acquisition semantics for AutoPulse Check Core",
+  "sources": [
+    {
+      "id": "SRC-ELM327-DATASHEET",
+      "kind": "ADAPTER_VENDOR_TECHNICAL_DOCUMENTATION",
+      "name": "ELM327 OBD to RS232 Interpreter Datasheet",
+      "url": "https://www.elmelectronics.com/wp-content/uploads/2017/01/ELM327DS.pdf",
+      "role": "Primary implementation-facing evidence for Mode 03 request/response examples, MIL/count behavior, DTC byte-pair decoding, ISO15765 CAN count-byte difference, multi-ECU/header behavior, NO DATA semantics, and Mode 04 side effects."
+    },
+    {
+      "id": "SRC-AUTOPULSE-OBD-FRAME-PARSER",
+      "kind": "CURRENT_REPOSITORY_EVIDENCE",
+      "path": "mobile-app/src/infrastructure/ble/real/pipeline/ObdFrameParser.ts",
+      "role": "Current PID-shaped frame parsing behavior used to identify the Mode03/07/0A parser-shape hazard."
+    },
+    {
+      "id": "SRC-AUTOPULSE-ELM-DIAGNOSTIC-CONNECTOR",
+      "kind": "CURRENT_REPOSITORY_EVIDENCE",
+      "path": "mobile-app/src/infrastructure/diagnostics/ElmBleDiagnosticConnector.ts",
+      "role": "Current DTC-pair decoder and 43/47/4A response-service handling."
+    }
+  ],
+  "normative_boundary": {
+    "note": "The ELM327 datasheet is authoritative for ELM behavior and examples but is not itself SAE J1979/ISO 15031-5. Runtime parser promotion still requires fixture-backed validation and must not claim broader normative completeness than the sources support.",
+    "normative_standard_copy_committed": false
+  },
+  "promotion": {
+    "semantic_boundary": "CLOSED",
+    "fixtures": "OPEN",
+    "physical_can_evidence": "OPEN",
+    "runtime": "BLOCKED"
+  }
+}

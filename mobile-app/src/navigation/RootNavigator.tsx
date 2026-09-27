@@ -14,8 +14,11 @@ import DriverLiveSessionScreen from '../screens/live/DriverLiveSessionScreen';
 import SessionSummaryScreen from '../screens/live/SessionSummaryScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import CheckScreen from '../screens/check/CheckScreen';
+import CheckConnectObdScreen from '../screens/check/CheckConnectObdScreen';
+import CheckRunScreen from '../screens/check/CheckRunScreen';
 import VehicleCheckReportScreen from '../screens/check/VehicleCheckReportScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
+import { uiText, useUiLanguage } from '../application/localization/UiLanguage';
 
 function TabBarIcon({ name, color }: { name: string; color: string }) {
   const iconMap: Record<string, string> = {
@@ -57,12 +60,16 @@ function CheckStack() {
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       <Stack.Screen name="CheckHome" component={CheckScreen} />
+      <Stack.Screen name="CheckConnect" component={CheckConnectObdScreen} />
+      <Stack.Screen name="CheckRun" component={CheckRunScreen} />
       <Stack.Screen name="VehicleCheckReport" component={VehicleCheckReportScreen} />
     </Stack.Navigator>
   );
 }
 
 function MainTabs() {
+  const language = useUiLanguage();
+  const t = (en: string, es: string) => uiText(language, en, es);
   return (
     <Tab.Navigator
       screenOptions={{
@@ -73,11 +80,11 @@ function MainTabs() {
         tabBarInactiveTintColor: '#8E8E93',
       }}
     >
-      <Tab.Screen name="Garage" component={GarageStack} options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="garage" color={color} /> }} />
-      <Tab.Screen name="Live" component={LiveStack} options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="live" color={color} /> }} />
-      <Tab.Screen name="Check" component={CheckStack} options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="check" color={color} /> }} />
-      <Tab.Screen name="History" component={HistoryScreen} options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="history" color={color} /> }} />
-      <Tab.Screen name="Settings" component={SettingsScreen} options={{ headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="settings" color={color} /> }} />
+      <Tab.Screen name="Garage" component={GarageStack} options={{ title: t('Garage', 'Garaje'), headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="garage" color={color} /> }} />
+      <Tab.Screen name="Live" component={LiveStack} options={{ title: t('Live', 'En vivo'), headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="live" color={color} /> }} />
+      <Tab.Screen name="Check" component={CheckStack} options={{ title: 'Check', headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="check" color={color} /> }} />
+      <Tab.Screen name="History" component={HistoryScreen} options={{ title: t('History', 'Historial'), headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="history" color={color} /> }} />
+      <Tab.Screen name="Settings" component={SettingsScreen} options={{ title: t('Settings', 'Ajustes'), headerShown: false, tabBarIcon: ({ color }) => <TabBarIcon name="settings" color={color} /> }} />
     </Tab.Navigator>
   );
 }

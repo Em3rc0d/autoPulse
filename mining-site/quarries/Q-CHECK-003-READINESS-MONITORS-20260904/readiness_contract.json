@@ -1,0 +1,34 @@
+{
+  "contract_id": "CHECK-READINESS-SEMANTICS-V0",
+  "status": "RESEARCH_CANDIDATE_NOT_RUNTIME",
+  "pids": [
+    {
+      "request": "0101",
+      "time_horizon": "SINCE_DTC_CLEAR",
+      "byte_a": {
+        "mil_bit": 7,
+        "confirmed_dtc_count_bits": "6..0"
+      },
+      "readiness_bytes": ["B", "C", "D"]
+    },
+    {
+      "request": "0141",
+      "time_horizon": "CURRENT_DRIVE_CYCLE",
+      "readiness_shape": "PID0101_COMPATIBLE_WITH_DISTINCT_FIRST_BYTE_SEMANTICS"
+    }
+  ],
+  "monitor_state_model": [
+    "READY",
+    "NOT_READY",
+    "NOT_SUPPORTED",
+    "UNKNOWN"
+  ],
+  "rules": {
+    "not_ready_is_failure": false,
+    "support_and_completion_are_separate": true,
+    "spark_and_compression_layouts_are_separate": true,
+    "dtc_count_is_endpoint_scoped": true,
+    "pid0101_count_does_not_replace_mode03_scan": true
+  },
+  "runtime_gate": "BLOCKED_UNTIL_NORMATIVE_BIT_TABLE_AND_FIXTURES"
+}
