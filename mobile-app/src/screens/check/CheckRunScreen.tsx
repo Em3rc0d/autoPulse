@@ -19,6 +19,10 @@ import {
 import { formatDecodedPidObservation } from '../../application/check/intelligence/Mode01ValueDecoder';
 import type { DiagnosticConcernV2 } from '../../application/check/intelligence/DiagnosticConcernEngine';
 import { uiText, useUiLanguage } from '../../application/localization/UiLanguage';
+import {
+  checkErrorMessage,
+  isRecoverableCheckTransportFailure,
+} from '../../application/check/live/CheckTransportRecovery';
 
 type UiState = 'IDLE' | 'RUNNING' | 'CANCELLING' | 'COMPLETE' | 'ERROR' | 'CANCELLED';
 
@@ -85,45 +89,89 @@ export default function CheckRunScreen() {
   const [showTechnical, setShowTechnical] = useState(false);
   const cancellationRef = useRef(new CheckPilotCancellationToken());
   const controllerRef = useRef<RealObdController | null>(null);
-  const connection = connectionHandleId ? activeBleController.getConnection(connectionHandleId) : null;
-
   useEffect(() => () => {
     cancellationRef.current.cancel();
     controllerRef.current?.disconnect();
-    activeBleController.releaseClaim('CHECK');
-    if (connection) {
-      void connection.device.cancelConnection().catch(() => undefined);
-      activeBleController.releaseConnection();
+    controllerRef.current = null;
+
+    // Never tear down a BLE link that a newer workflow has already claimed.
+    // The current Check screen may only release resources it still owns.
+    if (activeBleController.getOwner() === 'CHECK') {
+      activeBleController.releaseClaim('CHECK');
     }
-  }, [connection]);
+  }, []);
+
+  const executePilotAttempt = async () => {
+    if (!connectionHandleId) throw new Error('CHECK_CONNECTION_HANDLE_MISSING');
+    const connection = activeBleController.getConnection(connectionHandleId);
+    if (!connection) throw new Error('CHECK_CONNECTION_NOT_AVAILABLE');
+
+    controllerRef.current?.disconnect();
+    const controller = new RealObdController(connection);
+    controllerRef.current = controller;
+
+    try {
+      return await runCheckPhysicalPilotV4({
+        controller,
+        connectionHandleId,
+        cancellation: cancellationRef.current,
+        onStage: setStage,
+      });
+    } finally {
+      // A failed attempt must not leave an ElmAccumulator monitor subscribed.
+      // Retaining the BLE link is separate from retaining a command controller.
+      controller.disconnect();
+      if (controllerRef.current === controller) controllerRef.current = null;
+    }
+  };
 
   const run = async () => {
-    if (!connection || !connectionHandleId) {
+    if (!connectionHandleId || !activeBleController.getConnection(connectionHandleId)) {
       setError('The retained OBD connection is no longer available. Reconnect the adapter.');
       setUiState('ERROR');
       return;
     }
+
     const leasedConnection = activeBleController.claimConnection(connectionHandleId, 'CHECK');
     if (!leasedConnection) {
       setError('The OBD adapter is currently owned by another AutoPulse workflow.');
       setUiState('ERROR');
       return;
     }
+
     setError(null);
     setResult(null);
     setShowTechnical(false);
     setStage('PREPARING_ADAPTER');
     setUiState('RUNNING');
     cancellationRef.current = new CheckPilotCancellationToken();
-    const controller = new RealObdController(connection);
-    controllerRef.current = controller;
+
     try {
-      const pilotResult = await runCheckPhysicalPilotV4({
-        controller,
-        connectionHandleId,
-        cancellation: cancellationRef.current,
-        onStage: setStage,
-      });
+      let pilotResult: CheckPhysicalPilotV4Result;
+      try {
+        pilotResult = await executePilotAttempt();
+      } catch (firstFailure) {
+        if (
+          cancellationRef.current.isCancelled ||
+          !isRecoverableCheckTransportFailure(firstFailure)
+        ) {
+          throw firstFailure;
+        }
+
+        setStage('PREPARING_ADAPTER');
+        const recovered = await activeBleController.reconnectClaimedConnection(
+          connectionHandleId,
+          'CHECK',
+        );
+        if (!recovered) {
+          throw new Error(`CHECK_TRANSPORT_RECOVERY_FAILED:${checkErrorMessage(firstFailure)}`);
+        }
+
+        // Exactly one clean retry. CheckPhysicalPilot re-runs ATE0/ATL0/ATS0/ATH0,
+        // ATSP0, 0100 bootstrap and protocol discovery on the rebuilt BLE link.
+        pilotResult = await executePilotAttempt();
+      }
+
       setResult(pilotResult);
       setUiState(cancellationRef.current.isCancelled ? 'CANCELLED' : 'COMPLETE');
     } catch (reason) {
@@ -131,9 +179,13 @@ export default function CheckRunScreen() {
         setUiState('CANCELLED');
         setError(null);
       } else {
-        setError(reason instanceof Error ? reason.message : 'Check stopped safely.');
+        setError(checkErrorMessage(reason) || 'Check stopped safely.');
         setUiState('ERROR');
       }
+    } finally {
+      // Check no longer owns the adapter once an attempt reaches a terminal UI
+      // state. The physical BLE link may remain idle for Live/Check reuse.
+      activeBleController.releaseClaim('CHECK');
     }
   };
 
