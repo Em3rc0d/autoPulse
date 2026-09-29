@@ -3,8 +3,9 @@ import ReactNativeForegroundService from '@supersami/rn-foreground-service';
 
 let running = false;
 
-export function startLiveForegroundService() {
-  if (Platform.OS !== 'android' || running) return;
+export function startLiveForegroundService(): boolean {
+  if (Platform.OS !== 'android') return true;
+  if (running) return true;
   try {
     ReactNativeForegroundService.start({
       id: 1234,
@@ -17,8 +18,11 @@ export function startLiveForegroundService() {
       color: '#000000',
     });
     running = true;
+    return true;
   } catch (error) {
     console.warn('[LiveForegroundService] Could not start foreground service', error);
+    running = false;
+    return false;
   }
 }
 
