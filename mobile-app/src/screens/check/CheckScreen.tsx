@@ -1,11 +1,28 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useVehicles } from '../../infrastructure/hooks/useVehicles';
+import { useProductDb } from '../../infrastructure/hooks/useProductDb';
+import { useLocalContext } from '../../infrastructure/hooks/useLocalContext';
+import { DiagnosticCheckReportRepository } from '../../infrastructure/database/product/repositories/diagnostic-check-report.repository';
+import type { StoredDiagnosticCheckReport, DiagnosticCheckSnapshot } from '../../application/check/DiagnosticCheckReport';
 
 export default function CheckScreen() {
   const navigation = useNavigation<any>();
   const { vehicles, loading, error, refresh } = useVehicles();
+  const db = useProductDb();
+  const { context } = useLocalContext();
+  const workspaceId = context?.defaultWorkspaceId as string | undefined;
+  const [recentChecks, setRecentChecks] = useState<StoredDiagnosticCheckReport[]>([]);
+
+  useEffect(() => {
+    if (!db || !workspaceId) return;
+    let mounted = true;
+    new DiagnosticCheckReportRepository(db).getRecent(workspaceId, 8)
+      .then(rows => { if (mounted) setRecentChecks(rows); })
+      .catch(reason => console.warn('[CheckScreen] Could not load recent sealed checks', reason));
+    return () => { mounted = false; };
+  }, [db, workspaceId]);
 
   return (
     <View style={styles.container}>
@@ -44,6 +61,32 @@ export default function CheckScreen() {
             </TouchableOpacity>
           ))}
 
+          {recentChecks.length > 0 ? (
+            <>
+              <Text style={[styles.section, { marginTop: 18 }]}>Recent sealed Checks</Text>
+              {recentChecks.map(item => {
+                let snapshot: DiagnosticCheckSnapshot | null = null;
+                try { snapshot = JSON.parse(item.snapshotJson) as DiagnosticCheckSnapshot; } catch {}
+                const label = snapshot?.vehicle.alias
+                  ?? [snapshot?.vehicle.make, snapshot?.vehicle.model, snapshot?.vehicle.year].filter(Boolean).join(' ')
+                  || 'Vehicle';
+                return (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={styles.reportCard}
+                    onPress={() => navigation.navigate('DiagnosticCheckReport', { checkId: item.id })}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.vehicle}>{label}</Text>
+                      <Text style={styles.meta}>{item.protocol} · {new Date(item.generatedAt).toLocaleString()}</Text>
+                    </View>
+                    <Text style={styles.sealed}>SEALED →</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </>
+          ) : null}
+
           <View style={styles.boundary}>
             <Text style={styles.boundaryTitle}>What this is not</Text>
             <Text style={styles.boundaryText}>Check does not create a mechanical PASS/FAIL verdict. No DTCs reported by scanned services does not mean the whole vehicle is healthy. ABS, SRS, transmission and manufacturer-enhanced modules are not inferred.</Text>
@@ -70,6 +113,8 @@ const styles = StyleSheet.create({
   noticeText: { color: '#cbd5e1', lineHeight: 20, marginTop: 7 },
   section: { color: '#e2e8f0', fontSize: 13, fontWeight: '900', letterSpacing: 1, marginBottom: 10 },
   card: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#121b20', borderWidth: 1, borderColor: '#2a363d', borderRadius: 16, padding: 16, marginBottom: 12 },
+  reportCard: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: '#0c2317', borderWidth: 1, borderColor: '#166534', borderRadius: 16, padding: 14, marginBottom: 10 },
+  sealed: { color: '#86efac', fontSize: 10, fontWeight: '900' },
   vehicle: { color: '#f8fafc', fontSize: 18, fontWeight: '900' },
   meta: { color: '#64748b', fontSize: 11, marginTop: 5 },
   open: { color: '#60a5fa', fontSize: 12, fontWeight: '900' },
