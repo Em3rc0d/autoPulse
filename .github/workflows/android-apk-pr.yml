@@ -64,7 +64,6 @@ jobs:
           name: autopulse-production-dependency-audit
           path: |
             mobile-app/.release/npm-audit-production.json
-            mobile-app/.release/npm-audit-policy.json
             mobile-app/.release/npm-dependency-reachability.txt
           if-no-files-found: error
           retention-days: 14
@@ -307,8 +306,8 @@ jobs:
           AP_SECURITY_AUDIT_OUTCOME: ${{ steps.security_audit.outcome }}
         run: |
           set -euo pipefail
-          if [ "$AP_CRITICAL_AUDIT_OUTCOME" != "success" ]; then
-            echo 'ERROR: V1 release gate remains blocked by critical production-tree dependency findings.'
-            echo 'Audit and reachability evidence were preserved before this failure.'
+          if [ "$AP_SECURITY_AUDIT_OUTCOME" != "success" ]; then
+            echo 'ERROR: V1 release gate remains blocked by the production dependency security policy.'
+            echo 'Audit, exception-contract and reachability evidence were preserved before this failure.'
             exit 1
           fi
