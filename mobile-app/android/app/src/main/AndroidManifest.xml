@@ -11,7 +11,10 @@
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
   <uses-permission android:name="android.permission.WAKE_LOCK"/>
-  <!-- AutoPulse only opens the system media library; no V1 flow captures a photo with the camera. -->
+  <!-- V1 stores evidence in app-private SQLite/AsyncStorage; broad external storage access is not required. -->
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove"/>
+  <!-- AutoPulse does not capture photos in the V1 release path. -->
   <uses-permission android:name="android.permission.CAMERA" tools:node="remove"/>
   <!-- expo-location pulls SmartLocation, whose generic manifest includes activity/geofencing permissions that V1 does not use. -->
   <uses-permission android:name="com.google.android.providers.gsf.permission.READ_GSERVICES" tools:node="remove"/>
