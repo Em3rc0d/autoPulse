@@ -68,8 +68,7 @@ export default function CheckScreen() {
                 let snapshot: DiagnosticCheckSnapshot | null = null;
                 try { snapshot = JSON.parse(item.snapshotJson) as DiagnosticCheckSnapshot; } catch {}
                 const label = snapshot?.vehicle.alias
-                  ?? [snapshot?.vehicle.make, snapshot?.vehicle.model, snapshot?.vehicle.year].filter(Boolean).join(' ')
-                  || 'Vehicle';
+                  ?? ([snapshot?.vehicle.make, snapshot?.vehicle.model, snapshot?.vehicle.year].filter(Boolean).join(' ') || 'Vehicle');
                 return (
                   <TouchableOpacity
                     key={item.id}
