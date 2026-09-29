@@ -6,7 +6,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "postinstall": "patch-package",
+    "postinstall": "patch-package && node scripts/patch-metro-image-size.js",
     "obd:replay:dev": "node scripts/obd-replay-server.js",
     "test": "jest --runInBand",
     "typecheck": "tsc --noEmit",
