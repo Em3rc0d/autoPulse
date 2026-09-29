@@ -23,7 +23,11 @@ import { CommandResult, CommandRequest } from '../../infrastructure/ble/real/pip
 import { ObdAcquisitionMapper } from '../../domain/telemetry/factories/ObdAcquisitionMapper';
 import { TelemetryBlockAssembler } from '../../domain/telemetry/logic/TelemetryBlockAssembler';
 import { BinaryObd2V3Codec } from '../../infrastructure/telemetry-codecs/binary-obd2-v3/BinaryObd2V3Codec';
-import { startLiveForegroundService, stopLiveForegroundService } from './LiveForegroundService';
+import {
+  startLiveForegroundService,
+  stopLiveForegroundService,
+  subscribeLiveForegroundServiceFailure,
+} from './LiveForegroundService';
 
 export type RecordingStatus = 'NOT_STARTED' | 'RECORDING' | 'FLUSHING' | 'DEGRADED' | 'FAILED' | 'CLOSED';
 
@@ -60,6 +64,7 @@ export class RealLiveSessionController {
   private codec = new BinaryObd2V3Codec();
   private commitQueue: TelemetryCommitQueue | null = null;
   private bleDisconnectSubscription: Subscription | null = null;
+  private foregroundServiceFailureUnsubscribe: (() => void) | null = null;
 
   private terminalPromise: Promise<void> | null = null;
   private recoveryPromise: Promise<boolean> | null = null;
@@ -98,7 +103,17 @@ export class RealLiveSessionController {
       return;
     }
 
-    startLiveForegroundService();
+    this.foregroundServiceFailureUnsubscribe?.();
+    this.foregroundServiceFailureUnsubscribe = subscribeLiveForegroundServiceFailure(reason => {
+      if (this.currentState === 'ACTIVE' || this.currentState === 'RECOVERING') {
+        void this.handleUnexpectedDisconnect(reason);
+      }
+    });
+
+    if (!startLiveForegroundService()) {
+      await this.handleUnexpectedDisconnect('FOREGROUND_SERVICE_UNAVAILABLE');
+      return;
+    }
 
     this.recordingStartedAt = Date.now();
     this.assembler = new TelemetryBlockAssembler(this.sessionId, this.recordingStartedAt, 5000);
@@ -371,6 +386,8 @@ export class RealLiveSessionController {
     } else {
       await activeBleController.disconnectAndRelease();
     }
+    this.foregroundServiceFailureUnsubscribe?.();
+    this.foregroundServiceFailureUnsubscribe = null;
     stopLiveForegroundService();
     this.recordingStatus = 'CLOSED';
 
