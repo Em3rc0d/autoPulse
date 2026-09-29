@@ -1,17 +1,22 @@
-import { CommandResult } from './pipeline/types';
+import type { CommandResult } from './pipeline/types';
+
+export type DiagnosticCommandLogEntry = CommandResult & {
+  /** Wall-clock time when AutoPulse classified this command outcome. */
+  observedAt: number;
+};
 
 class DiagnosticsBufferImpl {
-  private buffer: CommandResult[] = [];
+  private buffer: DiagnosticCommandLogEntry[] = [];
   private readonly MAX_SIZE = 100;
 
-  public push(result: CommandResult) {
-    this.buffer.push(result);
+  public push(result: CommandResult, observedAt: number = Date.now()) {
+    this.buffer.push({ ...result, observedAt });
     if (this.buffer.length > this.MAX_SIZE) {
-      this.buffer.shift(); // Remove oldest
+      this.buffer.shift();
     }
   }
 
-  public getHistory(): CommandResult[] {
+  public getHistory(): DiagnosticCommandLogEntry[] {
     return [...this.buffer];
   }
 

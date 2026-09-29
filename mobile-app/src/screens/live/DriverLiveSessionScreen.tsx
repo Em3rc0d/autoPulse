@@ -40,6 +40,7 @@ import {
   type LiveDriverAlertMemory,
 } from '../../domain/driver-intelligence/LiveDriverAlertPolicy';
 import {
+  hasUsableMotionEvidence,
   initialMotionState,
   resolveMotionState,
   type MotionEvidence,
@@ -165,6 +166,7 @@ function DrivingPresentationSurface({
   alert,
   alertEpisode,
   motionState,
+  motionEvidenceAvailable,
   presentation,
   voiceEnabled,
   language,
@@ -172,22 +174,27 @@ function DrivingPresentationSurface({
   alert: DriverAlertDefinition | null;
   alertEpisode: AlertEpisode;
   motionState: MotionState;
+  motionEvidenceAvailable: boolean;
   presentation: DrivingModePresentation;
   voiceEnabled: boolean;
   language: VoiceLanguage;
 }) {
   const unresolved = alertEpisode.state === 'UNRESOLVED';
   const severity = unresolved ? alertEpisode.peakSeverity : alert?.severity;
-  const visualSeverity = severity ?? (motionState === 'UNKNOWN' ? 'S1_ADVISORY' : undefined);
+  const motionDataLimited = motionState === 'UNKNOWN' && !motionEvidenceAvailable;
+  const motionStateConfirming = motionState === 'UNKNOWN' && motionEvidenceAvailable;
+  const visualSeverity = severity ?? (motionDataLimited ? 'S1_ADVISORY' : undefined);
   const tone = toneForSeverity(visualSeverity);
   const headline = alert
     ? driverAlertPhrase(alert.key, language).replace(/\.$/, '')
     : unresolved
       ? (language === 'es-ES' ? 'CONDICIÓN SIN RESOLVER' : 'CONDITION UNRESOLVED')
-      : motionState === 'UNKNOWN'
+      : motionDataLimited
         ? (language === 'es-ES' ? 'DATOS DE MOVIMIENTO LIMITADOS' : 'MOTION DATA LIMITED')
-        : (language === 'es-ES' ? 'NORMAL' : 'NORMAL');
-  const icon = alert?.icon ?? (unresolved || motionState === 'UNKNOWN' ? '▲' : '●');
+        : motionStateConfirming
+          ? (language === 'es-ES' ? 'CONFIRMANDO MOVIMIENTO' : 'MOTION CONFIRMING')
+          : (language === 'es-ES' ? 'NORMAL' : 'NORMAL');
+  const icon = alert?.icon ?? (unresolved || motionDataLimited ? '▲' : '●');
   const secondaryA = presentation.stateFirst ? presentation.primary : presentation.secondaryA;
   const secondaryB = presentation.stateFirst ? presentation.secondaryA : presentation.secondaryB;
   const fullSafetyOverride = severity === 'S3_CRITICAL' || unresolved && alertEpisode.peakSeverity === 'S3_CRITICAL';
@@ -199,7 +206,11 @@ function DrivingPresentationSurface({
         <View style={styles.drivingStateCopy}>
           <Text numberOfLines={2} adjustsFontSizeToFit style={[styles.drivingHeadline, { color: tone.text }]}>{headline}</Text>
           <Text style={styles.drivingStateMeta}>
-            {motionState === 'UNKNOWN' ? (language === 'es-ES' ? 'MOVIMIENTO DESCONOCIDO · ' : 'MOTION UNKNOWN · ') : ''}{presentation.readiness}
+            {motionDataLimited
+              ? (language === 'es-ES' ? 'MOVIMIENTO DESCONOCIDO · ' : 'MOTION UNKNOWN · ')
+              : motionStateConfirming
+                ? (language === 'es-ES' ? 'EVIDENCIA RESTAURADA · ' : 'EVIDENCE RESTORED · ')
+                : ''}{presentation.readiness}
           </Text>
         </View>
       </View>
@@ -384,6 +395,7 @@ function DriverLiveSessionContent({
           alert={effectiveAlert}
           alertEpisode={alertEpisode}
           motionState={motion.state}
+          motionEvidenceAvailable={hasUsableMotionEvidence(motion)}
           presentation={presentation}
           voiceEnabled={preferences.voiceAlertsEnabled}
           language={preferences.voiceLanguage}

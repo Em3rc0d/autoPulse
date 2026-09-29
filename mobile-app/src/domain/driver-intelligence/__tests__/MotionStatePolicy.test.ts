@@ -1,5 +1,6 @@
 import {
   DEFAULT_MOTION_POLICY,
+  hasUsableMotionEvidence,
   initialMotionState,
   resolveMotionState,
   type MotionEvidence,
@@ -18,6 +19,20 @@ describe('MotionStatePolicy', () => {
     const initial = initialMotionState(1_000);
     expect(initial.state).toBe('UNKNOWN');
     expect(resolveMotionState(initial, [], 2_000).state).toBe('UNKNOWN');
+  });
+
+  it('only reports motion evidence unavailable when evidence is actually missing', () => {
+    const initial = initialMotionState(1_000);
+    expect(hasUsableMotionEvidence(initial)).toBe(false);
+
+    const recoveredZero = resolveMotionState(initial, [ecu(0, 1_100)], 1_100);
+    expect(recoveredZero.state).toBe('UNKNOWN');
+    expect(recoveredZero.reason).toBe('PARKED_CANDIDATE');
+    expect(hasUsableMotionEvidence(recoveredZero)).toBe(true);
+
+    const stale = resolveMotionState(recoveredZero, [ecu(0, 1_100)], 1_100 + DEFAULT_MOTION_POLICY.freshnessMs + 1);
+    expect(stale.reason).toBe('MOTION_EVIDENCE_UNAVAILABLE');
+    expect(hasUsableMotionEvidence(stale)).toBe(false);
   });
 
   it('confirms movement after the moving window', () => {
