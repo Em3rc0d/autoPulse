@@ -98,7 +98,11 @@ export class RealLiveSessionController {
       return;
     }
 
-    startLiveForegroundService();
+    const foregroundServiceReady = startLiveForegroundService();
+    if (!foregroundServiceReady) {
+      await this.handleUnexpectedDisconnect('FOREGROUND_SERVICE_UNAVAILABLE');
+      return;
+    }
 
     this.recordingStartedAt = Date.now();
     this.assembler = new TelemetryBlockAssembler(this.sessionId, this.recordingStartedAt, 5000);
