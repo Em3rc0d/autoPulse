@@ -260,7 +260,6 @@ jobs:
               signingClass,
               criticalProductionAuditPassed: productionSecurityGatePassed,
               productionSecurityGatePassed,
-              approvedHighExceptionPolicy: 'image-size-build-only-v1',
               publicReleaseEligible: productionSecurityGatePassed && permissionContractPassed && signingClass === 'NON_DEBUG',
             },
             artifact: {
