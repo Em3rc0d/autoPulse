@@ -2,8 +2,18 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
+function findPackageRoot(entryFile) {
+  let dir = path.dirname(entryFile);
+  while (dir !== path.dirname(dir)) {
+    const candidate = path.join(dir, 'package.json');
+    if (fs.existsSync(candidate)) return dir;
+    dir = path.dirname(dir);
+  }
+  throw new Error(`PACKAGE_ROOT_NOT_FOUND:${entryFile}`);
+}
+
 const metroRoot = path.dirname(require.resolve('metro/package.json', { paths: [root] }));
-const imageSizeRoot = path.dirname(require.resolve('image-size/package.json', { paths: [root] }));
+const imageSizeRoot = findPackageRoot(require.resolve('image-size', { paths: [root] }));
 const metroPackage = JSON.parse(fs.readFileSync(path.join(metroRoot, 'package.json'), 'utf8'));
 const imageSizePackage = JSON.parse(fs.readFileSync(path.join(imageSizeRoot, 'package.json'), 'utf8'));
 
