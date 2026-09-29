@@ -89,9 +89,9 @@ CONNECTING
 → COMPLETED / INTERRUPTED / DEGRADED
 ```
 
-Release-1 recording is foreground-only. Backgrounding an ACTIVE session becomes explicit `APP_BACKGROUND` interruption instead of silently claiming recording continued.
+The v4.3 closure candidate supports background continuity only while Android's connected-device foreground service is active and healthy. Foreground-service failure is an explicit terminal condition; background continuity never invents telemetry for missing intervals.
 
-Abrupt Android process kill is recovered on the next boot from durable SQLite/telemetry evidence.
+Abrupt Android process kill is recovered on the next boot from durable SQLite/telemetry evidence. The exact background/process-kill behavior must pass the hash-pinned physical certification receipt before public release.
 
 ## Durable sessions
 
@@ -144,7 +144,7 @@ The Duster exposed two RC3 defects:
 
 RC4 addresses both and is waiting for the focused physical retest.
 
-## RC4 test artifact
+## Historical RC4 artifact
 
 Current frozen RC4 candidate for the Duster retest:
 
@@ -206,7 +206,16 @@ Important entries:
 - `docs/release/COMPATIBILITY_CONTRACT_V1.md`
 - `docs/release/RELEASE_CANDIDATE_RUNBOOK.md`
 
-## Release status
+## Current closure status
+
+Current release authority:
+
+- `docs/release/AUTOPULSE_V1_CLOSURE_AUTHORITY.md`
+- `docs/test/V43_DRIVING_CERTIFICATION_RECEIPT.md`
+
+The closure candidate is developed in PR #91. Exact APK/CI hashes are frozen only after the final green workflow and are then copied into the physical certification receipt.
+
+## Historical release status
 
 ```text
 P0 foundation                         ✅ code closed
