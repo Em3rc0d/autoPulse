@@ -83,6 +83,7 @@ jobs:
         working-directory: mobile-app/android
         env:
           NODE_ENV: production
+          AUTOPULSE_INTERNAL_RELEASE: 'true'
         run: ./gradlew assembleRelease --no-daemon --console=plain
 
       - name: Verify APK structure and React Native bundle
@@ -134,10 +135,8 @@ jobs:
           android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE
           android.permission.INTERNET
           android.permission.POST_NOTIFICATIONS
-          android.permission.READ_EXTERNAL_STORAGE
           android.permission.VIBRATE
           android.permission.WAKE_LOCK
-          android.permission.WRITE_EXTERNAL_STORAGE
           com.em3rc0dth.autopulse.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
           EOF
 
