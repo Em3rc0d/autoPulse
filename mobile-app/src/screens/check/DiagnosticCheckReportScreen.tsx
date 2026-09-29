@@ -67,8 +67,7 @@ export default function DiagnosticCheckReportScreen() {
 
   const { snapshot } = report;
   const vehicleLabel = snapshot.vehicle.alias
-    ?? [snapshot.vehicle.make, snapshot.vehicle.model, snapshot.vehicle.year].filter(Boolean).join(' ')
-    || snapshot.vehicle.vehicleId;
+    ?? ([snapshot.vehicle.make, snapshot.vehicle.model, snapshot.vehicle.year].filter(Boolean).join(' ') || snapshot.vehicle.vehicleId);
   const codes = dtcCodes(report);
 
   return (
