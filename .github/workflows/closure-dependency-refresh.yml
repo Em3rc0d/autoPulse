@@ -1,0 +1,52 @@
+name: AutoPulse Closure Dependency Refresh
+
+on:
+  push:
+    branches:
+      - release/v1-closure-20260929
+    paths:
+      - 'mobile-app/package.json'
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-lockfile:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile-app
+
+    steps:
+      - name: Checkout closure branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Use Node.js 22 LTS
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile-app/package-lock.json
+
+      - name: Re-resolve lockfile and apply compatible audit fixes
+        run: |
+          set -euo pipefail
+          npm install --package-lock-only --ignore-scripts
+          npm audit fix --omit=dev --package-lock-only || true
+
+      - name: Commit deterministic lockfile
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package-lock.json
+          if git diff --cached --quiet; then
+            echo "Lockfile already current."
+          else
+            git commit -m "chore(deps): refresh closure lockfile"
+            git push origin HEAD:release/v1-closure-20260929
+          fi
+
+      - name: Report remaining production vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
