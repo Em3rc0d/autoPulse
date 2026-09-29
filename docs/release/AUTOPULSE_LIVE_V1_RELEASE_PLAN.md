@@ -40,7 +40,6 @@ Deferred from v1 unless separately promoted/certified:
 - broad Bluetooth Classic/Wi-Fi/USB support.
 - cloud sync/accounts as a core dependency.
 - active/destructive ECU commands.
-- background recording.
 - universal TPMS receiver integration/prediction.
 
 ## Current evidence summary
@@ -53,7 +52,7 @@ Physical field evidence exists for:
 - adapter-origin voltage observation on Logan;
 - waiting-for-first-ECU truth transition;
 - Off-Road phone sensor observations on Logan;
-- APP_BACKGROUND interruption persistence on Logan;
+- historical APP_BACKGROUND interruption persistence on Logan (pre-v4.3 behavior; retained as historical evidence only);
 - durable History entries;
 - persisted Session Summary reconstruction on Duster RC3.
 
@@ -112,8 +111,9 @@ Quarry: `../mining-site/quarries/Q-001_RENAULT_LOGAN_2014.md`.
 
 Release-1 policy:
 
-- Live recording is foreground-only.
-- app background while ACTIVE becomes explicit `INTERRUPTED / APP_BACKGROUND`.
+- Live recording may continue while the app is backgrounded only when Android connected-device foreground-service protection was established successfully.
+- failure to establish that protection is terminal and must be recorded as `INTERRUPTED / FOREGROUND_SERVICE_UNAVAILABLE`.
+- app visibility alone is not a transport failure and must not fabricate an interruption.
 - persistence drain is bounded; timeout becomes interrupted/degraded according to durable outcome.
 - missing/corrupt/unsupported blocks may degrade a summary but can never be presented as complete.
 - session stop/disconnect races have one terminal state.
@@ -123,7 +123,7 @@ Release-1 policy:
 Current evidence:
 
 - automated lifecycle/recovery/summary tests green;
-- APP_BACKGROUND physical persistence observed;
+- historical APP_BACKGROUND physical persistence observed on the pre-v4.3 policy;
 - History persistence observed;
 - RC3 Summary reconstruction physically observed on Duster;
 - BLE disconnect/process kill still need final physical certification.
@@ -298,7 +298,9 @@ A fact may not skip evidence layers merely because it is plausible.
 RC4 final APK
 → Duster Off-Road + clean-Stop retest
 → current-build normal lifecycle
-→ BLE unplug
+→ background + lock-screen continuation
+→ BLE unplug/recovery
+→ recovery exhaustion
 → process-kill recovery
 → close primary lifecycle gate
 → internal beta readiness
