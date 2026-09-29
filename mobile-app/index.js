@@ -1,11 +1,13 @@
 import { registerRootComponent } from 'expo';
 import ReactNativeForegroundService from '@supersami/rn-foreground-service';
+import { reportLiveForegroundServiceFailure } from './src/application/live/LiveForegroundService';
 
 ReactNativeForegroundService.register({
   config: {
     alert: false,
     onServiceErrorCallBack: function () {
-      console.warn('Foreground service failed to start.');
+      console.warn('Foreground service failed to start or remain active.');
+      reportLiveForegroundServiceFailure('FOREGROUND_SERVICE_NATIVE_ERROR');
     },
   },
 });
