@@ -107,6 +107,10 @@ jobs:
           mkdir -p .release
           "$AAPT2" dump permissions "$APK" | tee .release/apk-effective-permissions.txt
           "$AAPT2" dump badging "$APK" | tee .release/apk-badging.txt
+          grep -q "targetSdkVersion:'36'" .release/apk-badging.txt || {
+            echo 'ERROR: V1 release candidate must target Android 16 / API 36.'
+            exit 1
+          }
           unzip -p "$APK" assets/index.android.bundle | sha256sum | awk '{print $1}' > .release/js-bundle.sha256
           sha256sum package-lock.json | awk '{print $1}' > .release/package-lock.sha256
           sha256sum .release/apk-effective-permissions.txt | awk '{print $1}' > .release/apk-permissions.sha256
