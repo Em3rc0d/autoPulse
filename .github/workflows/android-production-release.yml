@@ -1,0 +1,179 @@
+name: AutoPulse Android Production Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: Semantic release version, for example 1.0.0
+        required: true
+        default: '1.0.0'
+      version_code:
+        description: Monotonic Android versionCode
+        required: true
+        default: '1'
+
+permissions:
+  contents: read
+
+jobs:
+  production-release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile-app
+
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Use Node.js 22 LTS
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: mobile-app/package-lock.json
+
+      - name: Use Java 17
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Enforce production dependency gate
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Verify TypeScript and tests
+        run: npm run verify
+
+      - name: Validate production signing inputs
+        shell: bash
+        env:
+          AP_KEYSTORE_BASE64: ${{ secrets.AUTOPULSE_RELEASE_KEYSTORE_BASE64 }}
+          AP_STORE_PASSWORD: ${{ secrets.AUTOPULSE_RELEASE_STORE_PASSWORD }}
+          AP_KEY_ALIAS: ${{ secrets.AUTOPULSE_RELEASE_KEY_ALIAS }}
+          AP_KEY_PASSWORD: ${{ secrets.AUTOPULSE_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$AP_KEYSTORE_BASE64"
+          test -n "$AP_STORE_PASSWORD"
+          test -n "$AP_KEY_ALIAS"
+          test -n "$AP_KEY_PASSWORD"
+          KEYSTORE="$RUNNER_TEMP/autopulse-release.jks"
+          printf '%s' "$AP_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
+          test -s "$KEYSTORE"
+          echo "AUTOPULSE_RELEASE_STORE_FILE=$KEYSTORE" >> "$GITHUB_ENV"
+
+      - name: Make Gradle wrapper executable
+        run: chmod +x android/gradlew
+
+      - name: Build signed production APK and AAB
+        working-directory: mobile-app/android
+        env:
+          NODE_ENV: production
+          AUTOPULSE_VERSION_NAME: ${{ inputs.version_name }}
+          AUTOPULSE_VERSION_CODE: ${{ inputs.version_code }}
+          AUTOPULSE_RELEASE_STORE_FILE: ${{ env.AUTOPULSE_RELEASE_STORE_FILE }}
+          AUTOPULSE_RELEASE_STORE_PASSWORD: ${{ secrets.AUTOPULSE_RELEASE_STORE_PASSWORD }}
+          AUTOPULSE_RELEASE_KEY_ALIAS: ${{ secrets.AUTOPULSE_RELEASE_KEY_ALIAS }}
+          AUTOPULSE_RELEASE_KEY_PASSWORD: ${{ secrets.AUTOPULSE_RELEASE_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease bundleRelease --no-daemon --console=plain
+
+      - name: Verify production signer and package
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          AAB="android/app/build/outputs/bundle/release/app-release.aab"
+          test -f "$APK"
+          test -f "$AAB"
+          APKSIGNER="$(find "${ANDROID_HOME}/build-tools" -type f -name apksigner | sort -V | tail -1)"
+          AAPT2="$(find "${ANDROID_HOME}/build-tools" -type f -name aapt2 | sort -V | tail -1)"
+          mkdir -p .release
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee .release/apksigner-verification.txt
+          if grep -qi 'CN=Android Debug' .release/apksigner-verification.txt; then
+            echo 'ERROR: production artifact is signed by Android Debug.'
+            exit 1
+          fi
+          "$AAPT2" dump permissions "$APK" | tee .release/apk-effective-permissions.txt
+          ! grep -q "android.permission.READ_EXTERNAL_STORAGE" .release/apk-effective-permissions.txt
+          ! grep -q "android.permission.WRITE_EXTERNAL_STORAGE" .release/apk-effective-permissions.txt
+          unzip -t "$APK" >/dev/null
+          unzip -l "$APK" | grep -Eq 'assets/(index\.android\.bundle|expo-root\.js|.*\.bundle)'
+          unzip -p "$APK" assets/index.android.bundle | sha256sum | awk '{print $1}' > .release/js-bundle.sha256
+          sha256sum package-lock.json | awk '{print $1}' > .release/package-lock.sha256
+          sha256sum "$APK" | awk '{print $1}' > .release/apk.sha256
+          sha256sum "$AAB" | awk '{print $1}' > .release/aab.sha256
+
+      - name: Generate production artifact receipt
+        env:
+          AP_VERSION_NAME: ${{ inputs.version_name }}
+          AP_VERSION_CODE: ${{ inputs.version_code }}
+          AP_RUN_ID: ${{ github.run_id }}
+          AP_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          export AP_GENERATED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          export AP_CHECKED_OUT_SHA="$(git rev-parse HEAD)"
+          export AP_APK_SHA256="$(cat .release/apk.sha256)"
+          export AP_AAB_SHA256="$(cat .release/aab.sha256)"
+          export AP_JS_BUNDLE_SHA256="$(cat .release/js-bundle.sha256)"
+          export AP_PACKAGE_LOCK_SHA256="$(cat .release/package-lock.sha256)"
+          export AP_APK_SIZE_BYTES="$(stat -c '%s' android/app/build/outputs/apk/release/app-release.apk)"
+          export AP_AAB_SIZE_BYTES="$(stat -c '%s' android/app/build/outputs/bundle/release/app-release.aab)"
+          node <<'NODE'
+          const fs = require('fs');
+          const receipt = {
+            schema: 'autopulse.production-artifact-receipt/v1',
+            generatedAt: process.env.AP_GENERATED_AT,
+            source: {
+              repository: process.env.GITHUB_REPOSITORY,
+              commitSha: process.env.AP_CHECKED_OUT_SHA,
+              workflowRunId: Number(process.env.AP_RUN_ID),
+              workflowRunAttempt: Number(process.env.AP_RUN_ATTEMPT),
+              packageLockSha256: process.env.AP_PACKAGE_LOCK_SHA256,
+            },
+            build: {
+              versionName: process.env.AP_VERSION_NAME,
+              versionCode: Number(process.env.AP_VERSION_CODE),
+              signingClass: 'NON_DEBUG',
+              dependencyGate: 'HIGH_AND_CRITICAL_BLOCK',
+              jsBundleSha256: process.env.AP_JS_BUNDLE_SHA256,
+              publicReleaseEligible: true,
+            },
+            artifacts: {
+              apk: {
+                file: 'app-release.apk',
+                sha256: process.env.AP_APK_SHA256,
+                sizeBytes: Number(process.env.AP_APK_SIZE_BYTES),
+              },
+              aab: {
+                file: 'app-release.aab',
+                sha256: process.env.AP_AAB_SHA256,
+                sizeBytes: Number(process.env.AP_AAB_SIZE_BYTES),
+              },
+            },
+          };
+          fs.writeFileSync('.release/autopulse-production-receipt.json', JSON.stringify(receipt, null, 2) + '\n');
+          NODE
+          cat .release/autopulse-production-receipt.json
+
+      - name: Upload production artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: autopulse-android-production-${{ inputs.version_name }}
+          path: |
+            mobile-app/android/app/build/outputs/apk/release/app-release.apk
+            mobile-app/android/app/build/outputs/bundle/release/app-release.aab
+            mobile-app/.release/autopulse-production-receipt.json
+            mobile-app/.release/apksigner-verification.txt
+            mobile-app/.release/apk-effective-permissions.txt
+            mobile-app/.release/apk.sha256
+            mobile-app/.release/aab.sha256
+            mobile-app/.release/js-bundle.sha256
+            mobile-app/.release/package-lock.sha256
+          if-no-files-found: error
+          retention-days: 30
