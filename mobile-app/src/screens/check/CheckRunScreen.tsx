@@ -4,6 +4,13 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
 import { RealObdController } from '../../infrastructure/ble/real/RealObdController';
 import { useVehicle } from '../../infrastructure/hooks/useVehicle';
+import { useProductDb } from '../../infrastructure/hooks/useProductDb';
+import { useLocalContext } from '../../infrastructure/hooks/useLocalContext';
+import { DiagnosticCheckReportRepository } from '../../infrastructure/database/product/repositories/diagnostic-check-report.repository';
+import {
+  DiagnosticCheckReportService,
+  type DiagnosticCheckReportResult,
+} from '../../application/check/DiagnosticCheckReportService';
 import {
   runCheckPhysicalPilotV4,
   type CheckPhysicalPilotStageV4,
@@ -82,11 +89,15 @@ export default function CheckRunScreen() {
   const vehicleId = route.params?.vehicleId as string | undefined;
   const connectionHandleId = route.params?.connectionHandleId as string | undefined;
   const { vehicle } = useVehicle(vehicleId);
+  const db = useProductDb();
+  const { context } = useLocalContext();
+  const workspaceId = context?.defaultWorkspaceId as string | undefined;
   const [uiState, setUiState] = useState<UiState>('IDLE');
   const [stage, setStage] = useState<CheckPhysicalPilotStageV4 | null>(null);
   const [result, setResult] = useState<CheckPhysicalPilotV4Result | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showTechnical, setShowTechnical] = useState(false);
+  const [sealedReport, setSealedReport] = useState<DiagnosticCheckReportResult | null>(null);
   const cancellationRef = useRef(new CheckPilotCancellationToken());
   const controllerRef = useRef<RealObdController | null>(null);
   useEffect(() => () => {
@@ -132,6 +143,12 @@ export default function CheckRunScreen() {
       return;
     }
 
+    if (!db || !workspaceId || !vehicleId) {
+      setError(t('Local evidence storage is not ready yet. Retry in a moment.','El almacenamiento local de evidencia aún no está listo. Intenta nuevamente.'));
+      setUiState('ERROR');
+      return;
+    }
+
     const leasedConnection = activeBleController.claimConnection(connectionHandleId, 'CHECK');
     if (!leasedConnection) {
       setError('The OBD adapter is currently owned by another AutoPulse workflow.');
@@ -141,6 +158,7 @@ export default function CheckRunScreen() {
 
     setError(null);
     setResult(null);
+    setSealedReport(null);
     setShowTechnical(false);
     setStage('PREPARING_ADAPTER');
     setUiState('RUNNING');
@@ -172,8 +190,28 @@ export default function CheckRunScreen() {
         pilotResult = await executePilotAttempt();
       }
 
-      setResult(pilotResult);
-      setUiState(cancellationRef.current.isCancelled ? 'CANCELLED' : 'COMPLETE');
+      if (cancellationRef.current.isCancelled) {
+        setResult(pilotResult);
+        setUiState('CANCELLED');
+      } else {
+        const reportService = new DiagnosticCheckReportService(
+          new DiagnosticCheckReportRepository(db),
+        );
+        const report = await reportService.create({
+          workspaceId,
+          vehicle: {
+            vehicleId,
+            alias: vehicle?.alias,
+            make: vehicle?.make,
+            model: vehicle?.model,
+            year: vehicle?.year,
+          },
+          result: pilotResult,
+        });
+        setResult(pilotResult);
+        setSealedReport(report);
+        setUiState('COMPLETE');
+      }
     } catch (reason) {
       if (cancellationRef.current.isCancelled) {
         setUiState('CANCELLED');
@@ -302,6 +340,21 @@ export default function CheckRunScreen() {
               <Text style={styles.muted}>Standard OBD evidence only. Unsupported modules are not called healthy. Mode 06 and Freeze Frame remain gated rather than guessed.</Text>
             </View>
 
+            {sealedReport ? (
+              <View style={styles.sealedPanel}>
+                <Text style={styles.sealedTitle}>{t('SEALED CHECK','CHECK SELLADO')}</Text>
+                <Text style={styles.body}>{t('This physical Check is stored locally as immutable evidence and can be verified after reopening the app.','Este Check físico se guardó localmente como evidencia inmutable y puede verificarse después de reabrir la app.')}</Text>
+                <Text selectable style={styles.hash}>{sealedReport.sha256}</Text>
+                <TouchableOpacity
+                  style={styles.secondary}
+                  onPress={() => navigation.navigate('DiagnosticCheckReport', { checkId: sealedReport.snapshot.checkId })}
+                  testID="open-sealed-diagnostic-check"
+                >
+                  <Text style={styles.secondaryText}>{t('Open sealed report','Abrir reporte sellado')}</Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
+
             <TouchableOpacity style={styles.technicalToggle} onPress={() => setShowTechnical(value => !value)} testID="toggle-check-technical-details">
               <Text style={styles.technicalToggleText}>{showTechnical ? 'Hide technical evidence' : 'Show technical evidence'}</Text>
             </TouchableOpacity>
@@ -346,6 +399,9 @@ const styles = StyleSheet.create({
   readOnlyBadge: { color: '#86efac', borderWidth: 1, borderColor: '#166534', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5, fontSize: 9, fontWeight: '900' },
   content: { padding: 16, paddingBottom: 72 },
   panel: { backgroundColor: '#121b20', borderWidth: 1, borderColor: '#2a363d', borderRadius: 16, padding: 15, marginBottom: 12 },
+  sealedPanel: { backgroundColor: '#0c2317', borderWidth: 1, borderColor: '#166534', borderRadius: 16, padding: 15, marginBottom: 12 },
+  sealedTitle: { color: '#86efac', fontSize: 12, fontWeight: '900', letterSpacing: 1.1 },
+  hash: { color: '#93c5fd', fontSize: 9, lineHeight: 15, marginTop: 10, fontFamily: 'monospace' },
   panelTitle: { color: '#f8fafc', fontWeight: '900', fontSize: 18 },
   body: { color: '#cbd5e1', lineHeight: 20, marginTop: 7 },
   muted: { color: '#94a3b8', fontSize: 12, lineHeight: 18, marginTop: 7 },
