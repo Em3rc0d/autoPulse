@@ -39,6 +39,18 @@ export function initialMotionState(nowMs: number): MotionStateSnapshot {
   return { state: 'UNKNOWN', stateSince: nowMs, reason: 'AWAITING_MOTION_EVIDENCE' };
 }
 
+/**
+ * UNKNOWN does not always mean that motion data is missing.
+ * During MOVING/PARKED hysteresis we can have fresh, trusted speed evidence while
+ * the safety state is still being confirmed. The driving UI must only claim
+ * "motion data limited" when usable motion evidence is actually absent.
+ */
+export function hasUsableMotionEvidence(snapshot: MotionStateSnapshot): boolean {
+  if (snapshot.state !== 'UNKNOWN') return true;
+  return snapshot.reason !== 'AWAITING_MOTION_EVIDENCE'
+    && snapshot.reason !== 'MOTION_EVIDENCE_UNAVAILABLE';
+}
+
 const isUsable = (evidence: MotionEvidence, nowMs: number, policy: MotionPolicy) =>
   evidence.decisionable &&
   evidence.quality === 'VALID' &&
