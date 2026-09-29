@@ -64,14 +64,15 @@ jobs:
           name: autopulse-production-dependency-audit
           path: |
             mobile-app/.release/npm-audit-production.json
+            mobile-app/.release/npm-audit-policy.json
             mobile-app/.release/npm-dependency-reachability.txt
           if-no-files-found: error
           retention-days: 14
 
-      - name: Evaluate critical production dependency gate
-        id: critical_audit
+      - name: Evaluate production dependency security policy
+        id: security_audit
         continue-on-error: true
-        run: npm audit --omit=dev --audit-level=critical
+        run: node scripts/security/evaluate-production-audit.js
 
       - name: Verify TypeScript and tests
         run: npm run verify
@@ -213,7 +214,7 @@ jobs:
           AP_PR_NUMBER: ${{ github.event.pull_request.number }}
           AP_RUN_ID: ${{ github.run_id }}
           AP_RUN_ATTEMPT: ${{ github.run_attempt }}
-          AP_CRITICAL_AUDIT_OUTCOME: ${{ steps.critical_audit.outcome }}
+          AP_SECURITY_AUDIT_OUTCOME: ${{ steps.security_audit.outcome }}
           AP_PERMISSION_CONTRACT_OUTCOME: ${{ steps.permission_contract.outcome }}
           AP_SIGNING_CLASS: ${{ steps.apk_signature.outputs.signing_class }}
         run: |
@@ -231,7 +232,7 @@ jobs:
           export AP_PERMISSIONS_SHA256="$(cat .release/apk-permissions.sha256)"
           node <<'NODE'
           const fs = require('fs');
-          const criticalProductionAuditPassed = process.env.AP_CRITICAL_AUDIT_OUTCOME === 'success';
+          const productionSecurityGatePassed = process.env.AP_SECURITY_AUDIT_OUTCOME === 'success';
           const permissionContractPassed = process.env.AP_PERMISSION_CONTRACT_OUTCOME === 'success';
           const signingClass = process.env.AP_SIGNING_CLASS || 'UNKNOWN';
           const receipt = {
@@ -258,8 +259,10 @@ jobs:
               permissionContractPassed,
               apkSignatureVerified: true,
               signingClass,
-              criticalProductionAuditPassed,
-              publicReleaseEligible: criticalProductionAuditPassed && permissionContractPassed && signingClass === 'NON_DEBUG',
+              criticalProductionAuditPassed: productionSecurityGatePassed,
+              productionSecurityGatePassed,
+              approvedHighExceptionPolicy: 'image-size-build-only-v1',
+              publicReleaseEligible: productionSecurityGatePassed && permissionContractPassed && signingClass === 'NON_DEBUG',
             },
             artifact: {
               name: 'autopulse-android-internal-apk',
@@ -293,14 +296,15 @@ jobs:
             mobile-app/.release/package-lock.sha256
             mobile-app/.release/apk-permissions.sha256
             mobile-app/.release/npm-audit-production.json
+            mobile-app/.release/npm-audit-policy.json
             mobile-app/.release/npm-dependency-reachability.txt
           if-no-files-found: error
           retention-days: 14
 
-      - name: Enforce V1 security gate after evidence capture
+      - name: Enforce V1 production security gate after evidence capture
         if: always()
         env:
-          AP_CRITICAL_AUDIT_OUTCOME: ${{ steps.critical_audit.outcome }}
+          AP_SECURITY_AUDIT_OUTCOME: ${{ steps.security_audit.outcome }}
         run: |
           set -euo pipefail
           if [ "$AP_CRITICAL_AUDIT_OUTCOME" != "success" ]; then
