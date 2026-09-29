@@ -1,5 +1,5 @@
 jest.mock('../LiveForegroundService', () => ({
-  startLiveForegroundService: jest.fn(),
+  startLiveForegroundService: jest.fn().mockReturnValue(true),
   stopLiveForegroundService: jest.fn(),
 }));
 
