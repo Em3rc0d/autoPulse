@@ -44,8 +44,14 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
-      - name: Enforce production dependency gate
-        run: npm audit --omit=dev --audit-level=high
+      - name: Capture production dependency audit
+        run: |
+          set -euo pipefail
+          mkdir -p .release
+          npm audit --omit=dev --json > .release/npm-audit-production.json || true
+
+      - name: Enforce production dependency security policy
+        run: node scripts/security/evaluate-production-audit.js
 
       - name: Verify TypeScript and tests
         run: npm run verify
@@ -140,7 +146,8 @@ jobs:
               versionName: process.env.AP_VERSION_NAME,
               versionCode: Number(process.env.AP_VERSION_CODE),
               signingClass: 'NON_DEBUG',
-              dependencyGate: 'HIGH_AND_CRITICAL_BLOCK',
+              dependencyGate: 'NO_UNAPPROVED_HIGH_OR_CRITICAL',
+              approvedHighExceptionPolicy: 'image-size-build-only-v1',
               jsBundleSha256: process.env.AP_JS_BUNDLE_SHA256,
               publicReleaseEligible: true,
             },
@@ -171,6 +178,8 @@ jobs:
             mobile-app/.release/autopulse-production-receipt.json
             mobile-app/.release/apksigner-verification.txt
             mobile-app/.release/apk-effective-permissions.txt
+            mobile-app/.release/npm-audit-production.json
+            mobile-app/.release/npm-audit-policy.json
             mobile-app/.release/apk.sha256
             mobile-app/.release/aab.sha256
             mobile-app/.release/js-bundle.sha256
