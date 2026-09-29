@@ -105,6 +105,11 @@ jobs:
             exit 1
           fi
           "$AAPT2" dump permissions "$APK" | tee .release/apk-effective-permissions.txt
+          "$AAPT2" dump badging "$APK" | tee .release/apk-badging.txt
+          grep -q "targetSdkVersion:'36'" .release/apk-badging.txt || {
+            echo 'ERROR: production release must target Android 16 / API 36.'
+            exit 1
+          }
           ! grep -q "android.permission.READ_EXTERNAL_STORAGE" .release/apk-effective-permissions.txt
           ! grep -q "android.permission.WRITE_EXTERNAL_STORAGE" .release/apk-effective-permissions.txt
           unzip -t "$APK" >/dev/null
@@ -177,6 +182,7 @@ jobs:
             mobile-app/.release/autopulse-production-receipt.json
             mobile-app/.release/apksigner-verification.txt
             mobile-app/.release/apk-effective-permissions.txt
+            mobile-app/.release/apk-badging.txt
             mobile-app/.release/npm-audit-production.json
             mobile-app/.release/npm-audit-policy.json
             mobile-app/.release/apk.sha256
