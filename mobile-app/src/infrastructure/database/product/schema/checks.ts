@@ -28,3 +28,30 @@ export const vehicleCheckReports = sqliteTable('vehicle_check_reports', {
     name: 'fk_vehicle_check_reports_vehicle_tenant',
   }).onDelete('restrict'),
 }));
+
+
+/** Immutable snapshot of one direct, read-only physical Check v4 run. */
+export const diagnosticCheckReports = sqliteTable('diagnostic_check_reports', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'restrict' }),
+  vehicleId: text('vehicle_id').notNull(),
+  schemaVersion: text('schema_version').notNull(),
+  pilotVersion: text('pilot_version').notNull(),
+  protocol: text('protocol').notNull(),
+  state: text('state').notNull().default('FINAL'),
+  snapshotJson: text('snapshot_json').notNull(),
+  canonicalJson: text('canonical_json').notNull(),
+  sha256: text('sha256').notNull(),
+  generatedAt: integer('generated_at').notNull(),
+  createdAt: integer('created_at').notNull(),
+}, (table) => ({
+  tenantUniqueIdx: unique('uq_diagnostic_check_reports_tenant').on(table.workspaceId, table.id),
+  vehicleGeneratedIdx: index('idx_diagnostic_check_reports_vehicle_generated').on(table.vehicleId, table.generatedAt),
+  stateCheck: check('chk_diagnostic_check_report_state', sql`state IN ('FINAL')`),
+  shaCheck: check('chk_diagnostic_check_report_sha256', sql`length(sha256) = 64`),
+  fkVehicleTenant: foreignKey({
+    columns: [table.workspaceId, table.vehicleId],
+    foreignColumns: [vehicles.workspaceId, vehicles.id],
+    name: 'fk_diagnostic_check_reports_vehicle_tenant',
+  }).onDelete('restrict'),
+}));
