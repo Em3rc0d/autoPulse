@@ -10,7 +10,7 @@ The Release-1 application does not upload diagnostic sessions or vehicle telemet
 
 Uninstalling the app removes app-managed local data according to Android behavior. Android backup is disabled for the production application, so AutoPulse does not promise cloud restoration of local diagnostic history. Users should treat deletion/uninstallation as irreversible unless an explicit export feature is added and certified.
 
-Bluetooth permissions are used to discover and communicate with a nearby supported OBD adapter. On Android versions where the platform requires location permission for Bluetooth discovery, AutoPulse requests it only for adapter discovery; Release 1 does not provide a location-tracking feature.
+Bluetooth permissions are used to discover and communicate with a nearby supported OBD adapter. On Android versions where the platform requires location permission for Bluetooth discovery, AutoPulse may request it for adapter discovery. When location permission is already granted, the Driver/Off-Road sensor sidecar may also consume phone GNSS-derived motion context (such as speed, accuracy, altitude and heading) to support driving-state evidence. Release 1 does not claim route tracking, and raw latitude/longitude is not part of the certified durable vehicle-telemetry contract.
 
 ## Diagnostic limitations
 
@@ -35,7 +35,7 @@ Compatibility grades mean:
 - `DEGRADED`: basic operation is reliable but a documented non-essential behavior is limited;
 - `UNSUPPORTED`: AutoPulse could not establish a sufficiently reliable and distinguishable diagnostic path.
 
-Bluetooth Classic, Wi-Fi, USB, iOS, OEM/Mode 22 expansion and background recording are outside the public Release-1 promise unless explicitly added to a later certified matrix.
+Bluetooth Classic, Wi-Fi, USB, iOS and OEM/Mode 22 expansion are outside the public Release-1 promise unless explicitly added to a later certified matrix. Android background continuation is a candidate Release-1 behavior only when the connected-device foreground service starts successfully and the exact release artifact passes the physical lifecycle gate; otherwise it is not a supported claim.
 
 ## Approved short disclosure
 
