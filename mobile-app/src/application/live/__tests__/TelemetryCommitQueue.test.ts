@@ -1,6 +1,7 @@
 import {
   TelemetryCommitQueue,
   CommitQueueEvent,
+  MAX_PENDING_TELEMETRY_BLOCKS,
   TelemetryCommitQueueDrainTimeoutError
 } from '../TelemetryCommitQueue';
 import { ITelemetryBlockRepository } from '../../../domain/telemetry/repositories/TelemetryBlockRepository';
@@ -24,22 +25,22 @@ describe('TelemetryCommitQueue', () => {
   const makeBlock = (seq: number): EncodedTelemetryBlock => ({
     sessionId: 'sess1',
     blockSequence: seq,
-    windowIndex: 0,
-    startedAt: 0,
-    endedAt: 0,
+    windowIndex: seq,
+    startedAt: seq * 5000,
+    endedAt: (seq + 1) * 5000,
     isPartial: false,
     formatId: 'BINARY_OBD2_V3',
     formatVersion: 3,
     eventCount: 1,
     readingCount: 1,
-    firstEventSequence: 1,
-    lastEventSequence: 1,
+    firstEventSequence: seq,
+    lastEventSequence: seq,
     decoderVersion: '3.0.0',
     codecImplementationVersion: '3.0.0',
     storageType: 'BLOB',
     payloadCrc: 123,
     crcAlgorithm: 'CRC32',
-    payloadByteLength: 100,
+    payloadByteLength: 3,
     payload: new Uint8Array([1, 2, 3])
   });
 
@@ -106,5 +107,29 @@ describe('TelemetryCommitQueue', () => {
     await expect(queue.drain(20, 2)).rejects.toBeInstanceOf(TelemetryCommitQueueDrainTimeoutError);
     expect(queue.getPendingCount()).toBe(1);
     expect(queue.getHasFailed()).toBe(false);
+  });
+
+  it('fails closed before a hung repository can grow memory without bound', async () => {
+    mockRepo.commitBlock.mockImplementation(() => new Promise(() => undefined));
+
+    for (let seq = 0; seq < MAX_PENDING_TELEMETRY_BLOCKS; seq += 1) {
+      queue.enqueue(makeBlock(seq));
+    }
+    expect(queue.getPendingCount()).toBe(MAX_PENDING_TELEMETRY_BLOCKS);
+    expect(queue.getHasFailed()).toBe(false);
+
+    const overflowBlock = makeBlock(MAX_PENDING_TELEMETRY_BLOCKS);
+    queue.enqueue(overflowBlock);
+
+    expect(queue.getPendingCount()).toBe(MAX_PENDING_TELEMETRY_BLOCKS);
+    expect(queue.getHasFailed()).toBe(true);
+    expect(events).toContainEqual({
+      type: 'FAILED',
+      errorReason: 'TELEMETRY_BACKPRESSURE_OVERFLOW',
+      block: overflowBlock,
+    });
+
+    queue.enqueue(makeBlock(MAX_PENDING_TELEMETRY_BLOCKS + 1));
+    expect(queue.getPendingCount()).toBe(MAX_PENDING_TELEMETRY_BLOCKS);
   });
 });

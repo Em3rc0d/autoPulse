@@ -1,8 +1,6 @@
-jest.mock('react-native', () => ({
-  AppState: {
-    addEventListener: jest.fn().mockReturnValue({ remove: jest.fn() }),
-    currentState: 'active'
-  }
+jest.mock('../LiveForegroundService', () => ({
+  startLiveForegroundService: jest.fn(),
+  stopLiveForegroundService: jest.fn(),
 }));
 
 import { RealLiveSessionController } from '../RealLiveSessionController';
@@ -162,24 +160,9 @@ describe('RealLiveSessionController Integration', () => {
     expect(recovery).not.toHaveBeenCalled();
   });
 
-  it('App background uses the Release-1 APP_BACKGROUND interruption policy', async () => {
+  it('app visibility is not treated as a terminal transport event', () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';
-
-    (ctrl as any).handleAppStateChange('background');
-    await ctrl['terminalPromise'];
-
-    expect(mockSessionRepo.completeSession).not.toHaveBeenCalled();
-    expect(mockSessionRepo.interruptSession).toHaveBeenCalledTimes(1);
-    expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith('ws1', 'sess1', 'APP_BACKGROUND');
-    expect(ctrl['currentState']).toBe('INTERRUPTED');
-  });
-
-  it('Returning/remaining active does not terminate the session', () => {
-    const ctrl = createController();
-    ctrl['currentState'] = 'ACTIVE';
-
-    (ctrl as any).handleAppStateChange('active');
 
     expect(ctrl['terminalPromise']).toBeNull();
     expect(mockSessionRepo.interruptSession).not.toHaveBeenCalled();

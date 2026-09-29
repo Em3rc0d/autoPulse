@@ -1,0 +1,24 @@
+{
+  "contract_id": "CHECK-ENDPOINT-ATTRIBUTION-V0",
+  "status": "RESEARCH_CANDIDATE_NOT_RUNTIME",
+  "rules": {
+    "default_role": "UNKNOWN",
+    "address_implies_role": false,
+    "unattributed_is_valid_state": true,
+    "capabilities_are_endpoint_scoped": true,
+    "evidence_requires_smallest_practical_source_scope": true
+  },
+  "source_evidence": [
+    "LEGACY_HEADER_SOURCE_ADDRESS",
+    "CAN_RESPONSE_IDENTIFIER",
+    "CONNECTOR_PRESERVED_SOURCE",
+    "UNATTRIBUTED"
+  ],
+  "forbidden_inferences": [
+    "7E8_ALWAYS_ENGINE",
+    "FIRST_RESPONDER_IS_ENGINE",
+    "AGGREGATED_SOURCE_SET_APPLIES_TO_EVERY_DTC",
+    "MISSING_HEADER_MEANS_MAIN_ECU"
+  ],
+  "runtime_gate": "BLOCKED_UNTIL_SOURCE_ATTRIBUTION_FIXTURES"
+}

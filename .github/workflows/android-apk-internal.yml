@@ -131,6 +131,7 @@ jobs:
           android.permission.BLUETOOTH_CONNECT
           android.permission.BLUETOOTH_SCAN
           android.permission.FOREGROUND_SERVICE
+          android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE
           android.permission.INTERNET
           android.permission.POST_NOTIFICATIONS
           android.permission.READ_EXTERNAL_STORAGE
@@ -148,6 +149,7 @@ jobs:
           android.permission.BLUETOOTH_CONNECT
           android.permission.BLUETOOTH_SCAN
           android.permission.FOREGROUND_SERVICE
+          android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE
           android.permission.INTERNET
           android.permission.POST_NOTIFICATIONS
           android.permission.VIBRATE

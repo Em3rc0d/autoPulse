@@ -1,9 +1,10 @@
-import { sqliteTable, text, integer, unique, index, foreignKey, blob, check, real } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, unique, index, foreignKey, check, real } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import { workspaces, operators, vehicles } from './core';
 import { obdAdapterInstances } from './adapters';
 import { vehicleCapabilitySnapshots } from './capabilities';
 import { signalDefinitions } from './signals';
+import { hermesBlob } from './HermesBlob';
 
 export const liveSessions = sqliteTable('live_sessions', {
   id: text('id').primaryKey(),
@@ -89,7 +90,7 @@ export const telemetryBlocks = sqliteTable('telemetry_blocks', {
   payloadLengthBytes: integer('payload_length_bytes').notNull(),
   checksumAlgorithm: text('checksum_algorithm').notNull(),
   checksumValue: text('checksum_value').notNull(),
-  payloadBlob: blob('payload_blob').notNull(),
+  payloadBlob: hermesBlob('payload_blob').notNull(),
   commitState: text('commit_state').notNull(), // 'COMMITTED'
   integrityState: text('integrity_state').notNull(), // 'UNCHECKED', 'VALID', 'CORRUPT'
 
