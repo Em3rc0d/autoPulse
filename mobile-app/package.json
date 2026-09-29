@@ -65,6 +65,7 @@
     "postcss": "8.5.28",
     "plist": {
       "@xmldom/xmldom": "0.9.12"
-    }
+    },
+    "image-size": "2.0.4"
   }
 }
