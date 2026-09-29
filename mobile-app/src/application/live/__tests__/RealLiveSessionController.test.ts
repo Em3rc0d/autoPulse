@@ -1,6 +1,7 @@
 jest.mock('../LiveForegroundService', () => ({
-  startLiveForegroundService: jest.fn(),
+  startLiveForegroundService: jest.fn().mockReturnValue(true),
   stopLiveForegroundService: jest.fn(),
+  subscribeLiveForegroundServiceFailure: jest.fn().mockReturnValue(jest.fn()),
 }));
 
 import { RealLiveSessionController } from '../RealLiveSessionController';
