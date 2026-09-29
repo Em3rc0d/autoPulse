@@ -31,7 +31,13 @@ export function normalizeForCanonicalJson(value: unknown): unknown {
 }
 
 export function canonicalizeIntegrityPayload(value: unknown): string {
-  assertCanonicalValue(value, '
+  assertCanonicalValue(value, '$');
+  return JSON.stringify(normalizeForCanonicalJson(value));
+}
+
+export function canonicalizeVehicleCheckSnapshot(snapshot: VehicleCheckSnapshot): string {
+  return canonicalizeIntegrityPayload(snapshot);
+}
 
 export async function sha256VehicleCheckCanonicalJson(canonicalJson: string): Promise<string> {
   return sha256HexUtf8(canonicalJson);
@@ -53,32 +59,10 @@ export async function sealVehicleCheckSnapshot(snapshot: VehicleCheckSnapshot): 
   return sealIntegrityPayload(snapshot);
 }
 
-export async function verifyVehicleCheckSnapshot(snapshot: VehicleCheckSnapshot, expectedSha256: string): Promise<boolean> {
-  const { sha256 } = await sealVehicleCheckSnapshot(snapshot);
-  return sha256.toLowerCase() === expectedSha256.toLowerCase();
-}
-);
-  return JSON.stringify(normalizeForCanonicalJson(value));
-}
-
-export function canonicalizeVehicleCheckSnapshot(snapshot: VehicleCheckSnapshot): string {
-  return canonicalizeIntegrityPayload(snapshot);
-}
-
-export async function sha256VehicleCheckCanonicalJson(canonicalJson: string): Promise<string> {
-  return sha256HexUtf8(canonicalJson);
-}
-
-export async function sealVehicleCheckSnapshot(snapshot: VehicleCheckSnapshot): Promise<{
-  canonicalJson: string;
-  sha256: string;
-}> {
-  const canonicalJson = canonicalizeVehicleCheckSnapshot(snapshot);
-  const sha256 = await sha256VehicleCheckCanonicalJson(canonicalJson);
-  return { canonicalJson, sha256 };
-}
-
-export async function verifyVehicleCheckSnapshot(snapshot: VehicleCheckSnapshot, expectedSha256: string): Promise<boolean> {
+export async function verifyVehicleCheckSnapshot(
+  snapshot: VehicleCheckSnapshot,
+  expectedSha256: string,
+): Promise<boolean> {
   const { sha256 } = await sealVehicleCheckSnapshot(snapshot);
   return sha256.toLowerCase() === expectedSha256.toLowerCase();
 }
