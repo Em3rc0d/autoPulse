@@ -17,6 +17,7 @@ import CheckScreen from '../screens/check/CheckScreen';
 import CheckConnectObdScreen from '../screens/check/CheckConnectObdScreen';
 import CheckRunScreen from '../screens/check/CheckRunScreen';
 import VehicleCheckReportScreen from '../screens/check/VehicleCheckReportScreen';
+import DiagnosticCheckReportScreen from '../screens/check/DiagnosticCheckReportScreen';
 import SettingsScreen from '../screens/settings/SettingsScreen';
 import { uiText, useUiLanguage } from '../application/localization/UiLanguage';
 
@@ -63,6 +64,7 @@ function CheckStack() {
       <Stack.Screen name="CheckConnect" component={CheckConnectObdScreen} />
       <Stack.Screen name="CheckRun" component={CheckRunScreen} />
       <Stack.Screen name="VehicleCheckReport" component={VehicleCheckReportScreen} />
+      <Stack.Screen name="DiagnosticCheckReport" component={DiagnosticCheckReportScreen} />
     </Stack.Navigator>
   );
 }
