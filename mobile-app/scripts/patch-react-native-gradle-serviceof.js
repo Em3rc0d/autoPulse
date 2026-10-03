@@ -23,17 +23,22 @@ for (const target of candidates) {
   // RN 0.74's Gradle plugin defaults its own Kotlin warnings to errors.
   // Gradle 8.11 surfaces deprecations in the legacy plugin implementation, so
   // keep AutoPulse's compiler policy untouched and disable Werror only inside RNGP.
-  next = next.replace(
-    /project\.properties\["enableWarningsAsErrors"\]\?\.toString\(\)\?\.toBoolean\(\)\s*\?:\s*true/g,
-    'project.properties["enableWarningsAsErrors"]?.toString()?.toBoolean() ?: false'
-  );
+  next = next
+    .replace(
+      /project\.properties\["enableWarningsAsErrors"\]\?\.toString\(\)\?\.toBoolean\(\)\s*\?:\s*true/g,
+      'project.properties["enableWarningsAsErrors"]?.toString()?.toBoolean() ?: false'
+    )
+    .replace(/\ballWarningsAsErrors\s*=\s*true\b/g, 'allWarningsAsErrors = false')
+    .replace(/allWarningsAsErrors\.set\(true\)/g, 'allWarningsAsErrors.set(false)');
 
   if (next.includes('serviceOf<ModuleRegistry>()') || next.includes('configurationcache.extensions.serviceOf')) {
     throw new Error(`REACT_NATIVE_GRADLE_SERVICEOF_PATCH_INCOMPLETE:${target}`);
   }
 
   if (
-    /project\.properties\["enableWarningsAsErrors"\]\?\.toString\(\)\?\.toBoolean\(\)\s*\?:\s*true/.test(next)
+    /project\.properties\["enableWarningsAsErrors"\]\?\.toString\(\)\?\.toBoolean\(\)\s*\?:\s*true/.test(next) ||
+    /\ballWarningsAsErrors\s*=\s*true\b/.test(next) ||
+    /allWarningsAsErrors\.set\(true\)/.test(next)
   ) {
     throw new Error(`REACT_NATIVE_GRADLE_WERROR_PATCH_INCOMPLETE:${target}`);
   }
