@@ -1,11 +1,11 @@
 # AutoPulse V1 — Closure Authority
 
 **Status:** CURRENT RELEASE AUTHORITY  
-**Date:** 2026-09-29  
-**Closure branch:** `release/v1-closure-20260929`  
-**Closure PR:** #91
+**Date:** 2026-10-03  
+**Closure branch:** `release/v1-final-closure-20261003`  
+**Closure PR:** #93
 
-This document is the current authority for V1 closure. Older RC3/RC4/RC5 documents remain historical evidence. Where an older document says that backgrounding an active session must always produce `APP_BACKGROUND`, this document supersedes that policy for the v4.3 closure candidate.
+This document is the current authority for V1 closure. PR #93 supersedes the separate closure candidates #91 and #92 by retaining the complete V1 hardening line and the v4.3 physical-driving gate in one certification candidate. Older RC3/RC4/RC5 documents remain historical evidence. Where an older document says that backgrounding an active session must always produce `APP_BACKGROUND`, this document supersedes that policy for the v4.3 closure candidate.
 
 ## Product promise
 
