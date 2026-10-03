@@ -1,10 +1,13 @@
 import { SignalSessionStatsTracker, SignalQualityEvaluator, AdvisoryStateTracker } from '../AdvisoryStateTracker';
 import { DEMO_PROFILES } from '../SignalProfiles';
-import { DataQuality, SignalAdvisoryProfile } from '../SignalAdvisory';
 
 describe('SignalQualityEvaluator', () => {
-  it('identifies STALE when timeout passed', () => {
-    expect(SignalQualityEvaluator.evaluate(100, null, 'RPM', 1000, 2000, 300)).toBe('STALE');
+  it('identifies STALE when the cycle-aware timeout has passed', () => {
+    expect(SignalQualityEvaluator.evaluate(100, null, 'RPM', 1000, 8000, 300)).toBe('STALE');
+  });
+
+  it('keeps a short scheduling gap VALID inside the minimum serial-poll freshness floor', () => {
+    expect(SignalQualityEvaluator.evaluate(100, null, 'RPM', 1000, 2000, 300)).toBe('VALID');
   });
 
   it('identifies SUSPECT for coolant protocol floor', () => {
@@ -68,16 +71,13 @@ describe('AdvisoryStateTracker', () => {
     const profile = { ...DEMO_PROFILES.ENGINE_COOLANT, hysteresisMs: 1000, sustainDurationMs: 2000 };
     const tracker = new AdvisoryStateTracker(profile, clock);
 
-    // Initial state is NORMAL
     mockClock = 1000;
     tracker.evaluate(95, 'VALID');
 
-    // Spike to 106 (ELEVATED), but wait only 500ms
     mockClock = 1500;
     let state = tracker.evaluate(106, 'VALID');
-    expect(state.advisory).toBe('NORMAL'); // Still normal because sustainDurationMs is 2000
+    expect(state.advisory).toBe('NORMAL');
 
-    // Spike continues to 3600 (1500 + 2000 = 3500 required)
     mockClock = 3600;
     state = tracker.evaluate(106, 'VALID');
     expect(state.advisory).toBe('ELEVATED');

@@ -1,0 +1,17 @@
+{
+  "quarry_id": "Q-CHECK-009-DTC-KNOWLEDGE-20260904",
+  "sources": [
+    {
+      "name": "Kelley Blue Book OBD-II Code List",
+      "url": "https://www.kbb.com/obd-ii/",
+      "role": "secondary DTC lookup/reference source; not sufficient alone for canonical manufacturer-specific promotion"
+    },
+    {
+      "name": "OBD-II PIDs",
+      "url": "https://en.wikipedia.org/wiki/OBD-II_PIDs",
+      "role": "secondary taxonomy/context reference"
+    }
+  ],
+  "catalog_authority_status": "OPEN",
+  "note": "Observed ECU codes remain valid even when no reviewed human description is available."
+}

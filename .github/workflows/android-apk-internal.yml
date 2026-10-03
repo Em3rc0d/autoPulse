@@ -68,10 +68,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Evaluate critical production dependency gate
-        id: critical_audit
+      - name: Evaluate production dependency security policy
+        id: security_audit
         continue-on-error: true
-        run: npm audit --omit=dev --audit-level=critical
+        run: node scripts/security/evaluate-production-audit.js
 
       - name: Verify TypeScript and tests
         run: npm run verify
@@ -83,6 +83,7 @@ jobs:
         working-directory: mobile-app/android
         env:
           NODE_ENV: production
+          AUTOPULSE_INTERNAL_RELEASE: 'true'
         run: ./gradlew assembleRelease --no-daemon --console=plain
 
       - name: Verify APK structure and React Native bundle
@@ -106,6 +107,10 @@ jobs:
           mkdir -p .release
           "$AAPT2" dump permissions "$APK" | tee .release/apk-effective-permissions.txt
           "$AAPT2" dump badging "$APK" | tee .release/apk-badging.txt
+          grep -q "targetSdkVersion:'36'" .release/apk-badging.txt || {
+            echo 'ERROR: V1 release candidate must target Android 16 / API 36.'
+            exit 1
+          }
           unzip -p "$APK" assets/index.android.bundle | sha256sum | awk '{print $1}' > .release/js-bundle.sha256
           sha256sum package-lock.json | awk '{print $1}' > .release/package-lock.sha256
           sha256sum .release/apk-effective-permissions.txt | awk '{print $1}' > .release/apk-permissions.sha256
@@ -131,12 +136,11 @@ jobs:
           android.permission.BLUETOOTH_CONNECT
           android.permission.BLUETOOTH_SCAN
           android.permission.FOREGROUND_SERVICE
+          android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE
           android.permission.INTERNET
           android.permission.POST_NOTIFICATIONS
-          android.permission.READ_EXTERNAL_STORAGE
           android.permission.VIBRATE
           android.permission.WAKE_LOCK
-          android.permission.WRITE_EXTERNAL_STORAGE
           com.em3rc0dth.autopulse.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION
           EOF
 
@@ -148,6 +152,7 @@ jobs:
           android.permission.BLUETOOTH_CONNECT
           android.permission.BLUETOOTH_SCAN
           android.permission.FOREGROUND_SERVICE
+          android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE
           android.permission.INTERNET
           android.permission.POST_NOTIFICATIONS
           android.permission.VIBRATE
@@ -211,7 +216,7 @@ jobs:
           AP_CI_SHA: ${{ github.sha }}
           AP_RUN_ID: ${{ github.run_id }}
           AP_RUN_ATTEMPT: ${{ github.run_attempt }}
-          AP_CRITICAL_AUDIT_OUTCOME: ${{ steps.critical_audit.outcome }}
+          AP_SECURITY_AUDIT_OUTCOME: ${{ steps.security_audit.outcome }}
           AP_PERMISSION_CONTRACT_OUTCOME: ${{ steps.permission_contract.outcome }}
           AP_SIGNING_CLASS: ${{ steps.apk_signature.outputs.signing_class }}
         run: |
@@ -229,7 +234,7 @@ jobs:
           export AP_PERMISSIONS_SHA256="$(cat .release/apk-permissions.sha256)"
           node <<'NODE'
           const fs = require('fs');
-          const criticalProductionAuditPassed = process.env.AP_CRITICAL_AUDIT_OUTCOME === 'success';
+          const productionSecurityGatePassed = process.env.AP_SECURITY_AUDIT_OUTCOME === 'success';
           const permissionContractPassed = process.env.AP_PERMISSION_CONTRACT_OUTCOME === 'success';
           const signingClass = process.env.AP_SIGNING_CLASS || 'UNKNOWN';
           const receipt = {
@@ -258,8 +263,9 @@ jobs:
               permissionContractPassed,
               apkSignatureVerified: true,
               signingClass,
-              criticalProductionAuditPassed,
-              publicReleaseEligible: criticalProductionAuditPassed && permissionContractPassed && signingClass === 'NON_DEBUG',
+              criticalProductionAuditPassed: productionSecurityGatePassed,
+              productionSecurityGatePassed,
+              publicReleaseEligible: productionSecurityGatePassed && permissionContractPassed && signingClass === 'NON_DEBUG',
             },
             artifact: {
               name: 'autopulse-android-main-candidate',
@@ -293,18 +299,19 @@ jobs:
             mobile-app/.release/package-lock.sha256
             mobile-app/.release/apk-permissions.sha256
             mobile-app/.release/npm-audit-production.json
+            mobile-app/.release/npm-audit-policy.json
             mobile-app/.release/npm-dependency-reachability.txt
           if-no-files-found: error
           retention-days: 14
 
-      - name: Enforce V1 security gate after evidence capture
+      - name: Enforce V1 production security gate after evidence capture
         if: always()
         env:
-          AP_CRITICAL_AUDIT_OUTCOME: ${{ steps.critical_audit.outcome }}
+          AP_SECURITY_AUDIT_OUTCOME: ${{ steps.security_audit.outcome }}
         run: |
           set -euo pipefail
-          if [ "$AP_CRITICAL_AUDIT_OUTCOME" != "success" ]; then
-            echo 'ERROR: V1 release gate remains blocked by critical production-tree dependency findings.'
-            echo 'Audit and reachability evidence were preserved before this failure.'
+          if [ "$AP_SECURITY_AUDIT_OUTCOME" != "success" ]; then
+            echo 'ERROR: V1 release gate remains blocked by the production dependency security policy.'
+            echo 'Audit, exception-contract and reachability evidence were preserved before this failure.'
             exit 1
           fi

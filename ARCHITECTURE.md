@@ -184,13 +184,15 @@ The real controller owns:
 - commit queue;
 - one terminal promise/state.
 
-Release-1 lifecycle policy:
+V1 closure lifecycle policy:
 
-- recording is foreground-only;
-- leaving foreground while ACTIVE produces explicit `APP_BACKGROUND` interruption;
-- physical adapter disconnect produces explicit connection-related interruption;
+- active acquisition may continue while the app is not visible only through a healthy Android connected-device foreground service;
+- foreground-service start/native failure terminalizes explicitly rather than claiming background continuity;
+- physical adapter/ECU path loss enters bounded recovery before terminalization;
+- missing intervals remain missing evidence;
 - terminal races converge on one terminal outcome;
-- bounded persistence drain prevents indefinite STOPPING/FLUSHING.
+- bounded persistence drain prevents indefinite STOPPING/FLUSHING;
+- abrupt process kill is reconciled from durable evidence on next boot.
 
 ## 6. Process-kill recovery
 

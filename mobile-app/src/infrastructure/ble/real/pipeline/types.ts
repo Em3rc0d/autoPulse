@@ -2,6 +2,8 @@ export type CommandFamily =
   | 'ELM_AT'
   | 'OBD_MODE_01'
   | 'OBD_MODE_03'
+  | 'OBD_MODE_07'
+  | 'OBD_MODE_0A'
   | 'OBD_MODE_09'
   | 'RAW_DIAGNOSTIC'
   | 'VENDOR_SPECIFIC'

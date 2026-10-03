@@ -1,0 +1,17 @@
+{
+  "quarry_id": "Q-CHECK-005-MODE06-20260904",
+  "sources": [
+    {
+      "name": "ELM327 datasheet",
+      "url": "https://www.elmelectronics.com/wp-content/uploads/2017/01/ELM327DS.pdf",
+      "role": "adapter/OBD interaction reference; not sufficient alone for production Mode06 decode tables"
+    },
+    {
+      "name": "OBD-II PIDs",
+      "url": "https://en.wikipedia.org/wiki/OBD-II_PIDs",
+      "role": "secondary orientation only"
+    }
+  ],
+  "primary_decode_reference_status": "OPEN",
+  "note": "No Mode06 identifier meaning or scaling is promoted from a secondary source alone."
+}

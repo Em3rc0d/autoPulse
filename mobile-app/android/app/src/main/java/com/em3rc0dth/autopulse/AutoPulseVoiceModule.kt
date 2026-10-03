@@ -16,6 +16,7 @@ class AutoPulseVoiceModule(
   private var ready = false
   private var initializationFailed = false
   private var pendingText: String? = null
+  private var pendingLanguageTag: String = "en-US"
   private var pendingPromise: Promise? = null
 
   init {
@@ -30,13 +31,14 @@ class AutoPulseVoiceModule(
     initializationFailed = !ready
 
     if (ready) {
-      tts?.language = Locale.getDefault()
+      applyLanguage("en-US")
       val text = pendingText
+      val languageTag = pendingLanguageTag
       val promise = pendingPromise
       pendingText = null
       pendingPromise = null
       if (!text.isNullOrBlank() && promise != null) {
-        speakNow(text, promise)
+        speakNow(text, languageTag, promise)
       }
     } else {
       pendingPromise?.resolve(false)
@@ -45,7 +47,20 @@ class AutoPulseVoiceModule(
     }
   }
 
-  private fun speakNow(text: String, promise: Promise) {
+  private fun applyLanguage(languageTag: String): Boolean {
+    val locale = when (languageTag) {
+      "es-ES" -> Locale("es", "ES")
+      else -> Locale.US
+    }
+    val result = tts?.setLanguage(locale) ?: TextToSpeech.LANG_NOT_SUPPORTED
+    return result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
+  }
+
+  private fun speakNow(text: String, languageTag: String, promise: Promise) {
+    if (!applyLanguage(languageTag)) {
+      promise.resolve(false)
+      return
+    }
     val result = tts?.speak(
       text,
       TextToSpeech.QUEUE_FLUSH,
@@ -55,24 +70,33 @@ class AutoPulseVoiceModule(
     promise.resolve(result == TextToSpeech.SUCCESS)
   }
 
-  @ReactMethod
-  fun speak(text: String, promise: Promise) {
+  private fun queueOrSpeak(text: String, languageTag: String, promise: Promise) {
     if (text.isBlank() || initializationFailed) {
       promise.resolve(false)
       return
     }
 
     if (!ready) {
-      // Startup warnings can arrive almost immediately after JS mounts. Keep the
-      // newest message until Android TTS reports readiness rather than silently
-      // dropping the first important advisory.
+      // Safety messages can arrive immediately after JS mounts. Keep only the
+      // newest message until Android TTS reports readiness.
       pendingPromise?.resolve(false)
       pendingText = text
+      pendingLanguageTag = languageTag
       pendingPromise = promise
       return
     }
 
-    speakNow(text, promise)
+    speakNow(text, languageTag, promise)
+  }
+
+  @ReactMethod
+  fun speak(text: String, promise: Promise) {
+    queueOrSpeak(text, "en-US", promise)
+  }
+
+  @ReactMethod
+  fun speakLocalized(text: String, languageTag: String, promise: Promise) {
+    queueOrSpeak(text, languageTag, promise)
   }
 
   @ReactMethod

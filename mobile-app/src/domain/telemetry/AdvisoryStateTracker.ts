@@ -21,7 +21,7 @@ export class SignalQualityEvaluator {
       return 'SUSPECT'; // Protocol floor
     }
 
-    const staleAfterMs = expectedPollIntervalMs * 3;
+    const staleAfterMs = Math.max(6_000, expectedPollIntervalMs * 2);
     if (lastValidObservedAt && (now - lastValidObservedAt) > staleAfterMs) {
       return 'STALE';
     }

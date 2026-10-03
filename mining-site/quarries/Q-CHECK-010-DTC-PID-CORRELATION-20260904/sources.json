@@ -1,0 +1,19 @@
+{
+  "quarry_id": "Q-CHECK-010-DTC-PID-CORRELATION-20260904",
+  "sources": [
+    {
+      "name": "Q-OBD2-PID-CATALOG-20260904",
+      "role": "candidate PID/evidence vocabulary; catalog presence never proves vehicle support"
+    },
+    {
+      "name": "Q-CHECK-009-DTC-KNOWLEDGE-20260904",
+      "role": "DTC meaning/concern provenance boundary"
+    },
+    {
+      "name": "CHECK_DESIGN_AUTHORITY.md",
+      "role": "evidence/confidence/product semantics"
+    }
+  ],
+  "external_causal_database": "NONE_PROMOTED",
+  "note": "Correlation rules require their own reviewed provenance and fixture corpus before user-facing causal language."
+}

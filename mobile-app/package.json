@@ -6,7 +6,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "postinstall": "patch-package",
+    "postinstall": "node scripts/patch-react-native-gradle-serviceof.js && node scripts/patch-legacy-android-toolchain.js && patch-package && node scripts/patch-metro-image-size.js",
     "obd:replay:dev": "node scripts/obd-replay-server.js",
     "test": "jest --runInBand",
     "typecheck": "tsc --noEmit",
@@ -60,6 +60,12 @@
   },
   "overrides": {
     "shell-quote": "1.10.0",
-    "tar": "7.5.22"
+    "tar": "7.5.22",
+    "@xmldom/xmldom": "0.8.15",
+    "postcss": "8.5.28",
+    "plist": {
+      "@xmldom/xmldom": "0.9.12"
+    },
+    "image-size": "2.0.4"
   }
 }
