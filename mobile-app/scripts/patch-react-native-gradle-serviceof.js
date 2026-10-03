@@ -20,8 +20,22 @@ for (const target of candidates) {
   const original = fs.readFileSync(target, 'utf8');
   let next = original.replace(importPattern, '').replace(serviceBlockPattern, '\n');
 
+  // RN 0.74's Gradle plugin defaults its own Kotlin warnings to errors.
+  // Gradle 8.11 surfaces deprecations in the legacy plugin implementation, so
+  // keep AutoPulse's compiler policy untouched and disable Werror only inside RNGP.
+  next = next.replace(
+    /project\.properties\["enableWarningsAsErrors"\]\?\.toString\(\)\?\.toBoolean\(\)\s*\?:\s*true/g,
+    'project.properties["enableWarningsAsErrors"]?.toString()?.toBoolean() ?: false'
+  );
+
   if (next.includes('serviceOf<ModuleRegistry>()') || next.includes('configurationcache.extensions.serviceOf')) {
     throw new Error(`REACT_NATIVE_GRADLE_SERVICEOF_PATCH_INCOMPLETE:${target}`);
+  }
+
+  if (
+    /project\.properties\["enableWarningsAsErrors"\]\?\.toString\(\)\?\.toBoolean\(\)\s*\?:\s*true/.test(next)
+  ) {
+    throw new Error(`REACT_NATIVE_GRADLE_WERROR_PATCH_INCOMPLETE:${target}`);
   }
 
   if (next !== original) {
