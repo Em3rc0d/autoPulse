@@ -43,7 +43,10 @@ for (const pattern of patterns) {
     replacements += 1;
     const quote = match.includes('"image-size"') ? '"' : "'";
     const declaration = match.startsWith('var ') ? 'var ' : 'const ';
-    return `${declaration}{imageSize: getImageSize} = require(${quote}image-size${quote});`;
+    return `${declaration}{imageSize: metroImageSizeV2} = require(${quote}image-size${quote});
+${declaration}getImageSize = input => metroImageSizeV2(
+  typeof input === 'string' ? require('fs').readFileSync(input) : input
+);`;
   });
 }
 
@@ -56,4 +59,4 @@ if (replacements !== 1) {
 }
 
 fs.writeFileSync(assetsPath, source);
-process.stdout.write('Patched metro@0.80.12 for image-size@2.0.4 CommonJS named export.\n');
+process.stdout.write('Patched metro@0.80.12 for image-size@2.0.4 named export + path-to-buffer compatibility.\n');
