@@ -2,47 +2,35 @@ const fs = require('fs');
 const path = require('path');
 
 const root = path.resolve(__dirname, '..');
-const target = path.join(
-  root,
-  'node_modules',
-  '@react-native',
-  'gradle-plugin',
-  'build.gradle.kts'
-);
+const pluginRoot = path.join(root, 'node_modules', '@react-native', 'gradle-plugin');
+const candidates = [
+  path.join(pluginRoot, 'build.gradle.kts'),
+  path.join(pluginRoot, 'react-native-gradle-plugin', 'build.gradle.kts'),
+].filter(fs.existsSync);
 
-if (!fs.existsSync(target)) {
-  throw new Error(`REACT_NATIVE_GRADLE_PLUGIN_FILE_NOT_FOUND:${target}`);
+if (candidates.length === 0) {
+  throw new Error(`REACT_NATIVE_GRADLE_PLUGIN_FILE_NOT_FOUND:${pluginRoot}`);
 }
 
-const original = fs.readFileSync(target, 'utf8');
-let next = original;
+const importPattern = /^import org\.gradle\.configurationcache\.extensions\.serviceOf\r?\n/m;
+const serviceBlockPattern = /\n\s*testRuntimeOnly\(\s*files\(\s*serviceOf<ModuleRegistry>\(\)\s*\.getModule\("gradle-tooling-api-builders"\)\s*\.classpath\s*\.asFiles\s*\.first\(\)\)\)\s*/m;
 
-const importLine = 'import org.gradle.configurationcache.extensions.serviceOf\n';
-if (next.includes(importLine)) {
-  next = next.replace(importLine, '');
+let patched = 0;
+for (const target of candidates) {
+  const original = fs.readFileSync(target, 'utf8');
+  let next = original.replace(importPattern, '').replace(serviceBlockPattern, '\n');
+
+  if (next.includes('serviceOf<ModuleRegistry>()') || next.includes('configurationcache.extensions.serviceOf')) {
+    throw new Error(`REACT_NATIVE_GRADLE_SERVICEOF_PATCH_INCOMPLETE:${target}`);
+  }
+
+  if (next !== original) {
+    fs.writeFileSync(target, next, 'utf8');
+    patched += 1;
+    console.log(`Patched React Native Gradle serviceOf incompatibility: ${target}`);
+  }
 }
 
-const serviceBlock = `  testRuntimeOnly(
-      files(
-          serviceOf<ModuleRegistry>()
-              .getModule("gradle-tooling-api-builders")
-              .classpath
-              .asFiles
-              .first()))
-`;
-
-if (next.includes(serviceBlock)) {
-  next = next.replace(serviceBlock, '');
-}
-
-if (next.includes('serviceOf<ModuleRegistry>()') || next.includes('configurationcache.extensions.serviceOf')) {
-  throw new Error('REACT_NATIVE_GRADLE_SERVICEOF_PATCH_INCOMPLETE');
-}
-
-if (next === original) {
+if (patched === 0) {
   console.log('React Native Gradle serviceOf patch already unnecessary/applied.');
-  process.exit(0);
 }
-
-fs.writeFileSync(target, next, 'utf8');
-console.log('Patched @react-native/gradle-plugin for Gradle 8.11+ compatibility.');
