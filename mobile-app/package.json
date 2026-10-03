@@ -6,7 +6,7 @@
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "postinstall": "node scripts/patch-react-native-gradle-serviceof.js && patch-package && node scripts/patch-metro-image-size.js",
+    "postinstall": "node scripts/patch-react-native-gradle-serviceof.js && node scripts/patch-legacy-android-toolchain.js && patch-package && node scripts/patch-metro-image-size.js",
     "obd:replay:dev": "node scripts/obd-replay-server.js",
     "test": "jest --runInBand",
     "typecheck": "tsc --noEmit",
