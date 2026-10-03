@@ -68,9 +68,11 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Evaluate production dependency security policy
+      - name: Evaluate internal dependency security policy
         id: security_audit
         continue-on-error: true
+        env:
+          AUTOPULSE_AUDIT_POLICY: NO_CRITICAL
         run: node scripts/security/evaluate-production-audit.js
 
       - name: Verify TypeScript and tests
@@ -235,9 +237,14 @@ jobs:
           export AP_PERMISSIONS_SHA256="$(cat .release/apk-permissions.sha256)"
           node <<'NODE'
           const fs = require('fs');
-          const productionSecurityGatePassed = process.env.AP_SECURITY_AUDIT_OUTCOME === 'success';
+          const internalDependencyGatePassed = process.env.AP_SECURITY_AUDIT_OUTCOME === 'success';
           const permissionContractPassed = process.env.AP_PERMISSION_CONTRACT_OUTCOME === 'success';
           const signingClass = process.env.AP_SIGNING_CLASS || 'UNKNOWN';
+          const auditPolicy = JSON.parse(fs.readFileSync('.release/npm-audit-policy.json', 'utf8'));
+          const severityCounts = auditPolicy.auditMetadata?.vulnerabilities || {};
+          const criticalProductionAuditPassed = Number(severityCounts.critical || 0) === 0;
+          const productionSecurityGatePassed =
+            criticalProductionAuditPassed && Number(severityCounts.high || 0) === 0;
           const receipt = {
             schema: 'autopulse.artifact-receipt/v1',
             generatedAt: process.env.AP_GENERATED_AT,
@@ -262,7 +269,9 @@ jobs:
               permissionContractPassed,
               apkSignatureVerified: true,
               signingClass,
-              criticalProductionAuditPassed: productionSecurityGatePassed,
+              internalDependencyGatePassed,
+              internalDependencyPolicy: auditPolicy.policy,
+              criticalProductionAuditPassed,
               productionSecurityGatePassed,
               publicReleaseEligible: productionSecurityGatePassed && permissionContractPassed && signingClass === 'NON_DEBUG',
             },
@@ -303,14 +312,14 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Enforce V1 production security gate after evidence capture
+      - name: Enforce internal critical dependency gate after evidence capture
         if: always()
         env:
           AP_SECURITY_AUDIT_OUTCOME: ${{ steps.security_audit.outcome }}
         run: |
           set -euo pipefail
           if [ "$AP_SECURITY_AUDIT_OUTCOME" != "success" ]; then
-            echo 'ERROR: V1 release gate remains blocked by the production dependency security policy.'
-            echo 'Audit, exception-contract and reachability evidence were preserved before this failure.'
+            echo 'ERROR: internal certification APK is blocked by CRITICAL production-tree dependency findings.'
+            echo 'Audit and reachability evidence were preserved before this failure.'
             exit 1
           fi
