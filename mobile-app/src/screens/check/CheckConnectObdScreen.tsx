@@ -120,7 +120,7 @@ export default function CheckConnectObdScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.back} onPress={() => navigation.goBack()}>← Check</Text>
-        <Text style={styles.eyebrow}>PHYSICAL PILOT · READ ONLY</Text>
+        <Text style={styles.eyebrow}>{t('ADAPTIVE ECU CHECK · READ ONLY','CHECK ECU ADAPTATIVO · SOLO LECTURA')}</Text>
         <Text style={styles.title}>{t('Connect OBD adapter','Conectar adaptador OBD')}</Text>
         <Text style={styles.subtitle}>{vehicle?.alias ?? 'Vehicle'} · connect only while the vehicle is parked.</Text>
       </View>
@@ -128,7 +128,7 @@ export default function CheckConnectObdScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.notice}>
           <Text style={styles.noticeTitle}>{t('Stationary use only','Solo con el vehículo estacionado')}</Text>
-          <Text style={styles.noticeText}>{t('Do not interact with AutoPulse while driving. This pilot never clears codes, resets modules or sends control commands.','No interactúes con AutoPulse mientras conduces. Este piloto nunca borra códigos, reinicia módulos ni envía comandos de control.')}</Text>
+          <Text style={styles.noticeText}>{t('Do not interact with AutoPulse while driving. Check reads only bounded standard OBD evidence; it never clears codes, resets modules or sends control commands.','No interactúes con AutoPulse mientras conduces. Check solo lee evidencia OBD estándar acotada; nunca borra códigos, reinicia módulos ni envía comandos de control.')}</Text>
         </View>
 
         {uiState === 'IDLE' && retainedReusable && retainedConnection ? (
