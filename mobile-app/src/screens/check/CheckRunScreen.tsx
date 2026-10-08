@@ -284,7 +284,7 @@ export default function CheckRunScreen() {
                   <View
                     style={[
                       styles.progressFill,
-                      { width: `${Math.round((adaptiveProgress.completed / adaptiveProgress.selected) * 100)}%` },
+                      { width: `${Math.min(100, Math.round((adaptiveProgress.completed / adaptiveProgress.selected) * 100))}%` as `${number}%` },
                     ]}
                   />
                 </View>
