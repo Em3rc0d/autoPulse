@@ -151,7 +151,7 @@ export function decodePromotedMode01Observation(
     sourceEndpointId: result.sourceEndpointId,
     signals: Object.freeze(signals.map(signal => Object.freeze(signal))),
     observedAt: result.observedAt,
-    provenance: `${result.provenance}; CHECK v4 promoted deterministic decoder`,
+    provenance: `${result.provenance}; CHECK v5 promoted deterministic decoder`,
   });
 }
 
