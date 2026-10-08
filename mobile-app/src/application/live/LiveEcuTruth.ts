@@ -10,6 +10,9 @@ export interface LiveEcuTruthInput {
   elapsedMs: number;
   sessionError?: string | null;
   delayedAfterMs?: number;
+  lastValidEcuSampleAt?: number | null;
+  nowMs?: number;
+  staleAfterMs?: number;
 }
 
 export interface LiveEcuTruthPresentation {
@@ -20,6 +23,7 @@ export interface LiveEcuTruthPresentation {
 }
 
 export const DEFAULT_FIRST_ECU_SAMPLE_DELAY_MS = 90_000;
+export const DEFAULT_ECU_SAMPLE_STALE_MS = 12_000;
 const INTERRUPTED_PREFIX = 'SESSION_INTERRUPTED:';
 const RECOVERING_PREFIX = 'SESSION_RECOVERING:';
 
@@ -38,6 +42,9 @@ export function deriveLiveEcuTruth({
   elapsedMs,
   sessionError,
   delayedAfterMs = DEFAULT_FIRST_ECU_SAMPLE_DELAY_MS,
+  lastValidEcuSampleAt = null,
+  nowMs = Date.now(),
+  staleAfterMs = DEFAULT_ECU_SAMPLE_STALE_MS,
 }: LiveEcuTruthInput): LiveEcuTruthPresentation {
   if (sessionError?.startsWith(RECOVERING_PREFIX)) {
     return {
@@ -58,11 +65,24 @@ export function deriveLiveEcuTruth({
     };
   }
 
+  if (
+    hasValidEcuSample
+    && lastValidEcuSampleAt !== null
+    && nowMs - lastValidEcuSampleAt > Math.max(1_000, staleAfterMs)
+  ) {
+    return {
+      state: 'ECU_DATA_DELAYED',
+      label: 'ECU DATA UNAVAILABLE',
+      detail: 'The adapter may still be powered, but AutoPulse has no fresh vehicle-ECU observation. Adapter voltage alone is not vehicle telemetry.',
+      tone: 'delayed',
+    };
+  }
+
   if (hasValidEcuSample) {
     return {
       state: 'LIVE_ECU_DATA',
       label: 'LIVE · ECU DATA',
-      detail: 'At least one valid ECU-origin observation has been received.',
+      detail: 'At least one fresh ECU-origin observation has been received.',
       tone: 'live',
     };
   }
@@ -70,8 +90,8 @@ export function deriveLiveEcuTruth({
   if (elapsedMs >= delayedAfterMs) {
     return {
       state: 'ECU_DATA_DELAYED',
-      label: 'ECU DATA DELAYED',
-      detail: 'The adapter is connected, but AutoPulse has not received a valid ECU sample yet.',
+      label: 'ECU DATA UNAVAILABLE',
+      detail: 'The adapter is connected, but AutoPulse has not received a valid vehicle-ECU sample yet.',
       tone: 'delayed',
     };
   }
@@ -79,7 +99,7 @@ export function deriveLiveEcuTruth({
   return {
     state: 'WAITING_FOR_FIRST_ECU_SAMPLE',
     label: 'CONNECTED · WAITING FOR ECU DATA',
-    detail: 'The session is connected while AutoPulse waits for the first valid ECU observation.',
+    detail: 'The adapter channel is available while AutoPulse waits for the first valid vehicle-ECU observation.',
     tone: 'waiting',
   };
 }
