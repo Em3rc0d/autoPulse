@@ -414,8 +414,8 @@ export async function runCheckPhysicalPilot(input: RunCheckPhysicalPilotInput): 
   ];
   const userLimitations = [
     'This Check is diagnostic evidence, not a mechanical PASS/FAIL verdict.',
-    'ABS, SRS, transmission and manufacturer-enhanced modules are not claimed by this standard OBD pilot.',
-    'Readiness, Mode 06 and Freeze Frame remain outside this physical-pilot descriptor set.',
+    'ABS, SRS, transmission and manufacturer-enhanced modules are outside this standard OBD Check unless a separately promoted read-only profile explicitly covers them.',
+    'Readiness is handled by the adaptive Check layer. Mode 06 and Freeze Frame remain outside the promoted decoder set.',
     capabilityAssessment.state === 'EMPTY_BITMAP'
       ? 'The Mode 01 support bitmap was empty in this scan. AutoPulse does not treat that as proof that individual PIDs are unsupported.'
       : null,
