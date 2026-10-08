@@ -10,7 +10,7 @@ const signals = [
 ];
 
 describe('DriverModeSelector', () => {
-  it('keeps all modes visible without rendering verbose decision-dimension chips', () => {
+  it('keeps all modes visible and restores concise parked decision-dimension evidence', () => {
     const { getByText, getByTestId, queryByText, queryByTestId } = render(
       <DriverModeSelector selectedMode="PERFORMANCE" availableSignals={signals} onSelectMode={jest.fn()} />,
     );
@@ -23,12 +23,10 @@ describe('DriverModeSelector', () => {
 
     expect(getByText('1 READY')).toBeTruthy();
     expect(getByText(/2 PARTIAL/)).toBeTruthy();
-    expect(queryByText('Engine state')).toBeNull();
-    expect(queryByText('Thermal state')).toBeNull();
-    expect(queryByText('Power demand')).toBeNull();
     expect(queryByText('UNKNOWN')).toBeNull();
-    expect(queryByTestId('decision-dimension-airflow')).toBeNull();
-    expect(queryByTestId('decision-dimension-electrical')).toBeNull();
+    expect(queryByTestId('decision-dimension-engine_state')).toBeTruthy();
+    expect(queryByTestId('decision-dimension-thermal_state')).toBeTruthy();
+    expect(queryByTestId('decision-dimension-power_demand')).toBeTruthy();
   });
 
   it('renders no evidence summary when a mode has no reliable evidence', () => {
