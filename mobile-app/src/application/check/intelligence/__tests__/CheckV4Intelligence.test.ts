@@ -75,8 +75,27 @@ describe('CHECK v4 diagnostic intelligence', () => {
       advertisedPids: [],
       capabilityInconclusive: true,
     });
-    expect(plan.requests.length).toBeLessThanOrEqual(12);
+    expect(plan.requests.length).toBeGreaterThan(5);
+    expect(plan.requests.length).toBeLessThanOrEqual(18);
     expect(plan.requests.every(item => item.reason === 'BOUNDED_FALLBACK')).toBe(true);
+    expect(plan.requests.length).toBeLessThan(CHECK_V4_PID_WALLET.length);
+  });
+
+  test('collects a useful adaptive baseline even when no DTC is reported', () => {
+    const plan = buildDiagnosticEvidencePlanV2({
+      dtcCodes: [],
+      advertisedPids: [],
+      capabilityInconclusive: true,
+      alreadyObservedPids: ['05', '0C', '0D'],
+    });
+
+    expect(plan.version).toBe('check-evidence-planner/v3');
+    expect(plan.alreadyObservedPidCount).toBe(3);
+    expect(plan.requests.map(item => item.pid)).toEqual(expect.arrayContaining([
+      '01', '04', '0B', '0F', '10', '11', '42', '1F', '2F', '33',
+    ]));
+    expect(plan.requests.map(item => item.pid)).not.toEqual(expect.arrayContaining(['05', '0C', '0D']));
+    expect(plan.requests.length).toBeLessThanOrEqual(18);
   });
 
   test('decodes PID 0101 readiness without treating NOT_READY as failure', () => {
@@ -90,6 +109,11 @@ describe('CHECK v4 diagnostic intelligence', () => {
   test('decodes promoted PID values deterministically', () => {
     expect(decodePromotedMode01Observation(observed('05', [0x44]))?.signals[0].value).toBe(28);
     expect(decodePromotedMode01Observation(observed('0C', [0x10, 0xB0]))?.signals[0].value).toBe(1068);
+    expect(decodePromotedMode01Observation(observed('10', [0x01, 0xF4]))?.signals[0].value).toBe(5);
+    expect(decodePromotedMode01Observation(observed('2F', [0x80]))?.signals[0].value).toBeCloseTo(50.2, 1);
+    expect(decodePromotedMode01Observation(observed('42', [0x36, 0xB0]))?.signals[0].value).toBe(14);
+    expect(decodePromotedMode01Observation(observed('5C', [0x78]))?.signals[0].value).toBe(80);
+    expect(decodePromotedMode01Observation(observed('63', [0x01, 0x90]))?.signals[0].value).toBe(400);
   });
 
   test('groups stored+pending P0301 on the same source into one ECU-confirmed concern and does not assert cause', () => {
