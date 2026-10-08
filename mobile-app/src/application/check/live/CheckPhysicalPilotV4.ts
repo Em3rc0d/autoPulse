@@ -63,6 +63,7 @@ export interface RunCheckPhysicalPilotV4Input {
 
 export interface TargetedCapabilityPlanningScope {
   readonly advertisedPids: readonly string[];
+  readonly knownUnsupportedPids: readonly string[];
   readonly capabilityInconclusive: boolean;
   readonly limitation: string | null;
 }
@@ -101,16 +102,28 @@ export function capabilityPlanningScopeFromBase(
   const valid = observations.filter(item => item.outcome === 'VALID');
 
   if (observations.length === 1 && valid.length === 1) {
+    const advertisedPids = [...valid[0].advertisedPids];
+    const emptyBitmap = base.capabilityAssessment.state === 'EMPTY_BITMAP';
+    const continuationAdvertised = advertisedPids.includes('0120');
+    const knownUnsupportedPids = emptyBitmap
+      ? []
+      : Array.from({ length: 0x20 }, (_, index) => (index + 1).toString(16).padStart(2, '0').toUpperCase())
+          .filter(pid => !advertisedPids.includes(`01${pid}`));
+
     return Object.freeze({
-      advertisedPids: Object.freeze([...valid[0].advertisedPids]),
-      capabilityInconclusive: base.capabilityAssessment.state !== 'ADVERTISED',
-      limitation: null,
+      advertisedPids: Object.freeze(advertisedPids),
+      knownUnsupportedPids: Object.freeze(knownUnsupportedPids),
+      capabilityInconclusive: emptyBitmap || continuationAdvertised,
+      limitation: continuationAdvertised
+        ? 'v5-capability-scope:CONTINUATION_ADVERTISED_BUT_NOT_ENDPOINT_TARGETED'
+        : null,
     });
   }
 
   if (observations.length > 1) {
     return Object.freeze({
       advertisedPids: Object.freeze([]),
+      knownUnsupportedPids: Object.freeze([]),
       capabilityInconclusive: true,
       limitation: 'v5-capability-scope:MULTI_RESPONSE_NO_GLOBAL_PID_UNION',
     });
@@ -118,6 +131,7 @@ export function capabilityPlanningScopeFromBase(
 
   return Object.freeze({
     advertisedPids: Object.freeze([]),
+    knownUnsupportedPids: Object.freeze([]),
     capabilityInconclusive: true,
     limitation: null,
   });
@@ -189,6 +203,7 @@ export async function runCheckPhysicalPilotV4(input: RunCheckPhysicalPilotV4Inpu
     dtcCodes: dtcCodesFromBase(base),
     advertisedPids: capabilityScope.advertisedPids,
     capabilityInconclusive: capabilityScope.capabilityInconclusive,
+    knownUnsupportedPids: capabilityScope.knownUnsupportedPids,
     alreadyObservedPids,
     maxCommands: 18,
   });
