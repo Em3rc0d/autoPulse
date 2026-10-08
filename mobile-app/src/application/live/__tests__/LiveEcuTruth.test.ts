@@ -14,9 +14,27 @@ describe('LiveEcuTruth', () => {
       .toBe('ECU_DATA_DELAYED');
   });
 
-  it('claims live only after a valid ECU-origin sample', () => {
-    expect(deriveLiveEcuTruth({ hasValidEcuSample: true, elapsedMs: 2_000 }).state)
-      .toBe('LIVE_ECU_DATA');
+  it('claims live only after a valid fresh ECU-origin sample', () => {
+    expect(deriveLiveEcuTruth({
+      hasValidEcuSample: true,
+      elapsedMs: 2_000,
+      lastValidEcuSampleAt: 10_000,
+      nowMs: 11_000,
+    }).state).toBe('LIVE_ECU_DATA');
+  });
+
+  it('does not let powered-adapter evidence hide stale vehicle ECU telemetry', () => {
+    const state = deriveLiveEcuTruth({
+      hasValidEcuSample: true,
+      elapsedMs: 30_000,
+      lastValidEcuSampleAt: 10_000,
+      nowMs: 30_001,
+      staleAfterMs: 8_000,
+    });
+
+    expect(state.state).toBe('ECU_DATA_DELAYED');
+    expect(state.label).toBe('ECU DATA UNAVAILABLE');
+    expect(state.detail).toContain('Adapter voltage alone');
   });
 
   it('shows bounded connection recovery as amber instead of terminal failure', () => {
