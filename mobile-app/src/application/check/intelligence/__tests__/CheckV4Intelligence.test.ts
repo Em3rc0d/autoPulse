@@ -98,6 +98,21 @@ describe('CHECK v4 diagnostic intelligence', () => {
     expect(plan.requests.length).toBeLessThanOrEqual(18);
   });
 
+  test('never probes a PID explicitly absent from a valid known capability range', () => {
+    const plan = buildDiagnosticEvidencePlanV2({
+      dtcCodes: [],
+      advertisedPids: ['0101', '0105', '0120'],
+      capabilityInconclusive: true,
+      knownUnsupportedPids: ['04', '06', '07', '0B', '0C', '0D', '0E', '0F', '10', '11', '14', '15'],
+    });
+
+    expect(plan.requests.map(item => item.pid)).not.toContain('04');
+    expect(plan.requests.map(item => item.pid)).not.toContain('0C');
+    expect(plan.requests.map(item => item.pid)).toContain('01');
+    expect(plan.requests.map(item => item.pid)).toContain('05');
+    expect(plan.requests.some(item => Number.parseInt(item.pid, 16) > 0x20)).toBe(true);
+  });
+
   test('decodes PID 0101 readiness without treating NOT_READY as failure', () => {
     const readiness = decodePid0101Readiness(observed('01', [0x81, 0x71, 0x65, 0x01]));
     expect(readiness?.milOn).toBe(true);
