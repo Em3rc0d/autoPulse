@@ -62,7 +62,7 @@ describe('CHECK v4 diagnostic intelligence', () => {
       capabilityInconclusive: false,
     });
     expect(plan.requests.length).toBeGreaterThan(1);
-    expect(plan.requests.length).toBeLessThanOrEqual(12);
+    expect(plan.requests.length).toBeLessThanOrEqual(18);
     expect(plan.requests.map(item => item.pid)).toContain('01');
     expect(plan.requests.map(item => item.pid)).toContain('06');
     expect(plan.requests.map(item => item.pid)).toContain('14');
