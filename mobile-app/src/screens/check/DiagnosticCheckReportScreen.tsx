@@ -9,7 +9,6 @@ import {
   type DiagnosticCheckReportResult,
 } from '../../application/check/DiagnosticCheckReportService';
 import { formatDecodedPidObservation } from '../../application/check/intelligence/Mode01ValueDecoder';
-import { CHECK_V4_PID_WALLET } from '../../application/check/intelligence/PidWallet';
 import { uiText, useUiLanguage } from '../../application/localization/UiLanguage';
 
 function dtcCodes(result: DiagnosticCheckReportResult): string[] {
@@ -28,6 +27,7 @@ export default function DiagnosticCheckReportScreen() {
   const workspaceId = context?.defaultWorkspaceId as string | undefined;
   const [report, setReport] = useState<DiagnosticCheckReportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showTechnical, setShowTechnical] = useState(false);
 
   useEffect(() => {
     if (!db || !workspaceId || !checkId) return;
@@ -94,7 +94,9 @@ export default function DiagnosticCheckReportScreen() {
           <Row label={t('Adaptive selected','Adaptativos seleccionados')} value={String(snapshot.execution.targetedCommandsSelected)} />
           <Row label={t('Adaptive executed','Adaptativos ejecutados')} value={String(snapshot.execution.targetedCommandsIssued)} />
           <Row label={t('Observed PID values','Valores PID observados')} value={String(snapshot.pidEvidence.length)} />
-          <Row label={t('Promoted PID readers','Lectores PID promovidos')} value={String(CHECK_V4_PID_WALLET.filter(item => item.executableInCheckV4).length)} />
+          <Row label={t('Planner','Planner')} value={snapshot.execution.plannerVersion ?? 'legacy'} />
+          <Row label={t('Reference PID wallet','Wallet PID de referencia')} value={String(snapshot.execution.referencePidCount ?? 'legacy')} />
+          <Row label={t('Promoted PID readers','Lectores PID promovidos')} value={String(snapshot.execution.promotedPidReaderCount ?? 'legacy')} />
           <Row label={t('Scan state','Estado scan')} value={snapshot.execution.scanState} />
         </View>
 
@@ -119,7 +121,7 @@ export default function DiagnosticCheckReportScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>{t('Adaptive ECU snapshot','Snapshot ECU adaptativo')}</Text>
           <Text style={styles.body}>{t('This sealed snapshot preserves only values actually observed during the bounded read-only scan. Missing signals are not treated as zero or healthy.','Este snapshot sellado conserva solo valores realmente observados durante el scan acotado de solo lectura. Señales ausentes no se tratan como cero ni saludables.')}</Text>
-          <Text style={styles.meta}>{CHECK_V4_PID_WALLET.length} reference PIDs · {CHECK_V4_PID_WALLET.filter(item => item.executableInCheckV4).length} promoted readers</Text>
+          <Text style={styles.meta}>{snapshot.execution.referencePidCount ?? 'Legacy'} reference PIDs · {snapshot.execution.promotedPidReaderCount ?? 'legacy'} promoted readers</Text>
         </View>
 
         <View style={styles.card}>
@@ -144,6 +146,30 @@ export default function DiagnosticCheckReportScreen() {
           <Text style={styles.cardTitle}>{t('Limitations','Limitaciones')}</Text>
           {snapshot.limitations.map((item, index) => <Text key={`${index}-${item}`} style={styles.limitation}>• {item}</Text>)}
         </View>
+
+        <TouchableOpacity
+          style={styles.technicalToggle}
+          onPress={() => setShowTechnical(value => !value)}
+          testID="toggle-sealed-check-technical"
+        >
+          <Text style={styles.technicalToggleText}>{showTechnical ? t('Hide technical evidence','Ocultar evidencia técnica') : t('Show technical evidence','Mostrar evidencia técnica')}</Text>
+        </TouchableOpacity>
+
+        {showTechnical ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>{t('Technical evidence','Evidencia técnica')}</Text>
+            {(snapshot.technicalLimitations ?? []).map((item, index) => (
+              <Text key={`tech-limit-${index}`} style={styles.techLine}>• {item}</Text>
+            ))}
+            {snapshot.rawEvidence.map((item, index) => (
+              <View key={`raw-${index}-${item.semanticId}`} style={styles.rawBlock}>
+                <Text style={styles.rawHeading}>{item.phase} · {item.service}{item.pid ?? ''} · {item.responseKind}</Text>
+                <Text style={styles.meta}>ECU {item.sourceEndpointId ?? 'UNATTRIBUTED'} · {item.observedResponseBytes} bytes</Text>
+                <Text selectable style={styles.rawText}>{item.rawText ?? 'No raw diagnostic text retained'}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
         <View style={styles.card}>
           <Text style={styles.cardTitle}>{t('Integrity seal','Sello de integridad')}</Text>
@@ -185,6 +211,12 @@ const styles = StyleSheet.create({
   concernTitle: { color: '#f8fafc', fontSize: 12, fontWeight: '900' },
   warning: { color: '#fbbf24', fontSize: 10, marginTop: 5 },
   limitation: { color: '#cbd5e1', fontSize: 11, lineHeight: 17, marginBottom: 6 },
+  technicalToggle: { borderWidth: 1, borderColor: '#334155', borderRadius: 14, paddingVertical: 12, alignItems: 'center', marginBottom: 10 },
+  technicalToggleText: { color: '#94a3b8', fontSize: 11, fontWeight: '800' },
+  techLine: { color: '#94a3b8', fontSize: 10, lineHeight: 16, marginBottom: 5 },
+  rawBlock: { backgroundColor: '#0a1115', borderWidth: 1, borderColor: '#202a30', borderRadius: 10, padding: 10, marginTop: 8 },
+  rawHeading: { color: '#cbd5e1', fontSize: 9, fontWeight: '900' },
+  rawText: { color: '#93c5fd', fontSize: 9, lineHeight: 14, marginTop: 6, fontFamily: 'monospace' },
   hashLabel: { color: '#64748b', fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
   hash: { color: '#93c5fd', fontSize: 9, lineHeight: 15, marginTop: 5, fontFamily: 'monospace' },
   meta: { color: '#64748b', fontSize: 9, marginTop: 5 },
