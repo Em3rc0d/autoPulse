@@ -30,7 +30,7 @@ export const vehicleCheckReports = sqliteTable('vehicle_check_reports', {
 }));
 
 
-/** Immutable snapshot of one direct, read-only physical Check v4 run. */
+/** Immutable snapshot of one bounded, adaptive, read-only standard OBD Check run. */
 export const diagnosticCheckReports = sqliteTable('diagnostic_check_reports', {
   id: text('id').primaryKey(),
   workspaceId: text('workspace_id').notNull().references(() => workspaces.id, { onDelete: 'restrict' }),
