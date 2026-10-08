@@ -54,11 +54,17 @@ export interface CheckPhysicalPilotV4Result extends Omit<
   readonly limitations: readonly string[];
 }
 
+export interface CheckAdaptiveProgress {
+  readonly selected: number;
+  readonly completed: number;
+}
+
 export interface RunCheckPhysicalPilotV4Input {
   readonly controller: RealObdController;
   readonly connectionHandleId: string;
   readonly cancellation: CheckPilotCancellationToken;
   readonly onStage?: (stage: CheckPhysicalPilotStageV4) => void;
+  readonly onAdaptiveProgress?: (progress: CheckAdaptiveProgress) => void;
 }
 
 export interface TargetedCapabilityPlanningScope {
@@ -210,6 +216,11 @@ export async function runCheckPhysicalPilotV4(input: RunCheckPhysicalPilotV4Inpu
 
   const targetedRaw: CheckPhysicalRawEvidence[] = [];
   let targetedEvidenceScan: DiagnosticScanEngineResult | null = null;
+  let adaptiveCompleted = 0;
+  input.onAdaptiveProgress?.({
+    selected: evidencePlan.requests.length,
+    completed: 0,
+  });
   const targetedLimitations: string[] = capabilityScope.limitation ? [capabilityScope.limitation] : [];
 
   if (evidencePlan.requests.length > 0 && !input.cancellation.isCancelled) {
@@ -225,7 +236,14 @@ export async function runCheckPhysicalPilotV4(input: RunCheckPhysicalPilotV4Inpu
         REQUEST_TIMEOUT_MS,
         MIN_INTER_COMMAND_DELAY_MS,
         input.cancellation,
-        (request, receipt) => collectReceiptEvidence(request, receipt, targetedRaw),
+        (request, receipt) => {
+          collectReceiptEvidence(request, receipt, targetedRaw);
+          adaptiveCompleted = Math.min(evidencePlan.requests.length, adaptiveCompleted + 1);
+          input.onAdaptiveProgress?.({
+            selected: evidencePlan.requests.length,
+            completed: adaptiveCompleted,
+          });
+        },
       );
       targetedEvidenceScan = await runDiagnosticScan({ plan, executor });
       targetedLimitations.push(...targetedEvidenceScan.limitations);
