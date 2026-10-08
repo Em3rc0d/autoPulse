@@ -89,6 +89,8 @@ export interface BuildEvidencePlanInput {
   readonly capabilityInconclusive: boolean;
   /** PIDs already observed by an earlier bounded phase, e.g. Logan KWP corroboration. */
   readonly alreadyObservedPids?: readonly string[];
+  /** Exact PIDs explicitly absent from a valid response-scoped support range. */
+  readonly knownUnsupportedPids?: readonly string[];
   readonly maxCommands?: number;
 }
 
@@ -108,6 +110,11 @@ export function buildDiagnosticEvidencePlanV2(input: BuildEvidencePlanInput): Di
   );
   const alreadyObserved = new Set(
     (input.alreadyObservedPids ?? [])
+      .map(normalizePid)
+      .filter((value): value is string => Boolean(value)),
+  );
+  const knownUnsupported = new Set(
+    (input.knownUnsupportedPids ?? [])
       .map(normalizePid)
       .filter((value): value is string => Boolean(value)),
   );
@@ -137,6 +144,7 @@ export function buildDiagnosticEvidencePlanV2(input: BuildEvidencePlanInput): Di
       requested.size >= maxCommands
       || requested.has(pid)
       || alreadyObserved.has(pid)
+      || knownUnsupported.has(pid)
       || !isCheckV4ExecutablePid(pid)
     ) return;
 
