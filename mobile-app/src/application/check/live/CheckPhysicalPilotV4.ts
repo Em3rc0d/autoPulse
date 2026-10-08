@@ -30,7 +30,7 @@ import {
   type DiagnosticConcernV2,
 } from '../intelligence/DiagnosticConcernEngine';
 
-export const CHECK_PHYSICAL_PILOT_V4_VERSION = 'check-physical-pilot/v4.1' as const;
+export const CHECK_PHYSICAL_PILOT_V4_VERSION = 'check-adaptive/v5' as const;
 
 export type CheckPhysicalPilotStageV4 =
   | CheckPhysicalPilotStage
@@ -67,7 +67,7 @@ export interface TargetedCapabilityPlanningScope {
   readonly limitation: string | null;
 }
 
-const V4_PROVENANCE = 'CHECK physical pilot v4.1; read-only targeted evidence; large PID wallet is knowledge, not a blind scan list';
+const V4_PROVENANCE = 'CHECK adaptive v5; bounded standard OBD snapshot + DTC-driven enrichment; serial read-only execution; 114-PID wallet is knowledge, never a blind scan list';
 const MIN_INTER_COMMAND_DELAY_MS = 120;
 const REQUEST_TIMEOUT_MS = 7000;
 
@@ -112,7 +112,7 @@ export function capabilityPlanningScopeFromBase(
     return Object.freeze({
       advertisedPids: Object.freeze([]),
       capabilityInconclusive: true,
-      limitation: 'v4.1-capability-scope:MULTI_RESPONSE_NO_GLOBAL_PID_UNION',
+      limitation: 'v5-capability-scope:MULTI_RESPONSE_NO_GLOBAL_PID_UNION',
     });
   }
 
@@ -131,7 +131,7 @@ function dtcCodesFromBase(base: CheckPhysicalPilotResult): readonly string[] {
 
 function buildTargetedPlan(protocol: DiagnosticProtocol, evidencePlan: DiagnosticEvidencePlanV2) {
   return buildDiagnosticScanPlan({
-    planId: `check-v4.1-targeted:${Date.now()}`,
+    planId: `check-v5-adaptive:${Date.now()}`,
     createdAt: Date.now(),
     protocol,
     registry: CHECK_CORE_DESCRIPTOR_REGISTRY_V3,
@@ -149,7 +149,7 @@ function buildTargetedPlan(protocol: DiagnosticProtocol, evidencePlan: Diagnosti
       maxCommands: Math.max(1, evidencePlan.requests.length),
       maxResponseBytes: 4096,
       maxBytesPerResponse: 512,
-      maxElapsedMs: 45000,
+      maxElapsedMs: 75000,
       minInterCommandDelayMs: MIN_INTER_COMMAND_DELAY_MS,
       provenance: V4_PROVENANCE,
     },
@@ -162,9 +162,9 @@ function buildTargetedPlan(protocol: DiagnosticProtocol, evidencePlan: Diagnosti
     deadlinePolicy: {
       overallDeadlineMs: 45000,
       stageDeadlineMs: {
-        CAPABILITY_DISCOVERY: 45000,
-        DTC_CORE: 45000,
-        TARGETED_PID_ACQUISITION: 40000,
+        CAPABILITY_DISCOVERY: 75000,
+        DTC_CORE: 75000,
+        TARGETED_PID_ACQUISITION: 70000,
       },
       provenance: `${V4_PROVENANCE}; serial bounded enrichment`,
     },
@@ -181,11 +181,16 @@ export async function runCheckPhysicalPilotV4(input: RunCheckPhysicalPilotV4Inpu
 
   input.onStage?.('PLANNING_TARGETED_EVIDENCE');
   const capabilityScope = capabilityPlanningScopeFromBase(base);
+  const alreadyObservedPids = (base.directObservationScan?.mode01DirectResults ?? [])
+    .filter(item => item.outcome === 'OBSERVED_DIRECTLY')
+    .map(item => item.requestPid);
+
   const evidencePlan = buildDiagnosticEvidencePlanV2({
     dtcCodes: dtcCodesFromBase(base),
     advertisedPids: capabilityScope.advertisedPids,
     capabilityInconclusive: capabilityScope.capabilityInconclusive,
-    maxCommands: 12,
+    alreadyObservedPids,
+    maxCommands: 18,
   });
 
   const targetedRaw: CheckPhysicalRawEvidence[] = [];
@@ -195,7 +200,7 @@ export async function runCheckPhysicalPilotV4(input: RunCheckPhysicalPilotV4Inpu
   if (evidencePlan.requests.length > 0 && !input.cancellation.isCancelled) {
     const plan = buildTargetedPlan(base.protocol, evidencePlan);
     if (plan.status === 'BLOCKED') {
-      targetedLimitations.push(...plan.blockedProposals.map(item => `v4.1-targeted:${item.semanticId}:${item.reason}`));
+      targetedLimitations.push(...plan.blockedProposals.map(item => `v5-adaptive:${item.semanticId}:${item.reason}`));
     } else {
       input.onStage?.('RUNNING_TARGETED_EVIDENCE');
       const executor = new RealCheckPlannedExecutor(
@@ -209,7 +214,7 @@ export async function runCheckPhysicalPilotV4(input: RunCheckPhysicalPilotV4Inpu
       );
       targetedEvidenceScan = await runDiagnosticScan({ plan, executor });
       targetedLimitations.push(...targetedEvidenceScan.limitations);
-      targetedLimitations.push(...plan.blockedProposals.map(item => `v4.1-targeted:${item.semanticId}:${item.reason}`));
+      targetedLimitations.push(...plan.blockedProposals.map(item => `v5-adaptive:${item.semanticId}:${item.reason}`));
     }
   }
 
@@ -219,10 +224,13 @@ export async function runCheckPhysicalPilotV4(input: RunCheckPhysicalPilotV4Inpu
     ...(base.directObservationScan?.mode01DirectResults ?? []),
     ...targetedResults,
   ]);
-  const decodedPidEvidence = Object.freeze(allMode01Evidence
+  const decodedBySourceAndPid = new Map<string, DecodedPidObservation>();
+  allMode01Evidence
     .map(decodePromotedMode01Observation)
-    .filter((value): value is DecodedPidObservation => Boolean(value)));
-  const readiness = targetedResults
+    .filter((value): value is DecodedPidObservation => Boolean(value))
+    .forEach(value => decodedBySourceAndPid.set(`${value.sourceEndpointId ?? 'UNATTRIBUTED'}:${value.pid}`, value));
+  const decodedPidEvidence = Object.freeze([...decodedBySourceAndPid.values()]);
+  const readiness = allMode01Evidence
     .map(decodePid0101Readiness)
     .find((value): value is DiagnosticReadinessObservation => Boolean(value)) ?? null;
   const concerns = buildDiagnosticConcerns(base.scan.dtcResults, decodedPidEvidence);
@@ -231,9 +239,9 @@ export async function runCheckPhysicalPilotV4(input: RunCheckPhysicalPilotV4Inpu
   const userLimitations = Object.freeze([
     ...baseUserLimitations,
     'Readiness is decoded from PID 0101 when a validated response is observed. NOT_READY does not mean a monitor failed.',
-    'Mode 06 and Freeze Frame remain gated until their physical/replay decoder contracts are promoted; v4.1 does not guess them.',
-    'The PID wallet contains broad reference knowledge, but Check executes only the small concern-driven read-only subset selected for this vehicle.',
-    ...(capabilityScope.limitation ? ['Multiple capability responses are kept separate. AutoPulse does not union their advertised PIDs into vehicle-wide support.'] : []),
+    'Mode 06 and Freeze Frame remain gated until their decoder/replay contracts are promoted; adaptive Check does not guess them.',
+    'The PID wallet contains broad reference knowledge. Check executes a bounded adaptive standard-OBD snapshot plus DTC-driven enrichment, never a blind wallet sweep.',
+    ...(capabilityScope.limitation ? ['Multiple capability responses are kept separate. AutoPulse does not union their advertised PIDs into vehicle-wide support; the bounded fallback remains explicitly unadvertised evidence.'] : []),
   ]);
   const technicalLimitations = Object.freeze([...base.technicalLimitations, ...targetedLimitations]);
   const limitations = Object.freeze([...technicalLimitations, ...userLimitations]);
