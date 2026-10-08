@@ -2,6 +2,7 @@ import {
   DEFAULT_MOTION_POLICY,
   hasUsableMotionEvidence,
   initialMotionState,
+  requiresLowDistractionSurface,
   resolveMotionState,
   type MotionEvidence,
 } from '../MotionStatePolicy';
@@ -19,6 +20,25 @@ describe('MotionStatePolicy', () => {
     const initial = initialMotionState(1_000);
     expect(initial.state).toBe('UNKNOWN');
     expect(resolveMotionState(initial, [], 2_000).state).toBe('UNKNOWN');
+  });
+
+  it('does not equate startup UNKNOWN with driving', () => {
+    const initial = initialMotionState(1_000);
+    expect(requiresLowDistractionSurface(initial, false)).toBe(false);
+
+    const movingCandidate = resolveMotionState(initial, [ecu(20, 1_100)], 1_100);
+    expect(movingCandidate.state).toBe('UNKNOWN');
+    expect(movingCandidate.reason).toBe('MOVING_CANDIDATE');
+    expect(requiresLowDistractionSurface(movingCandidate, false)).toBe(true);
+
+    const lostAfterMoving = resolveMotionState(
+      { ...movingCandidate, state: 'MOVING' as const },
+      [],
+      2_000,
+    );
+    expect(lostAfterMoving.state).toBe('UNKNOWN');
+    expect(requiresLowDistractionSurface(lostAfterMoving, true)).toBe(true);
+    expect(requiresLowDistractionSurface(lostAfterMoving, false)).toBe(false);
   });
 
   it('only reports motion evidence unavailable when evidence is actually missing', () => {
