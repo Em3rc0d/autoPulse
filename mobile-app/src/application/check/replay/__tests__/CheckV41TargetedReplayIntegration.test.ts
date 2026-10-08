@@ -5,9 +5,9 @@ import type { DiagnosticReplayFixture } from '../DiagnosticReplayFixture';
 import { runDiagnosticScan } from '../DiagnosticScanEngine';
 
 const readinessFixture: DiagnosticReplayFixture = {
-  fixtureId: 'check-v4.1-targeted-0101-synthetic',
+  fixtureId: 'check-v5-adaptive-0101-synthetic',
   protocol: 'ISO_14230_KWP',
-  provenance: 'SYNTHETIC_NOT_PHYSICAL_CERTIFICATION: CHECK v4.1 planner-to-executor authorization regression',
+  provenance: 'SYNTHETIC_NOT_PHYSICAL_CERTIFICATION: CHECK v5 adaptive planner-to-executor authorization regression',
   startedAt: 1000,
   scripts: [{
     semanticId: 'check.obd.mode01.observe.01',
@@ -33,14 +33,14 @@ const readinessFixture: DiagnosticReplayFixture = {
 
 function readinessPlan() {
   return buildDiagnosticScanPlan({
-    planId: 'check-v4.1-targeted-0101',
+    planId: 'check-v5-adaptive-0101',
     createdAt: readinessFixture.startedAt,
     protocol: readinessFixture.protocol,
     registry: CHECK_CORE_DESCRIPTOR_REGISTRY_V3,
     proposals: [{
       semanticId: 'check.obd.mode01.observe.01',
       required: true,
-      rationaleEvidenceIds: ['planner:check-evidence-planner/v2', 'bounded-fallback'],
+      rationaleEvidenceIds: ['planner:check-evidence-planner/v3', 'bounded-fallback'],
     }],
     budget: {
       maxCommands: 1,
@@ -48,13 +48,13 @@ function readinessPlan() {
       maxBytesPerResponse: 64,
       maxElapsedMs: 5000,
       minInterCommandDelayMs: 0,
-      provenance: 'v4.1 targeted replay integration',
+      provenance: 'v5 adaptive replay integration',
     },
     retryPolicy: {
       maxRetries: 0,
       retryableOutcomes: [],
       responsePending: { maxExtensions: 0, extensionMs: 100 },
-      provenance: 'v4.1 targeted replay integration',
+      provenance: 'v5 adaptive replay integration',
     },
     deadlinePolicy: {
       overallDeadlineMs: 5000,
@@ -63,12 +63,12 @@ function readinessPlan() {
         DTC_CORE: 5000,
         TARGETED_PID_ACQUISITION: 4000,
       },
-      provenance: 'v4.1 targeted replay integration',
+      provenance: 'v5 adaptive replay integration',
     },
   });
 }
 
-describe('CHECK v4.1 targeted planner → executor integration', () => {
+describe('CHECK v5 adaptive planner → executor integration', () => {
   it('executes canonical 0101 exactly once and preserves it as direct evidence', async () => {
     const plan = readinessPlan();
     expect(plan.status).toBe('READY');
