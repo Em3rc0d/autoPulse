@@ -420,9 +420,12 @@ function DriverLiveSessionContent({
   }, [voiceAlert?.key, voiceAlert?.severity, preferences, terminalOutcome]);
 
   useEffect(() => {
-    if (motion.state === 'MOVING') setDrivingSafeLatched(true);
-    else if (motion.state === 'PARKED') setDrivingSafeLatched(false);
-  }, [motion.state]);
+    if (motion.state === 'MOVING' || motion.reason.startsWith('MOVING_CANDIDATE')) {
+      setDrivingSafeLatched(true);
+    } else if (motion.state === 'PARKED') {
+      setDrivingSafeLatched(false);
+    }
+  }, [motion.state, motion.reason]);
 
   // Startup UNKNOWN is not treated as "driving" anymore. Once movement is
   // observed, however, low-distraction remains latched through temporary loss
