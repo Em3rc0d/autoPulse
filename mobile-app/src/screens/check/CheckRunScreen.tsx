@@ -13,6 +13,7 @@ import {
 } from '../../application/check/DiagnosticCheckReportService';
 import {
   runCheckPhysicalPilotV4,
+  type CheckAdaptiveProgress,
   type CheckPhysicalPilotStageV4,
   type CheckPhysicalPilotV4Result,
 } from '../../application/check/live/CheckPhysicalPilotV4';
@@ -95,6 +96,7 @@ export default function CheckRunScreen() {
   const workspaceId = context?.defaultWorkspaceId as string | undefined;
   const [uiState, setUiState] = useState<UiState>('IDLE');
   const [stage, setStage] = useState<CheckPhysicalPilotStageV4 | null>(null);
+  const [adaptiveProgress, setAdaptiveProgress] = useState<CheckAdaptiveProgress>({ selected: 0, completed: 0 });
   const [result, setResult] = useState<CheckPhysicalPilotV4Result | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showTechnical, setShowTechnical] = useState(false);
@@ -128,6 +130,7 @@ export default function CheckRunScreen() {
         connectionHandleId,
         cancellation: cancellationRef.current,
         onStage: setStage,
+        onAdaptiveProgress: setAdaptiveProgress,
       });
     } finally {
       // A failed attempt must not leave an ElmAccumulator monitor subscribed.
@@ -161,6 +164,7 @@ export default function CheckRunScreen() {
     setResult(null);
     setSealedReport(null);
     setShowTechnical(false);
+    setAdaptiveProgress({ selected: 0, completed: 0 });
     setStage('PREPARING_ADAPTER');
     setUiState('RUNNING');
     cancellationRef.current = new CheckPilotCancellationToken();
@@ -274,6 +278,21 @@ export default function CheckRunScreen() {
           <View style={styles.panel}>
             <ActivityIndicator size="large" color="#4ade80" />
             <Text style={styles.panelTitle}>{uiState === 'CANCELLING' ? 'Cancelling safely…' : stage ? stageLabel[stage] : 'Running Check…'}</Text>
+            {stage === 'RUNNING_TARGETED_EVIDENCE' && adaptiveProgress.selected > 0 ? (
+              <View style={styles.progressBlock}>
+                <View style={styles.progressTrack}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      { width: `${Math.round((adaptiveProgress.completed / adaptiveProgress.selected) * 100)}%` },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.progressText}>
+                  {adaptiveProgress.completed} / {adaptiveProgress.selected} {t('adaptive reads completed','lecturas adaptativas completadas')}
+                </Text>
+              </View>
+            ) : null}
             <Text style={styles.body}>{t('Serial · bounded · adaptive · descriptor-gated · no blind PID sweep','Serial · acotado · adaptativo · descriptor-gated · sin barrido ciego de PIDs')}</Text>
             {uiState === 'RUNNING' ? <TouchableOpacity style={styles.secondary} onPress={cancel}><Text style={styles.secondaryText}>{t('Cancel Check','Cancelar Check')}</Text></TouchableOpacity> : null}
           </View>
@@ -423,6 +442,10 @@ const styles = StyleSheet.create({
   content: { padding: 16, paddingBottom: 72 },
   panel: { backgroundColor: '#121b20', borderWidth: 1, borderColor: '#2a363d', borderRadius: 16, padding: 15, marginBottom: 12 },
   coveragePanel: { backgroundColor: '#101d22', borderWidth: 1, borderColor: '#1f4b5b', borderRadius: 16, padding: 15, marginBottom: 12 },
+  progressBlock: { width: '100%', marginTop: 14, marginBottom: 10 },
+  progressTrack: { width: '100%', height: 6, borderRadius: 999, overflow: 'hidden', backgroundColor: '#1e293b' },
+  progressFill: { height: '100%', borderRadius: 999, backgroundColor: '#4ade80' },
+  progressText: { color: '#94a3b8', fontSize: 10, marginTop: 7, textAlign: 'center', fontWeight: '700' },
   sealedPanel: { backgroundColor: '#0c2317', borderWidth: 1, borderColor: '#166534', borderRadius: 16, padding: 15, marginBottom: 12 },
   sealedTitle: { color: '#86efac', fontSize: 12, fontWeight: '900', letterSpacing: 1.1 },
   hash: { color: '#93c5fd', fontSize: 9, lineHeight: 15, marginTop: 10, fontFamily: 'monospace' },
