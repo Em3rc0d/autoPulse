@@ -9,6 +9,7 @@ import {
   type DiagnosticCheckReportResult,
 } from '../../application/check/DiagnosticCheckReportService';
 import { formatDecodedPidObservation } from '../../application/check/intelligence/Mode01ValueDecoder';
+import { CHECK_V4_PID_WALLET } from '../../application/check/intelligence/PidWallet';
 import { uiText, useUiLanguage } from '../../application/localization/UiLanguage';
 
 function dtcCodes(result: DiagnosticCheckReportResult): string[] {
@@ -88,10 +89,12 @@ export default function DiagnosticCheckReportScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>{t('Execution','Ejecución')}</Text>
           <Row label={t('Protocol','Protocolo')} value={snapshot.protocol} />
-          <Row label={t('Pilot','Piloto')} value={snapshot.pilotVersion} />
+          <Row label={t('Check engine','Motor de Check')} value={snapshot.pilotVersion} />
           <Row label={t('Core commands','Comandos core')} value={String(snapshot.execution.coreCommandsIssued)} />
-          <Row label={t('Targeted selected','Seleccionados')} value={String(snapshot.execution.targetedCommandsSelected)} />
-          <Row label={t('Targeted executed','Ejecutados')} value={String(snapshot.execution.targetedCommandsIssued)} />
+          <Row label={t('Adaptive selected','Adaptativos seleccionados')} value={String(snapshot.execution.targetedCommandsSelected)} />
+          <Row label={t('Adaptive executed','Adaptativos ejecutados')} value={String(snapshot.execution.targetedCommandsIssued)} />
+          <Row label={t('Observed PID values','Valores PID observados')} value={String(snapshot.pidEvidence.length)} />
+          <Row label={t('Promoted PID readers','Lectores PID promovidos')} value={String(CHECK_V4_PID_WALLET.filter(item => item.executableInCheckV4).length)} />
           <Row label={t('Scan state','Estado scan')} value={snapshot.execution.scanState} />
         </View>
 
@@ -111,6 +114,12 @@ export default function DiagnosticCheckReportScreen() {
               {snapshot.readiness.monitors.map(item => <Row key={item.id} label={item.label} value={item.state} />)}
             </>
           ) : <Text style={styles.muted}>{t('Readiness was not established from validated PID 0101 evidence.','Readiness no fue establecido mediante evidencia validada del PID 0101.')}</Text>}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{t('Adaptive ECU snapshot','Snapshot ECU adaptativo')}</Text>
+          <Text style={styles.body}>{t('This sealed snapshot preserves only values actually observed during the bounded read-only scan. Missing signals are not treated as zero or healthy.','Este snapshot sellado conserva solo valores realmente observados durante el scan acotado de solo lectura. Señales ausentes no se tratan como cero ni saludables.')}</Text>
+          <Text style={styles.meta}>{CHECK_V4_PID_WALLET.length} reference PIDs · {CHECK_V4_PID_WALLET.filter(item => item.executableInCheckV4).length} promoted readers</Text>
         </View>
 
         <View style={styles.card}>
