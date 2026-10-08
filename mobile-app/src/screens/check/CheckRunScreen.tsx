@@ -41,8 +41,8 @@ const stageLabel: Record<CheckPhysicalPilotStageV4, string> = {
   RUNNING_STANDARD_SCAN: 'Reading standard ECU diagnostic evidence',
   RUNNING_DIRECT_PID_CORROBORATION: 'Corroborating exact Mode 01 observations',
   SEALING_PILOT_RESULT: 'Sealing core diagnostic evidence',
-  PLANNING_TARGETED_EVIDENCE: 'Selecting relevant ECU evidence',
-  RUNNING_TARGETED_EVIDENCE: 'Reading targeted diagnostic evidence',
+  PLANNING_TARGETED_EVIDENCE: 'Selecting adaptive read-only evidence',
+  RUNNING_TARGETED_EVIDENCE: 'Reading adaptive vehicle data',
   CORRELATING_DIAGNOSTIC_EVIDENCE: 'Correlating ECU evidence',
 };
 
