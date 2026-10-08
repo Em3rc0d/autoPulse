@@ -1,7 +1,8 @@
 import type { CheckPhysicalPilotV4Result } from './live/CheckPhysicalPilotV4';
 import type { VehicleCheckVehicleIdentity } from './VehicleCheckReport';
+import { CHECK_V4_PID_WALLET } from './intelligence/PidWallet';
 
-export const DIAGNOSTIC_CHECK_SCHEMA_VERSION = 'autopulse.diagnostic-check/v1' as const;
+export const DIAGNOSTIC_CHECK_SCHEMA_VERSION = 'autopulse.diagnostic-check/v2' as const;
 
 export interface DiagnosticCheckSnapshot {
   readonly schema: typeof DIAGNOSTIC_CHECK_SCHEMA_VERSION;
@@ -20,6 +21,9 @@ export interface DiagnosticCheckSnapshot {
     readonly targetedCommandsSelected: number;
     readonly targetedCommandsIssued: number;
     readonly targetedScanState: CheckPhysicalPilotV4Result['scan']['state'] | 'NOT_RUN';
+    readonly plannerVersion: CheckPhysicalPilotV4Result['targetedEvidencePlan']['version'];
+    readonly referencePidCount: number;
+    readonly promotedPidReaderCount: number;
   };
   readonly capabilityAssessment: CheckPhysicalPilotV4Result['capabilityAssessment'];
   readonly dtcResults: CheckPhysicalPilotV4Result['scan']['dtcResults'];
@@ -27,7 +31,10 @@ export interface DiagnosticCheckSnapshot {
   readonly pidEvidence: CheckPhysicalPilotV4Result['decodedPidEvidence'];
   readonly concerns: CheckPhysicalPilotV4Result['concerns'];
   readonly rawEvidence: CheckPhysicalPilotV4Result['rawEvidence'];
+  /** Human-facing limitations safe for the normal report surface. */
   readonly limitations: readonly string[];
+  /** Preserved engine/protocol detail; render only behind technical disclosure. */
+  readonly technicalLimitations: readonly string[];
 }
 
 export interface StoredDiagnosticCheckReport {
@@ -71,6 +78,9 @@ export function buildDiagnosticCheckSnapshot(input: {
       targetedCommandsSelected: input.result.targetedEvidencePlan.requests.length,
       targetedCommandsIssued,
       targetedScanState: input.result.targetedEvidenceScan?.state ?? 'NOT_RUN',
+      plannerVersion: input.result.targetedEvidencePlan.version,
+      referencePidCount: CHECK_V4_PID_WALLET.length,
+      promotedPidReaderCount: CHECK_V4_PID_WALLET.filter(item => item.executableInCheckV4).length,
     }),
     capabilityAssessment: input.result.capabilityAssessment,
     dtcResults: Object.freeze([...input.result.scan.dtcResults]),
@@ -78,6 +88,7 @@ export function buildDiagnosticCheckSnapshot(input: {
     pidEvidence: Object.freeze([...input.result.decodedPidEvidence]),
     concerns: Object.freeze([...input.result.concerns]),
     rawEvidence: Object.freeze([...input.result.rawEvidence]),
-    limitations: Object.freeze([...input.result.limitations]),
+    limitations: Object.freeze([...input.result.userLimitations]),
+    technicalLimitations: Object.freeze([...input.result.technicalLimitations]),
   });
 }
