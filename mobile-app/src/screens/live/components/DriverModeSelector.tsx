@@ -5,6 +5,7 @@ import {
   DRIVING_MODE_PRESENTATION,
   resolveModeDecisionDimensions,
   type AvailableSignal,
+  type DecisionDimensionCoverage,
   type DrivingMode,
 } from '../../../domain/driver-intelligence';
 
@@ -15,6 +16,12 @@ interface Props {
   disabled?: boolean;
   compact?: boolean;
 }
+
+const coverageColor = (coverage: DecisionDimensionCoverage) => {
+  if (coverage === 'COVERED') return '#4ade80';
+  if (coverage === 'PARTIAL') return '#f59e0b';
+  return '#64748b';
+};
 
 const modeState = (
   mode: DrivingMode,
@@ -96,6 +103,20 @@ export function DriverModeSelector({ selectedMode, availableSignals, onSelectMod
           );
         })}
       </View>
+
+      {dimensions.length > 0 ? (
+        <View style={styles.dimensionStrip}>
+          {dimensions.map(dimension => (
+            <View key={dimension.id} style={styles.dimensionChip} testID={`decision-dimension-${dimension.id.toLowerCase()}`}>
+              <View style={[styles.dimensionDot, { backgroundColor: coverageColor(dimension.coverage) }]} />
+              <Text numberOfLines={1} style={styles.dimensionLabel}>{dimension.label}</Text>
+              <Text style={[styles.dimensionState, { color: coverageColor(dimension.coverage) }]}>
+                {dimension.coverage === 'COVERED' ? 'READY' : 'PARTIAL'}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -127,6 +148,11 @@ const styles = StyleSheet.create({
   modeIcon: { color: '#94a3b8', fontSize: 11, lineHeight: 12 },
   modeLabel: { color: '#e5e7eb', fontSize: 7.5, fontFamily: 'Inter_700Bold', marginTop: 2, maxWidth: '100%' },
   modeTextActive: { color: '#0e1417' },
+  dimensionStrip: { paddingTop: 7, flexDirection: 'row', flexWrap: 'wrap', gap: 5 },
+  dimensionChip: { minHeight: 24, maxWidth: '100%', flexDirection: 'row', alignItems: 'center', borderRadius: 999, borderWidth: 1, borderColor: '#263239', backgroundColor: '#11191d', paddingHorizontal: 7 },
+  dimensionDot: { width: 5, height: 5, borderRadius: 3, marginRight: 5 },
+  dimensionLabel: { color: '#cbd5e1', fontSize: 8, fontFamily: 'Inter_500Medium' },
+  dimensionState: { marginLeft: 4, fontSize: 7, fontFamily: 'SpaceMono_700Bold', letterSpacing: 0.2 },
   compactRow: { minHeight: 36, flexDirection: 'row', alignItems: 'center', gap: 7 },
   compactEyebrow: { color: '#64748b', fontSize: 8, fontFamily: 'Inter_700Bold', letterSpacing: 1 },
   compactButton: { flex: 1, height: 32, flexDirection: 'row', alignItems: 'center', borderRadius: 9, borderWidth: 1, borderColor: '#2a3439', backgroundColor: '#151d21', paddingHorizontal: 9 },
