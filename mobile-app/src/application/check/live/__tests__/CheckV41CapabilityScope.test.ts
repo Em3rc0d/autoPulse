@@ -70,7 +70,7 @@ describe('CHECK v4.1 capability planning scope', () => {
     const scoped = capabilityPlanningScopeFromBase(base(assessment));
     expect(scoped.advertisedPids).toEqual([]);
     expect(scoped.capabilityInconclusive).toBe(true);
-    expect(scoped.limitation).toBe('v4.1-capability-scope:MULTI_RESPONSE_NO_GLOBAL_PID_UNION');
+    expect(scoped.limitation).toBe('v5-capability-scope:MULTI_RESPONSE_NO_GLOBAL_PID_UNION');
   });
 
   it('also refuses a partial multi-response set rather than trusting the sole valid responder globally', () => {
