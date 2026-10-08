@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, Vibration, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRoute } from '@react-navigation/native';
 import LiveSessionScreen from './LiveSessionScreen';
 import { DriverModeSelector } from './components/DriverModeSelector';
@@ -21,6 +22,7 @@ import {
 import { loadVehicleDocuments } from '../../application/driver-intelligence/VehicleDocumentPersistence';
 import { DEFAULT_DRIVER_PREFERENCES, loadDriverPreferences, type DriverPreferences } from '../../application/settings/DriverPreferences';
 import type { LiveSessionTerminalOutcome } from '../../application/live/RealLiveSessionController';
+import type { LiveEcuTruthPresentation } from '../../application/live/LiveEcuTruth';
 import {
   evaluateDriverAdvisories,
   vehicleHealthFromCompatibility,
@@ -170,6 +172,7 @@ function DrivingPresentationSurface({
   presentation,
   voiceEnabled,
   language,
+  ecuTruth,
 }: {
   alert: DriverAlertDefinition | null;
   alertEpisode: AlertEpisode;
@@ -178,23 +181,38 @@ function DrivingPresentationSurface({
   presentation: DrivingModePresentation;
   voiceEnabled: boolean;
   language: VoiceLanguage;
+  ecuTruth: LiveEcuTruthPresentation | null;
 }) {
   const unresolved = alertEpisode.state === 'UNRESOLVED';
   const severity = unresolved ? alertEpisode.peakSeverity : alert?.severity;
-  const motionDataLimited = motionState === 'UNKNOWN' && !motionEvidenceAvailable;
-  const motionStateConfirming = motionState === 'UNKNOWN' && motionEvidenceAvailable;
-  const visualSeverity = severity ?? (motionDataLimited ? 'S1_ADVISORY' : undefined);
+  const ecuWaiting = ecuTruth?.state === 'WAITING_FOR_FIRST_ECU_SAMPLE';
+  const ecuDelayed = ecuTruth?.state === 'ECU_DATA_DELAYED';
+  const ecuRecovering = ecuTruth?.state === 'CONNECTION_RECOVERING';
+  const ecuDegraded = ecuTruth?.state === 'RECORDING_DEGRADED';
+  const ecuUnavailable = ecuWaiting || ecuDelayed || ecuRecovering || ecuDegraded;
+  const motionDataLimited = !ecuUnavailable && motionState === 'UNKNOWN' && !motionEvidenceAvailable;
+  const motionStateConfirming = !ecuUnavailable && motionState === 'UNKNOWN' && motionEvidenceAvailable;
+  const visualSeverity = severity
+    ?? (ecuDegraded ? 'S2_ATTENTION' : ecuDelayed || ecuRecovering ? 'S2_ATTENTION' : ecuWaiting || motionDataLimited ? 'S1_ADVISORY' : undefined);
   const tone = toneForSeverity(visualSeverity);
   const headline = alert
     ? driverAlertPhrase(alert.key, language).replace(/\.$/, '')
     : unresolved
       ? (language === 'es-ES' ? 'CONDICIÓN SIN RESOLVER' : 'CONDITION UNRESOLVED')
-      : motionDataLimited
-        ? (language === 'es-ES' ? 'DATOS DE MOVIMIENTO LIMITADOS' : 'MOTION DATA LIMITED')
-        : motionStateConfirming
-          ? (language === 'es-ES' ? 'CONFIRMANDO MOVIMIENTO' : 'MOTION CONFIRMING')
-          : (language === 'es-ES' ? 'NORMAL' : 'NORMAL');
-  const icon = alert?.icon ?? (unresolved || motionDataLimited ? '▲' : '●');
+      : ecuRecovering
+        ? (language === 'es-ES' ? 'RECONECTANDO ECU' : 'RECONNECTING ECU')
+        : ecuDelayed
+          ? (language === 'es-ES' ? 'DATOS DEL VEHÍCULO NO DISPONIBLES' : 'VEHICLE DATA UNAVAILABLE')
+          : ecuWaiting
+            ? (language === 'es-ES' ? 'ESPERANDO DATOS ECU' : 'WAITING FOR ECU DATA')
+            : ecuDegraded
+              ? (language === 'es-ES' ? 'TELEMETRÍA DEGRADADA' : 'TELEMETRY DEGRADED')
+              : motionDataLimited
+                ? (language === 'es-ES' ? 'DATOS DE MOVIMIENTO LIMITADOS' : 'MOTION DATA LIMITED')
+                : motionStateConfirming
+                  ? (language === 'es-ES' ? 'CONFIRMANDO MOVIMIENTO' : 'MOTION CONFIRMING')
+                  : (language === 'es-ES' ? 'NORMAL' : 'NORMAL');
+  const icon = alert?.icon ?? (unresolved || ecuUnavailable || motionDataLimited ? '▲' : '●');
   const secondaryA = presentation.stateFirst ? presentation.primary : presentation.secondaryA;
   const secondaryB = presentation.stateFirst ? presentation.secondaryA : presentation.secondaryB;
   const fullSafetyOverride = severity === 'S3_CRITICAL' || unresolved && alertEpisode.peakSeverity === 'S3_CRITICAL';
@@ -206,11 +224,13 @@ function DrivingPresentationSurface({
         <View style={styles.drivingStateCopy}>
           <Text numberOfLines={2} adjustsFontSizeToFit style={[styles.drivingHeadline, { color: tone.text }]}>{headline}</Text>
           <Text style={styles.drivingStateMeta}>
-            {motionDataLimited
-              ? (language === 'es-ES' ? 'MOVIMIENTO DESCONOCIDO · ' : 'MOTION UNKNOWN · ')
-              : motionStateConfirming
-                ? (language === 'es-ES' ? 'EVIDENCIA RESTAURADA · ' : 'EVIDENCE RESTORED · ')
-                : ''}{presentation.readiness}
+            {ecuUnavailable
+              ? `${ecuTruth?.label ?? 'ECU STATUS'} · `
+              : motionDataLimited
+                ? (language === 'es-ES' ? 'MOVIMIENTO DESCONOCIDO · ' : 'MOTION UNKNOWN · ')
+                : motionStateConfirming
+                  ? (language === 'es-ES' ? 'EVIDENCIA RESTAURADA · ' : 'EVIDENCE RESTORED · ')
+                  : ''}{presentation.readiness}
           </Text>
         </View>
       </View>
@@ -229,6 +249,22 @@ function DrivingPresentationSurface({
         </View>
       )}
 
+      <View style={styles.drivingStatusStrip}>
+        <View style={styles.drivingStatusItem}>
+          <Text style={styles.drivingStatusLabel}>{language === 'es-ES' ? 'MODO' : 'MODE'}</Text>
+          <Text style={styles.drivingStatusValue}>{presentation.mode.replace('_', ' ')}</Text>
+        </View>
+        <View style={styles.drivingStatusDivider} />
+        <View style={styles.drivingStatusItem}>
+          <Text style={styles.drivingStatusLabel}>ECU</Text>
+          <Text style={styles.drivingStatusValue}>{ecuTruth?.state === 'LIVE_ECU_DATA' ? 'LIVE' : ecuTruth?.state === 'CONNECTION_RECOVERING' ? 'RECOVERING' : 'LIMITED'}</Text>
+        </View>
+        <View style={styles.drivingStatusDivider} />
+        <View style={styles.drivingStatusItem}>
+          <Text style={styles.drivingStatusLabel}>{language === 'es-ES' ? 'EVIDENCIA' : 'EVIDENCE'}</Text>
+          <Text style={styles.drivingStatusValue}>{presentation.readiness}</Text>
+        </View>
+      </View>
       <Text style={styles.drivingHint}>
         {language === 'es-ES' ? 'Vista al camino' : 'Eyes on the road'} · {voiceEnabled ? (language === 'es-ES' ? 'alertas de voz activas' : 'voice alerts active') : (language === 'es-ES' ? 'alertas de voz desactivadas' : 'voice alerts off')}
       </Text>
@@ -280,6 +316,8 @@ function DriverLiveSessionContent({
   const [preferences, setPreferences] = useState<DriverPreferences>(DEFAULT_DRIVER_PREFERENCES);
   const [clock, setClock] = useState(() => Date.now());
   const [motion, setMotion] = useState(() => initialMotionState(Date.now()));
+  const [drivingSafeLatched, setDrivingSafeLatched] = useState(false);
+  const [ecuTruth, setEcuTruth] = useState<LiveEcuTruthPresentation | null>(null);
   const [alertEpisode, setAlertEpisode] = useState<AlertEpisode>(INACTIVE_ALERT_EPISODE);
   const { observations, selectedMode } = useDriverMode();
   const liveVoiceMemory = useRef<LiveDriverAlertMemory>({});
@@ -380,7 +418,17 @@ function DriverLiveSessionContent({
     });
   }, [voiceAlert?.key, voiceAlert?.severity, preferences, terminalOutcome]);
 
-  const lowDistraction = motion.state !== 'PARKED';
+  useEffect(() => {
+    if (motion.state === 'MOVING') setDrivingSafeLatched(true);
+    else if (motion.state === 'PARKED') setDrivingSafeLatched(false);
+  }, [motion.state]);
+
+  // Startup UNKNOWN is not treated as "driving" anymore. Once movement is
+  // observed, however, low-distraction remains latched through temporary loss
+  // of motion evidence until a sustained PARKED state is positively confirmed.
+  const lowDistraction = motion.state === 'MOVING'
+    || drivingSafeLatched
+    || motion.reason.startsWith('MOVING_CANDIDATE');
   const showCompactTerminal = Boolean(terminalOutcome && lowDistraction);
 
   return (
@@ -399,6 +447,7 @@ function DriverLiveSessionContent({
           presentation={presentation}
           voiceEnabled={preferences.voiceAlertsEnabled}
           language={preferences.voiceLanguage}
+          ecuTruth={ecuTruth}
         />
       ) : (
         <>
@@ -411,6 +460,7 @@ function DriverLiveSessionContent({
         <LiveSessionScreen
           supplement={!terminalOutcome ? <PhoneSensorBridge vehicleId={vehicleId} /> : null}
           onTerminalStateChange={setTerminalOutcome}
+          onEcuTruthChange={setEcuTruth}
         />
       </View>
     </View>
@@ -507,20 +557,22 @@ export default function DriverLiveSessionScreen() {
 
   if (!characterizationComplete) {
     return (
-      <View style={styles.characterizationContainer}>
-        <ActivityIndicator size="large" color="#10b981" />
-        <Text style={styles.characterizationTitle}>Checking vehicle…</Text>
-        <Text style={styles.characterizationText}>Read-only compatibility and diagnostic scan.</Text>
-      </View>
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.characterizationContainer}>
+          <ActivityIndicator size="large" color="#10b981" />
+          <Text style={styles.characterizationTitle}>Checking vehicle…</Text>
+          <Text style={styles.characterizationText}>Read-only compatibility and diagnostic scan.</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <DriverModeProvider supportedPids={supportedPids}>
         <DriverLiveSessionContent advisories={advisories} vehicleId={vehicleId} />
       </DriverModeProvider>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -558,5 +610,10 @@ const styles = StyleSheet.create({
   secondaryDivider: { width: 1, height: 34, backgroundColor: '#334155' },
   safetyOverrideFooter: { minHeight: 58, borderRadius: 15, borderWidth: 1, borderColor: '#7f1d1d', backgroundColor: '#1f1215', alignItems: 'center', justifyContent: 'center' },
   safetyOverrideText: { color: '#fca5a5', fontSize: 9, fontWeight: '900', letterSpacing: 1.2 },
-  drivingHint: { color: '#64748b', fontSize: 9, textAlign: 'center', marginTop: 10, letterSpacing: 0.3 },
+  drivingStatusStrip: { minHeight: 42, marginTop: 10, flexDirection: 'row', alignItems: 'center', borderRadius: 12, borderWidth: 1, borderColor: '#202a30', backgroundColor: '#0f171a' },
+  drivingStatusItem: { flex: 1, alignItems: 'center', paddingHorizontal: 4 },
+  drivingStatusDivider: { width: 1, height: 22, backgroundColor: '#263239' },
+  drivingStatusLabel: { color: '#475569', fontSize: 7, fontWeight: '900', letterSpacing: 0.9 },
+  drivingStatusValue: { color: '#cbd5e1', fontSize: 9, fontWeight: '900', marginTop: 2 },
+  drivingHint: { color: '#64748b', fontSize: 9, textAlign: 'center', marginTop: 8, letterSpacing: 0.3 },
 });
