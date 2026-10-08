@@ -13,14 +13,14 @@ const budget = {
   maxBytesPerResponse: 512,
   maxElapsedMs: 45000,
   minInterCommandDelayMs: 120,
-  provenance: 'CHECK-v4.1 safety integration test',
+  provenance: 'CHECK-v5 safety integration test',
 } as const;
 
 const retryPolicy = {
   maxRetries: 0,
   retryableOutcomes: [] as const,
   responsePending: { maxExtensions: 0, extensionMs: 1000 },
-  provenance: 'CHECK-v4.1 safety integration test',
+  provenance: 'CHECK-v5 safety integration test',
 } as const;
 
 const deadlinePolicy = {
@@ -30,10 +30,10 @@ const deadlinePolicy = {
     DTC_CORE: 45000,
     TARGETED_PID_ACQUISITION: 40000,
   },
-  provenance: 'CHECK-v4.1 safety integration test',
+  provenance: 'CHECK-v5 safety integration test',
 } as const;
 
-describe('CHECK v4.1 canonical Registry V3 safety authority', () => {
+describe('CHECK v5 canonical Registry V3 safety authority', () => {
   it.each(CHECK_V4_TARGETED_MODE01_PIDS)(
     'allows exact canonical PID 01%s on promoted standard OBD protocols and blocks UDS',
     pid => {
@@ -94,14 +94,14 @@ describe('CHECK v4.1 canonical Registry V3 safety authority', () => {
 
   it('turns the exact readiness semantic selected by the Logan fallback into an executable planned request', () => {
     const plan = buildDiagnosticScanPlan({
-      planId: 'check-v4.1-logan-readiness',
+      planId: 'check-v5-logan-readiness',
       createdAt: 1,
       protocol: 'ISO_14230_KWP',
       registry: CHECK_CORE_DESCRIPTOR_REGISTRY_V3,
       proposals: [{
         semanticId: 'check.obd.mode01.observe.01',
         required: true,
-        rationaleEvidenceIds: ['planner:check-evidence-planner/v2', 'bounded-fallback'],
+        rationaleEvidenceIds: ['planner:check-evidence-planner/v3', 'bounded-fallback'],
       }],
       budget,
       retryPolicy,
@@ -121,7 +121,7 @@ describe('CHECK v4.1 canonical Registry V3 safety authority', () => {
 
   it('never turns the V3 allowlist itself into a blind scan', () => {
     const plan = buildDiagnosticScanPlan({
-      planId: 'check-v4.1-bounded-selection',
+      planId: 'check-v5-bounded-selection',
       createdAt: 2,
       protocol: 'ISO_14230_KWP',
       registry: CHECK_CORE_DESCRIPTOR_REGISTRY_V3,
