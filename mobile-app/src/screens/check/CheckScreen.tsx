@@ -41,8 +41,8 @@ export default function CheckScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
           <View style={styles.notice}>
-            <Text style={styles.noticeTitle}>Physical pilot</Text>
-            <Text style={styles.noticeText}>Park the vehicle before starting. The first activated set is descriptor-gated standard OBD: PID capability plus DTC services supported by the proven protocol/parser path.</Text>
+            <Text style={styles.noticeTitle}>Adaptive read-only Check</Text>
+            <Text style={styles.noticeText}>Park before starting. AutoPulse reads standard DTC services, emissions readiness and a bounded vehicle-data snapshot selected from proven read-only PID decoders. It adapts to ECU evidence without sweeping the full PID wallet.</Text>
           </View>
 
           <Text style={styles.section}>Choose vehicle</Text>
