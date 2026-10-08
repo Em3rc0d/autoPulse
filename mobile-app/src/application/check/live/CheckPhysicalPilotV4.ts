@@ -263,15 +263,18 @@ export async function runCheckPhysicalPilotV4(input: RunCheckPhysicalPilotV4Inpu
     .filter((value): value is DecodedPidObservation => Boolean(value))
     .forEach(value => decodedBySourceAndPid.set(`${value.sourceEndpointId ?? 'UNATTRIBUTED'}:${value.pid}`, value));
   const decodedPidEvidence = Object.freeze([...decodedBySourceAndPid.values()]);
-  const readiness = allMode01Evidence
+  const readinessObservations = allMode01Evidence
     .map(decodePid0101Readiness)
-    .find((value): value is DiagnosticReadinessObservation => Boolean(value)) ?? null;
+    .filter((value): value is DiagnosticReadinessObservation => Boolean(value));
+  const readiness = readinessObservations.length === 1 ? readinessObservations[0] : null;
   const concerns = buildDiagnosticConcerns(base.scan.dtcResults, decodedPidEvidence);
 
   const baseUserLimitations = base.userLimitations.filter(item => !item.startsWith('Readiness, Mode 06 and Freeze Frame'));
   const userLimitations = Object.freeze([
     ...baseUserLimitations,
-    'Readiness is decoded from PID 0101 when a validated response is observed. NOT_READY does not mean a monitor failed.',
+    ...(readinessObservations.length > 1
+      ? ['Multiple PID 0101 readiness responses were observed. AutoPulse preserves them as technical evidence and does not collapse them into one vehicle-wide readiness claim.']
+      : ['Readiness is decoded from PID 0101 when one validated response is observed. NOT_READY does not mean a monitor failed.']),
     'Mode 06 and Freeze Frame remain gated until their decoder/replay contracts are promoted; adaptive Check does not guess them.',
     'The PID wallet contains broad reference knowledge. Check executes a bounded adaptive standard-OBD snapshot plus DTC-driven enrichment, never a blind wallet sweep.',
     ...(capabilityScope.limitation?.includes('MULTI_RESPONSE')
