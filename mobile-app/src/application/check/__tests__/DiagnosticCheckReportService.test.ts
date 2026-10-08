@@ -7,7 +7,7 @@ import { DiagnosticCheckReportService } from '../DiagnosticCheckReportService';
 
 function pilotResult(): any {
   return {
-    pilotVersion: 'check-physical-pilot/v4.1',
+    pilotVersion: 'check-adaptive/v5',
     protocol: 'ISO_14230_KWP',
     protocolEvidence: 'AUTO, ISO 14230-4',
     bootstrapStandardObdStatus: 'SUCCESS_DECODED',
@@ -27,7 +27,7 @@ function pilotResult(): any {
       }],
     },
     targetedEvidencePlan: {
-      version: 'check-evidence-planner/v2',
+      version: 'check-evidence-planner/v3',
       requests: [{ pid: '01' }, { pid: '06' }],
     },
     targetedEvidenceScan: { state: 'COMPLETE', usage: { commandsIssued: 2 } },
@@ -76,7 +76,9 @@ function pilotResult(): any {
       rawText: '43 03 01',
       observedResponseBytes: 3,
     }],
-    limitations: ['Read-only standard OBD evidence only'],
+    userLimitations: ['Read-only standard OBD evidence only'],
+    technicalLimitations: ['fixture technical limitation'],
+    limitations: ['fixture technical limitation', 'Read-only standard OBD evidence only'],
   };
 }
 
@@ -90,14 +92,19 @@ describe('DiagnosticCheckReportService', () => {
       generatedAt: 1234,
     });
 
-    expect(snapshot.schema).toBe('autopulse.diagnostic-check/v1');
+    expect(snapshot.schema).toBe('autopulse.diagnostic-check/v2');
     expect(snapshot.execution.targetedCommandsSelected).toBe(2);
     expect(snapshot.execution.targetedCommandsIssued).toBe(2);
+    expect(snapshot.execution.plannerVersion).toBe('check-evidence-planner/v3');
+    expect(snapshot.execution.referencePidCount).toBe(114);
+    expect(snapshot.execution.promotedPidReaderCount).toBeGreaterThan(10);
     expect(snapshot.dtcResults[0].codes[0].code).toBe('P0301');
     expect(snapshot.readiness?.confirmedDtcCount).toBe(1);
     expect(snapshot.pidEvidence[0].pid).toBe('06');
     expect(snapshot.concerns[0].causeConfidence).toBe('INSUFFICIENT');
     expect(snapshot.rawEvidence[0].rawText).toBe('43 03 01');
+    expect(snapshot.limitations).toEqual(['Read-only standard OBD evidence only']);
+    expect(snapshot.technicalLimitations).toEqual(['fixture technical limitation']);
   });
 
   it('persists, reloads and verifies the immutable snapshot', async () => {
