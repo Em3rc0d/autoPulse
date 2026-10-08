@@ -5,7 +5,7 @@ import { CHECK_MUTATING_OBD_SERVICES } from '../DiagnosticDescriptorRegistry';
  * Registry-wide invariant: adding a descriptor to canonical V3 must not silently
  * widen the runtime safety envelope.
  */
-describe('CHECK v4.1 Registry V3 invariants', () => {
+describe('CHECK v5 Registry V3 invariants', () => {
   it('contains only serial read-only standard OBD descriptors and no mutating service', () => {
     for (const descriptor of CHECK_CORE_DESCRIPTOR_REGISTRY_V3.descriptors) {
       expect(descriptor.requestKind).toBe('OBD_STANDARD');
