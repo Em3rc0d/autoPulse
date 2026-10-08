@@ -256,7 +256,11 @@ export async function runCheckPhysicalPilotV4(input: RunCheckPhysicalPilotV4Inpu
     'Readiness is decoded from PID 0101 when a validated response is observed. NOT_READY does not mean a monitor failed.',
     'Mode 06 and Freeze Frame remain gated until their decoder/replay contracts are promoted; adaptive Check does not guess them.',
     'The PID wallet contains broad reference knowledge. Check executes a bounded adaptive standard-OBD snapshot plus DTC-driven enrichment, never a blind wallet sweep.',
-    ...(capabilityScope.limitation ? ['Multiple capability responses are kept separate. AutoPulse does not union their advertised PIDs into vehicle-wide support; the bounded fallback remains explicitly unadvertised evidence.'] : []),
+    ...(capabilityScope.limitation?.includes('MULTI_RESPONSE')
+      ? ['Multiple capability responses are kept separate. AutoPulse does not union their advertised PIDs into vehicle-wide support; bounded fallback remains explicitly unadvertised evidence.']
+      : capabilityScope.limitation?.includes('CONTINUATION_ADVERTISED')
+        ? ['The first capability range advertised a continuation, but endpoint-safe chained capability discovery was not established in this run. Higher-range fallback observations remain direct evidence, not ECU-advertised support.']
+        : []),
   ]);
   const technicalLimitations = Object.freeze([...base.technicalLimitations, ...targetedLimitations]);
   const limitations = Object.freeze([...technicalLimitations, ...userLimitations]);
