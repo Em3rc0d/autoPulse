@@ -35,19 +35,21 @@ const deadlinePolicy = {
 
 describe('CHECK v4.1 canonical Registry V3 safety authority', () => {
   it.each(CHECK_V4_TARGETED_MODE01_PIDS)(
-    'allows exact canonical PID 01%s on KWP and only KWP',
+    'allows exact canonical PID 01%s on promoted standard OBD protocols and blocks UDS',
     pid => {
       const semanticId = `check.obd.mode01.observe.${pid}`;
-      expect(authorizeRegisteredDescriptor(
-        CHECK_CORE_DESCRIPTOR_REGISTRY_V3,
-        semanticId,
-        'ISO_14230_KWP',
-      )).toEqual(expect.objectContaining({ disposition: 'ALLOW' }));
+      for (const protocol of ['ISO_14230_KWP', 'ISO_15765_CAN', 'ISO_9141_2', 'SAE_J1850_PWM', 'SAE_J1850_VPW'] as const) {
+        expect(authorizeRegisteredDescriptor(
+          CHECK_CORE_DESCRIPTOR_REGISTRY_V3,
+          semanticId,
+          protocol,
+        )).toEqual(expect.objectContaining({ disposition: 'ALLOW' }));
+      }
 
       expect(authorizeRegisteredDescriptor(
         CHECK_CORE_DESCRIPTOR_REGISTRY_V3,
         semanticId,
-        'ISO_15765_CAN',
+        'UDS',
       )).toEqual(expect.objectContaining({
         disposition: 'BLOCK',
         reason: 'PROTOCOL_NOT_PROMOTED',
