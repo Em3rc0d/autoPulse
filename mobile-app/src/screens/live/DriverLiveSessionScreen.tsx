@@ -44,6 +44,7 @@ import {
 import {
   hasUsableMotionEvidence,
   initialMotionState,
+  requiresLowDistractionSurface,
   resolveMotionState,
   type MotionEvidence,
   type MotionState,
@@ -426,9 +427,7 @@ function DriverLiveSessionContent({
   // Startup UNKNOWN is not treated as "driving" anymore. Once movement is
   // observed, however, low-distraction remains latched through temporary loss
   // of motion evidence until a sustained PARKED state is positively confirmed.
-  const lowDistraction = motion.state === 'MOVING'
-    || drivingSafeLatched
-    || motion.reason.startsWith('MOVING_CANDIDATE');
+  const lowDistraction = requiresLowDistractionSurface(motion, drivingSafeLatched);
   const showCompactTerminal = Boolean(terminalOutcome && lowDistraction);
 
   return (
