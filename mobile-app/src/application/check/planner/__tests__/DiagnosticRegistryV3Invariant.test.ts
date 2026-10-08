@@ -1,5 +1,6 @@
 import { CHECK_CORE_DESCRIPTOR_REGISTRY_V3, CHECK_V4_TARGETED_MODE01_PIDS } from '../DiagnosticDescriptorRegistryV3';
 import { CHECK_MUTATING_OBD_SERVICES } from '../DiagnosticDescriptorRegistry';
+import { CHECK_V4_PID_WALLET } from '../../intelligence/PidWallet';
 
 /**
  * Registry-wide invariant: adding a descriptor to canonical V3 must not silently
@@ -15,6 +16,22 @@ describe('CHECK v5 Registry V3 invariants', () => {
       expect(descriptor.supportedProtocols).not.toContain('UNKNOWN');
       expect(descriptor.supportedProtocols).not.toContain('UDS');
     }
+  });
+
+  it('has one canonical exact descriptor for every promoted executable PID reader', () => {
+    const promotedPids = CHECK_V4_PID_WALLET
+      .filter(item => item.executableInCheckV4)
+      .map(item => item.pid)
+      .sort();
+
+    const registeredPids = CHECK_CORE_DESCRIPTOR_REGISTRY_V3.descriptors
+      .filter(descriptor => descriptor.service === '01' && descriptor.semanticId.startsWith('check.obd.mode01.observe.'))
+      .map(descriptor => descriptor.pid)
+      .filter((pid): pid is string => Boolean(pid))
+      .sort();
+
+    expect(registeredPids).toEqual(promotedPids);
+    expect(new Set(registeredPids).size).toBe(registeredPids.length);
   });
 
   it('keeps every adaptive Mode 01 descriptor read-only and limited to standard OBD protocols', () => {
