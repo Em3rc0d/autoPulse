@@ -51,6 +51,20 @@ export function hasUsableMotionEvidence(snapshot: MotionStateSnapshot): boolean 
     && snapshot.reason !== 'MOTION_EVIDENCE_UNAVAILABLE';
 }
 
+/**
+ * Startup UNKNOWN is not proof that the vehicle is moving. The low-distraction
+ * surface activates on positive moving evidence and remains latched through a
+ * temporary evidence dropout until PARKED is positively reconfirmed.
+ */
+export function requiresLowDistractionSurface(
+  snapshot: MotionStateSnapshot,
+  movingPreviouslyConfirmed: boolean,
+): boolean {
+  return snapshot.state === 'MOVING'
+    || movingPreviouslyConfirmed
+    || snapshot.reason.startsWith('MOVING_CANDIDATE');
+}
+
 const isUsable = (evidence: MotionEvidence, nowMs: number, policy: MotionPolicy) =>
   evidence.decisionable &&
   evidence.quality === 'VALID' &&
