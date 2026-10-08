@@ -67,6 +67,7 @@ const details: Readonly<Record<string, { name: string; unit?: string; families: 
   '2F': { name: 'Fuel tank level input', unit: '%', families: ['FUEL_DELIVERY','CONTEXT'], executable: true },
   '30': { name: 'Warm-ups since codes cleared', families: ['READINESS','CONTEXT'], executable: true },
   '31': { name: 'Distance since codes cleared', unit: 'km', families: ['READINESS','CONTEXT'], executable: true },
+  '33': { name: 'Barometric pressure', unit: 'kPa', families: ['AIR_METERING','CONTEXT'], executable: true },
   '3C': { name: 'Catalyst temperature Bank 1 Sensor 1', unit: '°C', families: ['CATALYST'], executable: true },
   '3D': { name: 'Catalyst temperature Bank 2 Sensor 1', unit: '°C', families: ['CATALYST'], executable: true },
   '3E': { name: 'Catalyst temperature Bank 1 Sensor 2', unit: '°C', families: ['CATALYST'], executable: true },
