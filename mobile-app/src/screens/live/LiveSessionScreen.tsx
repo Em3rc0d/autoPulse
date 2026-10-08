@@ -39,6 +39,7 @@ import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectio
 import {
   commandResultContainsValidEcuSample,
   deriveLiveEcuTruth,
+  type LiveEcuTruthPresentation,
 } from '../../application/live/LiveEcuTruth';
 import { speakDriverMessage } from '../../infrastructure/voice/AndroidDriverVoice';
 
@@ -47,9 +48,10 @@ const screenWidth = Dimensions.get('window').width;
 interface Props {
   supplement?: React.ReactNode;
   onTerminalStateChange?: (outcome: LiveSessionTerminalOutcome | null) => void;
+  onEcuTruthChange?: (truth: LiveEcuTruthPresentation) => void;
 }
 
-export default function LiveSessionScreen({ supplement, onTerminalStateChange }: Props = {}) {
+export default function LiveSessionScreen({ supplement, onTerminalStateChange, onEcuTruthChange }: Props = {}) {
   useKeepAwake();
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
@@ -60,6 +62,7 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
   const [dataPoints, setDataPoints] = useState<number[]>([]);
   const [hasValidEcuSample, setHasValidEcuSample] = useState(adapterMode !== 'REAL_BLE');
   const [firstEcuSampleAt, setFirstEcuSampleAt] = useState<number | null>(adapterMode !== 'REAL_BLE' ? Date.now() : null);
+  const [lastValidEcuSampleAt, setLastValidEcuSampleAt] = useState<number | null>(adapterMode !== 'REAL_BLE' ? Date.now() : null);
   const [sessionController, setSessionController] = useState<RealLiveSessionController | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [terminalOutcome, setTerminalOutcome] = useState<LiveSessionTerminalOutcome | null>(null);
@@ -237,8 +240,10 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
 
     controller.start((result) => {
       if (commandResultContainsValidEcuSample(result)) {
+        const observedAt = Date.now();
         setHasValidEcuSample(true);
-        setFirstEcuSampleAt(previous => previous ?? Date.now());
+        setFirstEcuSampleAt(previous => previous ?? observedAt);
+        setLastValidEcuSampleAt(observedAt);
       }
 
       if (result.status !== 'SUCCESS_DECODED') return;
@@ -303,8 +308,16 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
     hasValidEcuSample,
     elapsedMs: secondsElapsed * 1000,
     sessionError: terminalOutcome ? null : sessionError,
+    lastValidEcuSampleAt,
+    nowMs: Date.now(),
+    staleAfterMs: Math.max(8_000, Math.round(expectedSignalCycleMs * 2.5)),
   });
-  const waitingForFirstEcuSample = adapterMode === 'REAL_BLE' && !hasValidEcuSample;
+
+  useEffect(() => {
+    onEcuTruthChange?.(liveTruth);
+  }, [liveTruth.state, liveTruth.label, liveTruth.detail, liveTruth.tone, onEcuTruthChange]);
+
+  const waitingForFirstEcuSample = adapterMode === 'REAL_BLE' && liveTruth.state === 'WAITING_FOR_FIRST_ECU_SAMPLE';
   const statusLabel = terminalOutcome?.state === 'INTERRUPTED'
     ? 'SESSION INTERRUPTED'
     : terminalOutcome?.state === 'COMPLETED'
