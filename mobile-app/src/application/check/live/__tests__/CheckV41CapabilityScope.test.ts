@@ -30,11 +30,15 @@ describe('CHECK v4.1 capability planning scope', () => {
       detail: 'fixture',
     });
 
-    expect(capabilityPlanningScopeFromBase(base(assessment))).toEqual({
+    const scoped = capabilityPlanningScopeFromBase(base(assessment));
+    expect(scoped).toEqual(expect.objectContaining({
       advertisedPids: ['0101', '0105'],
       capabilityInconclusive: false,
       limitation: null,
-    });
+    }));
+    expect(scoped.knownUnsupportedPids).toContain('02');
+    expect(scoped.knownUnsupportedPids).not.toContain('01');
+    expect(scoped.knownUnsupportedPids).not.toContain('05');
   });
 
   it('keeps a single valid empty bitmap inconclusive for bounded direct probing', () => {
@@ -49,6 +53,7 @@ describe('CHECK v4.1 capability planning scope', () => {
 
     expect(capabilityPlanningScopeFromBase(base(assessment))).toEqual({
       advertisedPids: [],
+      knownUnsupportedPids: [],
       capabilityInconclusive: true,
       limitation: null,
     });
@@ -69,6 +74,7 @@ describe('CHECK v4.1 capability planning scope', () => {
 
     const scoped = capabilityPlanningScopeFromBase(base(assessment));
     expect(scoped.advertisedPids).toEqual([]);
+    expect(scoped.knownUnsupportedPids).toEqual([]);
     expect(scoped.capabilityInconclusive).toBe(true);
     expect(scoped.limitation).toBe('v5-capability-scope:MULTI_RESPONSE_NO_GLOBAL_PID_UNION');
   });
@@ -88,6 +94,26 @@ describe('CHECK v4.1 capability planning scope', () => {
 
     const scoped = capabilityPlanningScopeFromBase(base(assessment));
     expect(scoped.advertisedPids).toEqual([]);
+    expect(scoped.knownUnsupportedPids).toEqual([]);
     expect(scoped.capabilityInconclusive).toBe(true);
+  });
+
+  it('allows bounded probing beyond an advertised continuation without re-probing known-unsupported 01-20 PIDs', () => {
+    const assessment: CheckCapabilityAssessment = Object.freeze({
+      state: 'ADVERTISED',
+      observations: Object.freeze([observation(0, ['0101', '0105', '0120'], null)]),
+      validObservationCount: 1,
+      invalidObservationCount: 0,
+      unattributed: true,
+      detail: 'fixture',
+    });
+
+    const scoped = capabilityPlanningScopeFromBase(base(assessment));
+    expect(scoped.capabilityInconclusive).toBe(true);
+    expect(scoped.limitation).toBe('v5-capability-scope:CONTINUATION_ADVERTISED_BUT_NOT_ENDPOINT_TARGETED');
+    expect(scoped.knownUnsupportedPids).toContain('04');
+    expect(scoped.knownUnsupportedPids).not.toContain('01');
+    expect(scoped.knownUnsupportedPids).not.toContain('05');
+    expect(scoped.knownUnsupportedPids).not.toContain('20');
   });
 });
