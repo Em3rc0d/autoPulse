@@ -1,4 +1,4 @@
-import { CHECK_CORE_DESCRIPTOR_REGISTRY_V3 } from '../DiagnosticDescriptorRegistryV3';
+import { CHECK_CORE_DESCRIPTOR_REGISTRY_V3, CHECK_V4_TARGETED_MODE01_PIDS } from '../DiagnosticDescriptorRegistryV3';
 import { CHECK_MUTATING_OBD_SERVICES } from '../DiagnosticDescriptorRegistry';
 
 /**
@@ -17,16 +17,24 @@ describe('CHECK v4.1 Registry V3 invariants', () => {
     }
   });
 
-  it('keeps every v4-added targeted Mode 01 descriptor restricted to KWP', () => {
-    const targetedV4 = CHECK_CORE_DESCRIPTOR_REGISTRY_V3.descriptors.filter(
-      descriptor => descriptor.descriptorId.startsWith('check-v4-mode01-observe-'),
+  it('keeps every adaptive Mode 01 descriptor read-only and limited to standard OBD protocols', () => {
+    const targeted = CHECK_CORE_DESCRIPTOR_REGISTRY_V3.descriptors.filter(
+      descriptor => descriptor.descriptorId.startsWith('check-v5-mode01-observe-'),
     );
-    expect(targetedV4).toHaveLength(10);
-    for (const descriptor of targetedV4) {
+    expect(targeted).toHaveLength(CHECK_V4_TARGETED_MODE01_PIDS.length);
+    for (const descriptor of targeted) {
       expect(descriptor.service).toBe('01');
       expect(descriptor.expectedResponseService).toBe('41');
       expect(descriptor.stage).toBe('TARGETED_PID_ACQUISITION');
-      expect(descriptor.supportedProtocols).toEqual(['ISO_14230_KWP']);
+      expect(descriptor.supportedProtocols).toEqual([
+        'ISO_15765_CAN',
+        'ISO_14230_KWP',
+        'ISO_9141_2',
+        'SAE_J1850_PWM',
+        'SAE_J1850_VPW',
+      ]);
+      expect(descriptor.supportedProtocols).not.toContain('UDS');
+      expect(descriptor.supportedProtocols).not.toContain('UNKNOWN');
     }
   });
 });
