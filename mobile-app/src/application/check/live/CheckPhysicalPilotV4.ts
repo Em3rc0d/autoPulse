@@ -91,7 +91,7 @@ function collectReceiptEvidence(
 
 /**
  * Capability evidence remains response-scoped. A single normalized capability
- * response may inform the functional pilot selection. Two or more responses
+ * response may inform the adaptive Check selection. Two or more responses
  * are never unioned: until physical endpoint targeting is promoted, the
  * evidence planner falls back to its small bounded read-only set instead.
  */
@@ -174,7 +174,7 @@ function buildTargetedPlan(protocol: DiagnosticProtocol, evidencePlan: Diagnosti
       provenance: `${V4_PROVENANCE}; no automatic resend`,
     },
     deadlinePolicy: {
-      overallDeadlineMs: 45000,
+      overallDeadlineMs: 75000,
       stageDeadlineMs: {
         CAPABILITY_DISCOVERY: 75000,
         DTC_CORE: 75000,
