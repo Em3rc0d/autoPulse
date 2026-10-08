@@ -19,7 +19,7 @@ const observation = (
   ...(outcome === 'INVALID' ? { limitation: 'fixture invalid capability response' } : {}),
 });
 
-describe('CHECK v4.1 capability planning scope', () => {
+describe('CHECK v5 capability planning scope', () => {
   it('uses one response without changing its response-scoped advertised set', () => {
     const assessment: CheckCapabilityAssessment = Object.freeze({
       state: 'ADVERTISED',
