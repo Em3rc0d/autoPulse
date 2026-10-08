@@ -24,6 +24,7 @@ import {
   technicalDtcOutcome,
 } from '../../application/check/live/CheckPilotPresentation';
 import { formatDecodedPidObservation } from '../../application/check/intelligence/Mode01ValueDecoder';
+import { CHECK_V4_PID_WALLET } from '../../application/check/intelligence/PidWallet';
 import type { DiagnosticConcernV2 } from '../../application/check/intelligence/DiagnosticConcernEngine';
 import { uiText, useUiLanguage } from '../../application/localization/UiLanguage';
 import {
@@ -238,6 +239,11 @@ export default function CheckRunScreen() {
   const selectedTargetedCount = result?.targetedEvidencePlan.requests.length ?? 0;
   const executedTargetedCount = result?.targetedEvidenceScan?.usage.commandsIssued ?? 0;
   const targetedExecutionIncomplete = selectedTargetedCount > executedTargetedCount;
+  const promotedReaderCount = CHECK_V4_PID_WALLET.filter(item => item.executableInCheckV4).length;
+  const observedPidCount = result?.decodedPidEvidence.length ?? 0;
+  const directObservedCount = result?.directObservationCommandCount ?? 0;
+  const totalVehicleDataSelected = selectedTargetedCount + directObservedCount;
+  const totalVehicleDataExecuted = executedTargetedCount + directObservedCount;
 
   return (
     <View style={styles.container}>
@@ -245,7 +251,7 @@ export default function CheckRunScreen() {
         <Text style={styles.back} onPress={() => navigation.goBack()}>← Check</Text>
         <View style={styles.headerRow}>
           <View style={styles.flex}>
-            <Text style={styles.eyebrow}>ECU CHECK · V4.1</Text>
+            <Text style={styles.eyebrow}>{t('ECU CHECK · ADAPTIVE READ ONLY','CHECK ECU · ADAPTATIVO SOLO LECTURA')}</Text>
             <Text style={styles.title}>{vehicle?.alias ?? 'Vehicle'} Check</Text>
           </View>
           <Text style={styles.readOnlyBadge}>{t('READ ONLY','SOLO LECTURA')}</Text>
@@ -256,7 +262,7 @@ export default function CheckRunScreen() {
         {uiState === 'IDLE' ? (
           <View style={styles.panel}>
             <Text style={styles.panelTitle}>{t('Ready','Listo')}</Text>
-            <Text style={styles.body}>AutoPulse will read standard ECU diagnostics, readiness and only the PID evidence selected for this vehicle and its reported concerns.</Text>
+            <Text style={styles.body}>{t('AutoPulse will read standard ECU diagnostics, emissions readiness and a bounded adaptive vehicle-data snapshot. If the ECU reports a concern, relevant evidence gets priority.','AutoPulse leerá diagnósticos ECU estándar, readiness de emisiones y un snapshot adaptativo acotado de datos del vehículo. Si la ECU reporta un hallazgo, la evidencia relacionada tendrá prioridad.')}</Text>
             <Text style={styles.safetyText}>{t('Parked vehicle only. Clear, reset, control, coding and write operations remain blocked.','Solo con el vehículo estacionado. Borrado, reinicio, control, codificación y escritura permanecen bloqueados.')}</Text>
             <TouchableOpacity style={styles.primary} onPress={() => void run()} testID="run-physical-check">
               <Text style={styles.primaryText}>{t('Run Check','Ejecutar Check')}</Text>
@@ -268,7 +274,7 @@ export default function CheckRunScreen() {
           <View style={styles.panel}>
             <ActivityIndicator size="large" color="#4ade80" />
             <Text style={styles.panelTitle}>{uiState === 'CANCELLING' ? 'Cancelling safely…' : stage ? stageLabel[stage] : 'Running Check…'}</Text>
-            <Text style={styles.body}>Serial · bounded · descriptor-gated · no blind PID sweep</Text>
+            <Text style={styles.body}>{t('Serial · bounded · adaptive · descriptor-gated · no blind PID sweep','Serial · acotado · adaptativo · descriptor-gated · sin barrido ciego de PIDs')}</Text>
             {uiState === 'RUNNING' ? <TouchableOpacity style={styles.secondary} onPress={cancel}><Text style={styles.secondaryText}>{t('Cancel Check','Cancelar Check')}</Text></TouchableOpacity> : null}
           </View>
         ) : null}
@@ -293,6 +299,23 @@ export default function CheckRunScreen() {
 
             {result.concerns.map(concern => <ConcernCard key={concern.concernId} concern={concern} t={t} />)}
 
+            <View style={styles.coveragePanel}>
+              <View style={styles.rowBetween}>
+                <View style={styles.flex}>
+                  <Text style={styles.panelTitle}>{t('Adaptive scan coverage','Cobertura del scan adaptativo')}</Text>
+                  <Text style={styles.muted}>{t('Useful evidence is selected from the promoted read-only wallet; unsupported or unavailable signals remain explicit.','La evidencia útil se selecciona de la wallet read-only promovida; señales no soportadas o no disponibles permanecen explícitas.')}</Text>
+                </View>
+                <Text style={styles.coverageBadge}>{result.protocol.replace('ISO_', '')}</Text>
+              </View>
+              <View style={styles.coverageGrid}>
+                <View style={styles.coverageMetric}><Text style={styles.coverageNumber}>{result.scanCommandCount}</Text><Text style={styles.coverageLabel}>{t('CORE','CORE')}</Text></View>
+                <View style={styles.coverageMetric}><Text style={styles.coverageNumber}>{totalVehicleDataSelected}</Text><Text style={styles.coverageLabel}>{t('SELECTED','SELECCIONADOS')}</Text></View>
+                <View style={styles.coverageMetric}><Text style={styles.coverageNumber}>{totalVehicleDataExecuted}</Text><Text style={styles.coverageLabel}>{t('EXECUTED','EJECUTADOS')}</Text></View>
+                <View style={styles.coverageMetric}><Text style={styles.coverageNumber}>{observedPidCount}</Text><Text style={styles.coverageLabel}>{t('OBSERVED','OBSERVADOS')}</Text></View>
+              </View>
+              <Text style={styles.walletNote}>{CHECK_V4_PID_WALLET.length} reference PIDs · {promotedReaderCount} promoted deterministic readers · max 18 adaptive requests per enrichment phase · no writes.</Text>
+            </View>
+
             <View style={styles.panel}>
               <Text style={styles.panelTitle}>{t('Current ECU evidence','Evidencia actual de ECU')}</Text>
               {result.decodedPidEvidence.length > 0 ? result.decodedPidEvidence.map(item => (
@@ -302,7 +325,7 @@ export default function CheckRunScreen() {
                 </View>
               )) : <Text style={styles.muted}>{t('No promoted current-data value was established.','No se estableció un valor actual promovido.')}</Text>}
               <Text style={targetedExecutionIncomplete ? styles.targetedUnavailable : styles.walletNote}>
-                {selectedTargetedCount} targeted PID request{selectedTargetedCount === 1 ? '' : 's'} selected · {executedTargetedCount} executed. {targetedExecutionIncomplete ? 'Targeted evidence was not fully acquired in this run. ' : ''}No blind sweep.
+                {selectedTargetedCount} adaptive PID request{selectedTargetedCount === 1 ? '' : 's'} selected · {executedTargetedCount} executed · {directObservedCount} direct corroboration. {targetedExecutionIncomplete ? 'Adaptive evidence was not fully acquired in this run. ' : ''}No blind sweep.
               </Text>
             </View>
 
@@ -337,7 +360,7 @@ export default function CheckRunScreen() {
 
             <View style={styles.panel}>
               <Text style={styles.panelTitle}>{t('Scope','Alcance')}</Text>
-              <Text style={styles.muted}>Standard OBD evidence only. Unsupported modules are not called healthy. Mode 06 and Freeze Frame remain gated rather than guessed.</Text>
+              <Text style={styles.muted}>{t('Standard OBD evidence only. AutoPulse now gathers a bounded adaptive current-data snapshot, but unsupported modules are never called healthy. Mode 06, Freeze Frame and manufacturer-enhanced modules remain gated rather than guessed.','Solo evidencia OBD estándar. AutoPulse ahora obtiene un snapshot adaptativo acotado de datos actuales, pero módulos no soportados nunca se declaran saludables. Mode 06, Freeze Frame y módulos manufacturer-enhanced permanecen gated en vez de adivinarse.')}</Text>
             </View>
 
             {sealedReport ? (
@@ -362,12 +385,12 @@ export default function CheckRunScreen() {
             {showTechnical ? (
               <View style={styles.panel}>
                 <Text style={styles.panelTitle}>{t('Technical evidence','Evidencia técnica')}</Text>
-                <Text style={styles.meta}>Pilot: {result.pilotVersion}</Text>
+                <Text style={styles.meta}>Check engine: {result.pilotVersion}</Text>
                 <Text style={styles.meta}>Protocol evidence: {result.protocolEvidence || 'not retained'}</Text>
                 <Text style={styles.meta}>Core commands: {result.scanCommandCount}</Text>
-                <Text style={styles.meta}>v3 corroboration commands: {result.directObservationCommandCount}</Text>
-                <Text style={styles.meta}>v4 targeted selected: {selectedTargetedCount}</Text>
-                <Text style={styles.meta}>v4 targeted executed: {executedTargetedCount}</Text>
+                <Text style={styles.meta}>Direct corroboration commands: {result.directObservationCommandCount}</Text>
+                <Text style={styles.meta}>Adaptive selected: {selectedTargetedCount}</Text>
+                <Text style={styles.meta}>Adaptive executed: {executedTargetedCount}</Text>
                 <Text style={styles.meta}>Planner: {result.targetedEvidencePlan.version}</Text>
                 <Text style={styles.meta}>Selected: {result.targetedEvidencePlan.requests.map(item => `01${item.pid}`).join(' · ') || 'none'}</Text>
                 {result.rawEvidence.map((evidence, index) => (
@@ -399,6 +422,7 @@ const styles = StyleSheet.create({
   readOnlyBadge: { color: '#86efac', borderWidth: 1, borderColor: '#166534', borderRadius: 10, paddingHorizontal: 9, paddingVertical: 5, fontSize: 9, fontWeight: '900' },
   content: { padding: 16, paddingBottom: 72 },
   panel: { backgroundColor: '#121b20', borderWidth: 1, borderColor: '#2a363d', borderRadius: 16, padding: 15, marginBottom: 12 },
+  coveragePanel: { backgroundColor: '#101d22', borderWidth: 1, borderColor: '#1f4b5b', borderRadius: 16, padding: 15, marginBottom: 12 },
   sealedPanel: { backgroundColor: '#0c2317', borderWidth: 1, borderColor: '#166534', borderRadius: 16, padding: 15, marginBottom: 12 },
   sealedTitle: { color: '#86efac', fontSize: 12, fontWeight: '900', letterSpacing: 1.1 },
   hash: { color: '#93c5fd', fontSize: 9, lineHeight: 15, marginTop: 10, fontFamily: 'monospace' },
@@ -429,6 +453,11 @@ const styles = StyleSheet.create({
   serviceRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 12, paddingTop: 10 },
   metricLabel: { color: '#94a3b8', fontSize: 12, flex: 1 },
   metricValue: { color: '#f8fafc', fontSize: 12, fontWeight: '800', textAlign: 'right', flex: 1 },
+  coverageBadge: { color: '#67e8f9', borderWidth: 1, borderColor: '#155e75', backgroundColor: '#083344', borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4, fontSize: 8, fontWeight: '900', overflow: 'hidden' },
+  coverageGrid: { flexDirection: 'row', gap: 6, marginTop: 14 },
+  coverageMetric: { flex: 1, minHeight: 58, borderRadius: 12, backgroundColor: '#0b1418', borderWidth: 1, borderColor: '#263139', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 2 },
+  coverageNumber: { color: '#f8fafc', fontSize: 18, fontWeight: '900' },
+  coverageLabel: { color: '#64748b', fontSize: 7, fontWeight: '900', letterSpacing: 0.6, marginTop: 2, textAlign: 'center' },
   walletNote: { color: '#64748b', fontSize: 10, lineHeight: 15, marginTop: 10 },
   targetedUnavailable: { color: '#fbbf24', fontSize: 10, lineHeight: 15, marginTop: 10 },
   positive: { color: '#4ade80', fontWeight: '800' },
