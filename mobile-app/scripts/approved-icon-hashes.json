@@ -1,0 +1,21 @@
+{
+  "mobile-app/assets/adaptive-icon.png": "51d63363c6909dab8ea95f664fa7cb3a8d4d06bc881be45f112a45a0ec454b76",
+  "mobile-app/assets/icon.png": "e3b9d6ed7fc86cb5709f07230762430c55808680ebd62a373fbd8f5c1ad45e81",
+  "mobile-app/assets/favicon.png": "1bd08ab642998ed76e0a4409535530762f2f9f957c6862a319d4727ef7868e19",
+  "play-store/icon-512.png": "cf9ee00bd4f1c693f9f4e29ee64214b582b7e868ff7c88255d3a061fd239385b",
+  "mobile-app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png": "46b39b18590b2757779339ba330d660fff027a15de098a26aaaf152d8e05598d",
+  "mobile-app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png": "c96958500cadc1d0b95840f9ddc282e515bda124e79cc0979b7cd36d1e7d1d10",
+  "mobile-app/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher_foreground.png": "51d63363c6909dab8ea95f664fa7cb3a8d4d06bc881be45f112a45a0ec454b76",
+  "mobile-app/android/app/src/main/res/mipmap-mdpi/ic_launcher.png": "3e0dc1b7f8474eef634cdc8e3deb347762785dbd7a61fd434ee37c6b24c93fbc",
+  "mobile-app/android/app/src/main/res/mipmap-mdpi/ic_launcher_round.png": "ab96598e1db17942db45cd2c879630fee98c5bdd67ce31102f17eb6cb806b640",
+  "mobile-app/android/app/src/main/res/mipmap-mdpi/ic_launcher_foreground.png": "d176970e9a3e3f710cf4489d2e795a151c3c57163c7e053ea94824ace909d6e9",
+  "mobile-app/android/app/src/main/res/mipmap-xhdpi/ic_launcher.png": "9ada4673d72618ade1836305da14cdbf3bce2f28ecb656ae23db76e4f264d0df",
+  "mobile-app/android/app/src/main/res/mipmap-xhdpi/ic_launcher_round.png": "36eb8421046eac0158869e979c8d80f70ad241a1220a754fdd6c30f5488f5805",
+  "mobile-app/android/app/src/main/res/mipmap-xhdpi/ic_launcher_foreground.png": "a302c0305ea0589f94d0a37ce7879085a7af3b716e92fd2b7b3f938b15cde910",
+  "mobile-app/android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png": "a385f7261038a78a7a32639b8ea2168e2ab7fa2772355e14fa940ab02b75f279",
+  "mobile-app/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_round.png": "6f659a98dd02ea1238a52bc04777e8ce878a3098fe9d89dba805ab8571ed3b03",
+  "mobile-app/android/app/src/main/res/mipmap-xxhdpi/ic_launcher_foreground.png": "709bf8c6a81b90ef582863189ea16b395e412af68913c9cc95100d48e4d3fbd2",
+  "mobile-app/android/app/src/main/res/mipmap-hdpi/ic_launcher.png": "476ae212d8c5e650efe972b6a5707e2418da87e8fb250f1a94d833d0b10c1f08",
+  "mobile-app/android/app/src/main/res/mipmap-hdpi/ic_launcher_round.png": "d70fb3c81905d7ade1bf8af2d3370359737dc73379754b267d7a26667f967c1c",
+  "mobile-app/android/app/src/main/res/mipmap-hdpi/ic_launcher_foreground.png": "30bb897f25aa27a580f1cbfdfd55c877de13e8f99e1819ec050d927c991aadec"
+}

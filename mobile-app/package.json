@@ -10,7 +10,11 @@
     "obd:replay:dev": "node scripts/obd-replay-server.js",
     "test": "jest --runInBand",
     "typecheck": "tsc --noEmit",
-    "verify": "npm run typecheck && npm run test"
+    "verify": "npm run typecheck && npm run test",
+    "icon:apply": "node scripts/apply-approved-icon.js",
+    "icon:check": "node scripts/apply-approved-icon.js --check",
+    "apk:check": "node scripts/build-local-apk.js --check",
+    "apk:internal": "node scripts/build-local-apk.js"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",

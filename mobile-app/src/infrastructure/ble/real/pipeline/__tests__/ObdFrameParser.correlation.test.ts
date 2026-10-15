@@ -15,6 +15,18 @@ describe('OBD response correlation', () => {
     expect(result.frames[0].validity).toBe('VALID');
     expect(result.frames[0].payloadBytes).toEqual([0x1A, 0xF8]);
   });
+  it('does not treat a 7F payload byte as a negative response', () => {
+    const response = ObdFrameParser.parse(candidate('410C7F00'), request);
+    expect(response.negatives).toHaveLength(0);
+    expect(response.frames[0].validity).toBe('VALID');
+    expect(response.frames[0].payloadBytes).toEqual([0x7F, 0x00]);
+  });
+  it('recognizes a matching negative reply', () => {
+    const response = ObdFrameParser.parse(candidate('7F0111'), request);
+    expect(response.negatives).toHaveLength(1);
+    expect(response.frames).toHaveLength(0);
+    expect(response.negatives[0].responseCode).toBe('11');
+  });
   it('rejects a valid-looking reply for another PID', () => {
     const result = ObdFrameParser.parse(candidate('410D3C'), request);
     expect(result.frames[0].validity).toBe('AMBIGUOUS');
