@@ -100,6 +100,7 @@ export default function CheckRunScreen() {
   const [sealedReport, setSealedReport] = useState<DiagnosticCheckReportResult | null>(null);
   const cancellationRef = useRef(new CheckPilotCancellationToken());
   const controllerRef = useRef<RealObdController | null>(null);
+  const runInFlightRef = useRef(false);
   useEffect(() => () => {
     cancellationRef.current.cancel();
     controllerRef.current?.disconnect();
@@ -137,6 +138,16 @@ export default function CheckRunScreen() {
   };
 
   const run = async () => {
+    if (runInFlightRef.current) return;
+    runInFlightRef.current = true;
+    try {
+    await executeRun();
+    } finally {
+      runInFlightRef.current = false;
+    }
+  };
+
+  const executeRun = async () => {
     if (!connectionHandleId || !activeBleController.getConnection(connectionHandleId)) {
       setError('The retained OBD connection is no longer available. Reconnect the adapter.');
       setUiState('ERROR');

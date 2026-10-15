@@ -293,7 +293,7 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
       await sessionController.stopSession();
       liveSessionRegistry.unregisterController(sessionId);
     } else if (typeof activeBleController !== 'undefined') {
-      activeBleController.releaseConnection();
+      await activeBleController.disconnectAndRelease();
     }
 
     openSummary();

@@ -210,7 +210,7 @@ export class RealLiveSessionController {
 
     try {
       const firstProbe = await probeController.executeCommand(request0100());
-      if (firstProbe.status === 'SUCCESS_DECODED' || firstProbe.status === 'SUCCESS_RAW') {
+      if (this.provesVehiclePathFrom0100(firstProbe)) {
         return true;
       }
 
@@ -224,13 +224,19 @@ export class RealLiveSessionController {
       });
 
       const secondProbe = await probeController.executeCommand(request0100());
-      return secondProbe.status === 'SUCCESS_DECODED' || secondProbe.status === 'SUCCESS_RAW';
+      return this.provesVehiclePathFrom0100(secondProbe);
     } catch (error) {
       console.warn('[RealLiveSessionController] Recovery probe failed', error);
       return false;
     } finally {
       probeController.disconnect();
     }
+  }
+
+  private provesVehiclePathFrom0100(result: CommandResult): boolean {
+    return result.status === 'SUCCESS_DECODED' && result.obdFrames.some(frame =>
+      frame.validity === 'VALID' && frame.service === '41' && frame.pid === '00' && frame.payloadBytes.length >= 4
+    );
   }
 
   public attemptConnectionRecovery(

@@ -92,6 +92,9 @@ export default function CheckConnectObdScreen() {
       // idle transport before replacing the broker entry. Otherwise the old
       // native BLE connection can survive orphaned until process restart.
       const previous = activeBleController.getActiveConnection();
+      if (previous && activeBleController.getOwner() !== 'IDLE') {
+        throw new Error('BLE_CONNECTION_LEASED');
+      }
       if (previous && previous.device.id !== probeOutput.device.id) {
         await activeBleController.disconnectAndRelease();
       }

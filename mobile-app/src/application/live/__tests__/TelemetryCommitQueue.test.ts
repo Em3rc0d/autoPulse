@@ -99,6 +99,14 @@ describe('TelemetryCommitQueue', () => {
     expect(queue.getPendingCount()).toBe(1); // Block 1 is retained after failure; block 2 is rejected.
   });
 
+  it('turns a thrown repository exception into a terminal queue failure', async () => {
+    mockRepo.commitBlock.mockRejectedValue(new Error('SQLite native rejection'));
+    queue.enqueue(makeBlock(0));
+    await queue.drain();
+    expect(queue.getHasFailed()).toBe(true);
+    expect(events).toContainEqual({ type: 'FAILED', errorReason: 'DATABASE_WRITE_FAILED', block: makeBlock(0) });
+  });
+
   it('drain is bounded when a repository commit never resolves', async () => {
     mockRepo.commitBlock.mockImplementation(() => new Promise(() => undefined));
 

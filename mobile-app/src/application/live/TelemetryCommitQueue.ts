@@ -55,6 +55,7 @@ export class TelemetryCommitQueue {
     this.isProcessing = true;
     const block = this.queue[0];
 
+    try {
     // Attempt 1
     let result = await this.repository.commitBlock(this.workspaceId, this.sessionId, block);
 
@@ -71,7 +72,6 @@ export class TelemetryCommitQueue {
     // write was still in flight. That completed write remains durable evidence, but
     // the queue must not resume normal processing after the terminal failure.
     if (this.hasFailed) {
-      this.isProcessing = false;
       return;
     }
 
@@ -79,7 +79,6 @@ export class TelemetryCommitQueue {
       this.hasFailed = true;
       // We retain the block in the queue (do not shift)
       this.onEvent({ type: 'FAILED', errorReason: (result as any).reason, block });
-      this.isProcessing = false;
       return;
     }
 
@@ -87,8 +86,15 @@ export class TelemetryCommitQueue {
     this.queue.shift(); // Remove from queue
     this.onEvent({ type: 'COMMITTED', block });
 
-    this.isProcessing = false;
-    this.processNext();
+    } catch (error) {
+      if (!this.hasFailed) {
+        this.hasFailed = true;
+        this.onEvent({ type: 'FAILED', errorReason: 'DATABASE_WRITE_FAILED', block });
+      }
+    } finally {
+      this.isProcessing = false;
+      if (!this.hasFailed && this.queue.length > 0) void this.processNext();
+    }
   }
 
   /**

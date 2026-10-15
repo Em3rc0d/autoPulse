@@ -283,6 +283,7 @@ function DriverLiveSessionContent({
   const [alertEpisode, setAlertEpisode] = useState<AlertEpisode>(INACTIVE_ALERT_EPISODE);
   const { observations, selectedMode } = useDriverMode();
   const liveVoiceMemory = useRef<LiveDriverAlertMemory>({});
+  const liveHapticMemory = useRef<LiveDriverAlertMemory>({});
 
   useEffect(() => {
     let mounted = true;
@@ -369,14 +370,18 @@ function DriverLiveSessionContent({
   useEffect(() => {
     if (!voiceAlert || terminalOutcome) return;
     const spokenAt = Date.now();
-    if (!shouldSpeakLiveAlert(voiceAlert, preferences, liveVoiceMemory.current, spokenAt)) return;
-
-    const phrase = driverAlertPhrase(voiceAlert.key, preferences.voiceLanguage);
-    void speakDriverMessage(phrase, preferences.voiceLanguage).then(spoken => {
-      if (!spoken) return;
-      liveVoiceMemory.current = markLiveAlertSpoken(voiceAlert, spokenAt);
+    // Haptic warnings must not depend on TTS availability or user voice settings.
+    const hapticPolicy = { voiceAlertsEnabled: true, criticalAlertsEnabled: true,
+      attentionAlertsEnabled: true, advisoryAlertsEnabled: true };
+    if (shouldSpeakLiveAlert(voiceAlert, hapticPolicy, liveHapticMemory.current, spokenAt)) {
+      liveHapticMemory.current = markLiveAlertSpoken(voiceAlert, spokenAt);
       if (voiceAlert.severity === 'S3_CRITICAL') Vibration.vibrate([0, 180, 90, 180]);
       else if (voiceAlert.severity === 'S2_ATTENTION') Vibration.vibrate(120);
+    }
+    if (!shouldSpeakLiveAlert(voiceAlert, preferences, liveVoiceMemory.current, spokenAt)) return;
+    const phrase = driverAlertPhrase(voiceAlert.key, preferences.voiceLanguage);
+    void speakDriverMessage(phrase, preferences.voiceLanguage).then(spoken => {
+      if (spoken) liveVoiceMemory.current = markLiveAlertSpoken(voiceAlert, spokenAt);
     });
   }, [voiceAlert?.key, voiceAlert?.severity, preferences, terminalOutcome]);
 

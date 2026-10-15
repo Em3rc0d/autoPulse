@@ -21,6 +21,15 @@ class ActiveBleConnectionController {
   private listeners: ((conn: ActiveConnection | null) => void)[] = [];
 
   retainConnection(connection: ActiveConnection, owner: ConnectionOwner = 'IDLE') {
+    if (this.activeConnection && this.owner !== 'IDLE' && (
+      this.activeConnection.connectionHandleId !== connection.connectionHandleId || this.owner !== owner
+    )) {
+      throw new Error('BLE_CONNECTION_LEASED');
+    }
+    if (this.activeConnection && this.owner === 'IDLE' &&
+        this.activeConnection.device.id !== connection.device.id) {
+      throw new Error('BLE_IDLE_CONNECTION_REQUIRES_DISCONNECT');
+    }
     this.activeConnection = connection;
     this.owner = owner;
     this.notify();

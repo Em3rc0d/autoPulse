@@ -84,6 +84,15 @@ describe('BleCompatibilityProbe release grading', () => {
     jest.restoreAllMocks();
   });
 
+  it('rejects a generic ELM ERROR as a valid identification response', async () => {
+    const { manager } = createHarness();
+    jest.spyOn(AdapterProfileMatcher, 'match').mockReturnValue({ matchType: 'NO_PROFILE_MATCH' });
+    (ProbeHandshake.execute as jest.Mock).mockResolvedValue({ ...handshake, sanitizedResponse: 'ERROR' });
+    const probe = new BleCompatibilityProbe(manager, 'adapter-1', jest.fn());
+    const { result } = await probe.run();
+    expect(result.verdict).toBe(ProbeVerdict.UNKNOWN);
+  });
+
   it('keeps perfect software evidence at COMPATIBLE and never self-certifies', async () => {
     const { manager } = createHarness();
     jest.spyOn(AdapterProfileMatcher, 'match').mockReturnValue({

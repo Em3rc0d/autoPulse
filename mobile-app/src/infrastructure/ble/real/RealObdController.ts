@@ -103,7 +103,12 @@ export class RealObdController {
     let status: CommandResultStatus = 'SUCCESS_RAW';
     const errors: string[] = [];
 
-    if (rawResponse.completionReason === 'TIMEOUT') {
+    if (rawResponse.completionReason === 'MAX_BYTES_REACHED') {
+       status = 'PARTIAL';
+       errors.push('ELM_RESPONSE_MAX_BYTES_REACHED');
+    } else if (rawResponse.completionReason === 'WRITE_FAILED') {
+       status = 'WRITE_FAILED';
+    } else if (rawResponse.completionReason === 'TIMEOUT') {
        status = 'TIMEOUT';
     } else if (rawResponse.completionReason === 'DISCONNECTED') {
        status = 'DISCONNECTED';

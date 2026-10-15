@@ -81,11 +81,17 @@ export class BleCompatibilityProbe {
       this.onProgress('CONNECTING');
 
       this.device = await this.manager.connectToDevice(this.deviceId, { timeout: 10000 });
-      if (this.cancellationSignal.cancelled) return buildResult(ProbeVerdict.CANCELLED, 'CONNECTING', 'User cancelled');
+      if (this.cancellationSignal.cancelled) {
+        await this.device.cancelConnection();
+        return buildResult(ProbeVerdict.CANCELLED, 'CONNECTING', 'User cancelled');
+      }
 
       this.onProgress('DISCOVERING_SERVICES');
       await this.device.discoverAllServicesAndCharacteristics();
-      if (this.cancellationSignal.cancelled) return buildResult(ProbeVerdict.CANCELLED, 'DISCOVERING_SERVICES', 'User cancelled');
+      if (this.cancellationSignal.cancelled) {
+        await this.device.cancelConnection();
+        return buildResult(ProbeVerdict.CANCELLED, 'DISCOVERING_SERVICES', 'User cancelled');
+      }
 
       this.onProgress('INSPECTING_GATT');
       inventory = await GattInspector.inspect(this.device);
@@ -113,6 +119,7 @@ export class BleCompatibilityProbe {
         let commandUsed = 'ATI\r';
         let res = await ProbeHandshake.execute(this.device, comb, commandUsed, 2000, this.cancellationSignal);
         if (res.disconnectObserved) {
+          await this.device.cancelConnection().catch(() => undefined);
           return buildResult(ProbeVerdict.PROBE_FAILED, 'HANDSHAKE', 'Device disconnected unexpectedly');
         }
 
@@ -207,7 +214,9 @@ export class BleCompatibilityProbe {
 
   private isValidResponse(response: string | null | undefined): boolean {
     if (!response) return false;
-    const alphaNum = response.replace(/[^a-zA-Z0-9]/g, '');
-    return alphaNum.length >= 3;
+    const normalized = response.trim().toUpperCase();
+    if (/^(ERROR|NO DATA|UNABLE TO CONNECT|CAN ERROR|STOPPED|BUS INIT|\?)/.test(normalized)) return false;
+    const alphaNum = normalized.replace(/[^A-Z0-9]/g, '');
+    return alphaNum.length >= 3 && /[A-Z]/.test(alphaNum);
   }
 }

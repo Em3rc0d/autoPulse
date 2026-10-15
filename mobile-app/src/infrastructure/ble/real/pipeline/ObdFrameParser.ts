@@ -79,6 +79,19 @@ export class ObdFrameParser {
         continue;
       }
 
+      // Never promote a reply for a different PID to this request's telemetry.
+      // Extra ECU/header material is preserved in rawLine, not guessed into values.
+      if (request.expectedPid && pid !== request.expectedPid.toUpperCase()) {
+        frames.push({ sourceAddress, service, pid, payloadBytes: [], declaredLength: null,
+          rawLine: line.originalText, validity: 'AMBIGUOUS' });
+        continue;
+      }
+      if (payloadHex.length % 2 !== 0) {
+        frames.push({ sourceAddress, service, pid, payloadBytes: [], declaredLength: null,
+          rawLine: line.originalText, validity: 'INCOMPLETE' });
+        continue;
+      }
+
       const payloadBytes: number[] = [];
       for (let i = 0; i < payloadHex.length; i += 2) {
         if (i + 1 < payloadHex.length) {

@@ -18,6 +18,18 @@ export function useAdapterDiscovery() {
   const [error, setError] = useState<string | null>(null);
 
   const devicesRef = useRef<{ [id: string]: DiscoveredDevice }>({});
+  const scanningRef = useRef(false);
+  const scanTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const stopScan = () => {
+    if (scanTimerRef.current) {
+      clearTimeout(scanTimerRef.current);
+      scanTimerRef.current = null;
+    }
+    if (manager && scanningRef.current) manager.stopDeviceScan();
+    scanningRef.current = false;
+    setIsScanning(false);
+  };
 
   const startScan = async () => {
     if (!manager) {
@@ -36,9 +48,11 @@ export function useAdapterDiscovery() {
       return;
     }
 
+    stopScan();
     setError(null);
     setDevices([]);
     devicesRef.current = {};
+    scanningRef.current = true;
     setIsScanning(true);
 
     manager.startDeviceScan(
@@ -47,7 +61,7 @@ export function useAdapterDiscovery() {
       (bleError: BleError | null, device: Device | null) => {
         if (bleError) {
           setError(`Scan error: ${bleError.message}`);
-          setIsScanning(false);
+          stopScan();
           return;
         }
 
@@ -84,23 +98,16 @@ export function useAdapterDiscovery() {
     );
 
     // Stop scan automatically after 15 seconds
-    setTimeout(() => {
-      stopScan();
-    }, 15000);
-  };
-
-  const stopScan = () => {
-    if (manager && isScanning) {
-      manager.stopDeviceScan();
-      setIsScanning(false);
-    }
+    scanTimerRef.current = setTimeout(() => stopScan(), 15000);
   };
 
   useEffect(() => {
     return () => {
-      stopScan();
+      if (scanTimerRef.current) clearTimeout(scanTimerRef.current);
+      if (scanningRef.current) manager?.stopDeviceScan();
+      scanningRef.current = false;
     };
-  }, [manager, isScanning]);
+  }, [manager]);
 
   return {
     devices: devices.slice(0, 3), // Max 3 devices as per rules
