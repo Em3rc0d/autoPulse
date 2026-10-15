@@ -38,14 +38,15 @@ const isTransportFailure = (result: CommandResult) =>
 
 const provesVehiclePathProgress = (result: CommandResult) =>
   result.status === 'SUCCESS_DECODED' ||
-  result.status === 'SUCCESS_RAW' ||
+  (result.status === 'SUCCESS_RAW' && Boolean(result.obdFrames?.some(frame => frame.validity === 'VALID'))) ||
   result.status === 'NO_DATA';
 
 const isUnusableResponse = (result: CommandResult) =>
   result.status === 'ELM_ERROR' ||
   result.status === 'INVALID_RESPONSE' ||
   result.status === 'PARTIAL' ||
-  result.status === 'CANCELLED';
+  result.status === 'CANCELLED' ||
+  (result.status === 'SUCCESS_RAW' && !result.obdFrames?.some(frame => frame.validity === 'VALID'));
 
 export class RealTelemetryPoller {
   private controller: ObdCommandExecutor;

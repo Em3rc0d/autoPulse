@@ -14,6 +14,13 @@ describe('LiveEcuTruth', () => {
       .toBe('ECU_DATA_DELAYED');
   });
 
+  it('does not keep claiming LIVE when its last ECU sample expires', () => {
+    const truth = deriveLiveEcuTruth({ hasValidEcuSample: true, elapsedMs: 24_000,
+      lastValidEcuSampleAgeMs: 16_000 });
+    expect(truth.state).toBe('ECU_DATA_DELAYED');
+    expect(truth.label).toBe('ECU DATA STALE');
+  });
+
   it('claims live only after a valid ECU-origin sample', () => {
     expect(deriveLiveEcuTruth({ hasValidEcuSample: true, elapsedMs: 2_000 }).state)
       .toBe('LIVE_ECU_DATA');

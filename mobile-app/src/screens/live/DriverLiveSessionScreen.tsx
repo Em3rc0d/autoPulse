@@ -391,7 +391,7 @@ function DriverLiveSessionContent({
   return (
     <View style={styles.container}>
       {!terminalOutcome && motion.state === 'PARKED' ? <ParkedAdvisoryBanner advisory={advisories[0]} /> : null}
-      {!terminalOutcome ? <DriverModePanel disabled={false} compact={lowDistraction} /> : null}
+      {!terminalOutcome ? <DriverModePanel disabled={lowDistraction} compact={lowDistraction} /> : null}
 
       {showCompactTerminal && terminalOutcome ? (
         <LowDistractionTerminalSurface outcome={terminalOutcome} language={preferences.voiceLanguage} />

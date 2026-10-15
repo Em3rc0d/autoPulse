@@ -59,6 +59,7 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
   const [secondsElapsed, setSecondsElapsed] = useState(0);
   const [dataPoints, setDataPoints] = useState<number[]>([]);
   const [hasValidEcuSample, setHasValidEcuSample] = useState(adapterMode !== 'REAL_BLE');
+  const [lastValidEcuSampleAt, setLastValidEcuSampleAt] = useState<number | null>(null);
   const [firstEcuSampleAt, setFirstEcuSampleAt] = useState<number | null>(adapterMode !== 'REAL_BLE' ? Date.now() : null);
   const [sessionController, setSessionController] = useState<RealLiveSessionController | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -238,6 +239,7 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
     controller.start((result) => {
       if (commandResultContainsValidEcuSample(result)) {
         setHasValidEcuSample(true);
+        setLastValidEcuSampleAt(Date.now());
         setFirstEcuSampleAt(previous => previous ?? Date.now());
       }
 
@@ -302,6 +304,7 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
   const liveTruth = deriveLiveEcuTruth({
     hasValidEcuSample,
     elapsedMs: secondsElapsed * 1000,
+    lastValidEcuSampleAgeMs: lastValidEcuSampleAt === null ? undefined : Math.max(0, Date.now() - lastValidEcuSampleAt),
     sessionError: terminalOutcome ? null : sessionError,
   });
   const waitingForFirstEcuSample = adapterMode === 'REAL_BLE' && !hasValidEcuSample;
