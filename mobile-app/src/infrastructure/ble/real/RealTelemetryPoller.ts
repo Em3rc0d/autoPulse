@@ -206,6 +206,9 @@ export class RealTelemetryPoller {
   }
 
   private observeLinkHealth(pid: string, result: CommandResult) {
+    // A successful ATRV/ELM adapter command is not evidence that the ECU is alive.
+    // Preserve any pending ECU-path failure streak instead of masking it.
+    if (result.request?.family === 'ELM_AT' && !isTransportFailure(result)) return;
     if (isTransportFailure(result)) {
       this.consecutiveUnusableResponses = 0;
       this.recordTransportFailure(pid, result.status as 'TIMEOUT' | 'WRITE_FAILED' | 'DISCONNECTED');

@@ -1,6 +1,6 @@
 # AutoPulse local internal Android APK — 2026-10-15
 
-This process produces an **internal QA APK** with a fully embedded Expo/React Native JS bundle. It must not be published on Google Play or represented as physically certified.
+This process produces an **internal QA APK** with a fully embedded Expo/React Native JS bundle. The Expo entrypoint is `mobile-app/index.js`, which registers the native foreground service before the React Native root component. It must not be published on Google Play or represented as physically certified.
 
 ## Prerequisites
 

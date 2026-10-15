@@ -47,6 +47,10 @@ const java = spawnSync('java', ['-version'], { encoding: 'utf8', shell: process.
 if (java.error || java.status !== 0) fail('JDK 17+ is missing. Set JAVA_HOME and install the JDK.');
 if (!exists(path.join(root, 'package-lock.json'))) fail('package-lock.json is missing.');
 if (!exists(path.join(root, 'app.json'))) fail('Expo configuration missing.');
+const packageConfig = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+if (packageConfig.main !== 'index.js' || !exists(path.join(root, 'index.js'))) {
+  fail('Expected custom index.js entrypoint to register the foreground service and Expo app.');
+}
 run(process.execPath, [path.join(root, 'scripts', 'apply-approved-icon.js'), '--check']);
 if (checkOnly) {
   console.log('[AutoPulse APK] PREFLIGHT PASS: SDK, Gradle wrapper, Java, approved icon.');
