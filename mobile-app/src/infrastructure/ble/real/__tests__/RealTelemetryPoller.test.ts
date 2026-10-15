@@ -211,6 +211,25 @@ describe('RealTelemetryPoller', () => {
     poller.stop();
   });
 
+  it('cannot hide failing ECU replies behind successful adapter voltage', async () => {
+    const badEcu = { status: 'INVALID_RESPONSE', request: { family: 'OBD_MODE_01' } } as any;
+    const validAdapter = { status: 'SUCCESS_DECODED', request: { family: 'ELM_AT' } } as any;
+    mockExecutor.executeCommand.mockImplementation(async request =>
+      request.command === 'ATRV' ? validAdapter : badEcu
+    );
+
+    const poller = new RealTelemetryPoller(mockExecutor, ['010C', 'ATRV'], onData, onDiagnostic);
+    poller.start(10);
+    for (let i = 0; i < 12; i++) await advanceOne();
+
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'TRANSPORT_STALLED',
+      reason: 'UNUSABLE_RESPONSE',
+      consecutiveFailures: 6,
+    }));
+    poller.stop();
+  });
+
   it('does not mistake an optional bad PID for a dead link when other PIDs keep succeeding', async () => {
     mockExecutor.executeCommand
       .mockResolvedValueOnce(result('ELM_ERROR'))
