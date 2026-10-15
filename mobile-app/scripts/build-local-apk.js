@@ -58,9 +58,14 @@ if (!exists(path.join(root, 'node_modules', 'typescript')) ||
   fail('Dependencies missing. Run npm ci first or omit --skip-install.');
 }
 run('npm', ['run', 'verify']);
-const gradlew = process.platform === 'win32' ? 'gradlew.bat' : './gradlew';
+// The checked-in Unix gradlew currently has mode 100644. Invoke it through sh,
+// so a fresh clone can build without relying on an executable-bit change.
+const gradlew = process.platform === 'win32' ? 'gradlew.bat' : 'sh';
+const gradleArgs = process.platform === 'win32'
+  ? ['--no-daemon', ':app:assembleRelease']
+  : ['gradlew', '--no-daemon', ':app:assembleRelease'];
 console.log('[AutoPulse APK] Building internal signed RELEASE APK with embedded JS assets.');
-const result = spawnSync(gradlew, ['--no-daemon', ':app:assembleRelease'], {
+const result = spawnSync(gradlew, gradleArgs, {
   cwd: path.join(root, 'android'),
   env: { ...process.env, ANDROID_HOME: sdk, ANDROID_SDK_ROOT: sdk, AUTOPULSE_INTERNAL_RELEASE: 'true' },
   stdio: 'inherit',
@@ -69,6 +74,25 @@ const result = spawnSync(gradlew, ['--no-daemon', ':app:assembleRelease'], {
 if (result.error || result.status !== 0) fail('Gradle assembleRelease failed.');
 const apk = path.join(root, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
 if (!exists(apk)) fail('Gradle finished but app-release.apk does not exist.');
+// A successful Gradle exit is not enough: prove Expo's embedded bundle exists.
+const jar = spawnSync('jar', ['tf', apk], { encoding: 'utf8', maxBuffer: 12 * 1024 * 1024,
+  shell: process.platform === 'win32' });
+if (jar.error || jar.status !== 0) fail('Could not inspect the APK with JDK jar.');
+const apkEntries = jar.stdout.split(/\r?\n/);
+if (!apkEntries.includes('assets/index.android.bundle')) {
+  fail('APK does not contain assets/index.android.bundle; not a standalone installable release.');
+}
+const buildToolsRoot = path.join(sdk, 'build-tools');
+const buildTools = exists(buildToolsRoot)
+  ? fs.readdirSync(buildToolsRoot).sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+  : [];
+const signerExe = process.platform === 'win32' ? 'apksigner.bat' : 'apksigner';
+const signer = buildTools.map(version => path.join(buildToolsRoot, version, signerExe)).find(exists);
+if (!signer) fail('Android apksigner is not installed under SDK/build-tools.');
+const signature = spawnSync(signer, ['verify', '--verbose', apk], {
+  stdio: 'inherit', shell: process.platform === 'win32',
+});
+if (signature.error || signature.status !== 0) fail('APK signature verification failed.');
 const bytes = fs.readFileSync(apk);
 const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
 const destination = path.join(root, 'dist');
