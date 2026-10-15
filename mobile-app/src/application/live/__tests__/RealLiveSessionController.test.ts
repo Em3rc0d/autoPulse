@@ -70,6 +70,23 @@ describe('RealLiveSessionController Integration', () => {
     expect(mockSessionRepo.completeSession).toHaveBeenCalledTimes(1);
   });
 
+  it('does not abandon BLE cleanup when requestStop throws', async () => {
+    const ctrl = createController();
+    ctrl['currentState'] = 'ACTIVE';
+    mockSessionRepo.requestStop.mockRejectedValueOnce(new Error('SQLite unavailable'));
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await ctrl.stopSession();
+
+    expect(mockSessionRepo.completeSession).not.toHaveBeenCalled();
+    expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith(
+      'ws1', 'sess1', 'SESSION_STOP_REQUEST_FAILED'
+    );
+    expect(ctrl['currentState']).toBe('INTERRUPTED');
+    expect(ctrl.recordingStatus).toBe('CLOSED');
+    errorLog.mockRestore();
+  });
+
   it('Failed final block prevents COMPLETED', async () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';

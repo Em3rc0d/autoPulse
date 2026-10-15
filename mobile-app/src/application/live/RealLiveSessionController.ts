@@ -349,8 +349,15 @@ export class RealLiveSessionController {
     this.bleDisconnectSubscription?.remove();
     this.bleDisconnectSubscription = null;
 
+    let stopFailureReason: string | null = null;
     if (wasRunning && mode === 'NORMAL') {
-      await this.sessionRepo.requestStop(this.workspaceId, this.sessionId, 'USER_INITIATED');
+      try {
+        await this.sessionRepo.requestStop(this.workspaceId, this.sessionId, 'USER_INITIATED');
+      } catch (error) {
+        // Persistence failures must not keep the BLE poller and native service running.
+        console.error('[RealLiveSessionController] Stop request failed:', error);
+        stopFailureReason = 'SESSION_STOP_REQUEST_FAILED';
+      }
     }
 
     this.poller?.stop();
@@ -361,9 +368,12 @@ export class RealLiveSessionController {
     await new Promise(r => setTimeout(r, 100));
 
     if (this.assembler && !this.commitQueue?.getHasFailed()) {
-      const finalBlock = this.assembler.flush(stopTime);
-      if (finalBlock) {
-        this.enqueueBlock(finalBlock);
+      try {
+        const finalBlock = this.assembler.flush(stopTime);
+        if (finalBlock) this.enqueueBlock(finalBlock);
+      } catch (error) {
+        console.error('[RealLiveSessionController] Final telemetry flush failed:', error);
+        stopFailureReason = 'TELEMETRY_FINAL_FLUSH_FAILED';
       }
     }
 
@@ -380,13 +390,15 @@ export class RealLiveSessionController {
             error
           );
         } else {
-          throw error;
+          console.error('[RealLiveSessionController] Telemetry drain failed:', error);
+          stopFailureReason = 'TELEMETRY_DRAIN_FAILED';
         }
       }
     }
 
     this.obdController?.disconnect();
-    const completedCleanly = mode === 'NORMAL' && !this.commitQueue?.getHasFailed() && !drainTimedOut;
+    const completedCleanly = mode === 'NORMAL' && !this.commitQueue?.getHasFailed() &&
+      !drainTimedOut && stopFailureReason === null;
     if (completedCleanly) {
       activeBleController.releaseClaim('LIVE');
     } else {
@@ -398,19 +410,26 @@ export class RealLiveSessionController {
     this.recordingStatus = 'CLOSED';
 
     if (completedCleanly) {
-      await this.sessionRepo.completeSession(this.workspaceId, this.sessionId);
-      this.currentState = 'COMPLETED';
-      this.onSessionTerminal?.({ state: 'COMPLETED' });
-    } else {
-      const failReason = drainTimedOut ? 'TELEMETRY_DRAIN_TIMEOUT' : (reason || 'TELEMETRY_PERSISTENCE_FAILED');
       try {
-        await this.sessionRepo.interruptSession(this.workspaceId, this.sessionId, failReason);
-      } catch (err) {
-        console.error('Failed to record session interruption', err);
+        await this.sessionRepo.completeSession(this.workspaceId, this.sessionId);
+        this.currentState = 'COMPLETED';
+        this.onSessionTerminal?.({ state: 'COMPLETED' });
+        return;
+      } catch (error) {
+        console.error('[RealLiveSessionController] Completion persistence failed:', error);
+        stopFailureReason = 'SESSION_COMPLETION_FAILED';
+        await activeBleController.disconnectAndRelease();
       }
-      this.currentState = 'INTERRUPTED';
-      this.onSessionTerminal?.({ state: 'INTERRUPTED', reason: failReason });
     }
+    const failReason = drainTimedOut ? 'TELEMETRY_DRAIN_TIMEOUT' :
+      (stopFailureReason || reason || 'TELEMETRY_PERSISTENCE_FAILED');
+    try {
+      await this.sessionRepo.interruptSession(this.workspaceId, this.sessionId, failReason);
+    } catch (err) {
+      console.error('Failed to record session interruption', err);
+    }
+    this.currentState = 'INTERRUPTED';
+    this.onSessionTerminal?.({ state: 'INTERRUPTED', reason: failReason });
   }
 
   public forceCleanup() {
