@@ -48,3 +48,10 @@ Speech is independent of displaying translations: app raises `DriverAlertKey`, r
 ## GO / HOLD
 
 No new APK until adversarial smoke + full CI green on exact HEAD, remaining P1 safety issue addressed, TTS semantics gated, and recovery failure injection has been signed off. Android instrumentation and parked-vehicle tests remain required even if CI is green.
+
+## Hardening pass 2 — voice completion and severity (2026-10-16)
+
+- Android Kotlin TTS now exposes `speakAlert(text, languageTag, priority)`; the JS driver layer refuses the older enqueue-only `speakLocalized` bridge.
+- The Promise resolves `true` only when `UtteranceProgressListener.onDone` is delivered for the current utterance. `onError`, `onStop`, missing locale, initialization failure, preemption and a 15-second watchdog resolve `false`.
+- Lower priority voice cannot preempt an active critical utterance; overlapping utterance IDs are matched to avoid late old callbacks resolving a newer request.
+- This is source-level implementation plus structural CI, **not proof of Kotlin compilation, hardware audio, installed voice data, volume, audio route or operating-system process survival**. Actual native compilation and Android instrumentation remain open until a gated APK is authorized.

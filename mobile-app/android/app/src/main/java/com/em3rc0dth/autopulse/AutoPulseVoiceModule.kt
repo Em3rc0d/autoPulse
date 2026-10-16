@@ -1,23 +1,54 @@
 package com.em3rc0dth.autopulse
 
+import android.os.Handler
+import android.os.Looper
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import com.facebook.react.bridge.LifecycleEventListener
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicLong
 
+/**
+ * Local Android TTS adapter. A fulfilled Promise means utterance completion
+ * (onDone), NOT that speak() merely accepted the request.
+ *
+ * All mutable native state is serialized on the Android main thread. A bounded
+ * timeout prevents a failed TTS engine from hanging a JS safety-alert Promise.
+ */
 class AutoPulseVoiceModule(
   private val reactContext: ReactApplicationContext
 ) : ReactContextBaseJavaModule(reactContext), TextToSpeech.OnInitListener, LifecycleEventListener {
 
+  private data class SpeechRequest(
+    val text: String,
+    val languageTag: String,
+    val priority: Int,
+    val promise: Promise,
+  )
+
+  private data class ActiveSpeech(
+    val utteranceId: String,
+    val priority: Int,
+    val promise: Promise,
+  )
+
+  private val handler = Handler(Looper.getMainLooper())
+  private val nextUtteranceId = AtomicLong(1)
   private var tts: TextToSpeech? = null
   private var ready = false
   private var initializationFailed = false
-  private var pendingText: String? = null
-  private var pendingLanguageTag: String = "en-US"
-  private var pendingPromise: Promise? = null
+  private var destroyed = false
+  private var pending: SpeechRequest? = null
+  private var active: ActiveSpeech? = null
+  private var activeTimeout: Runnable? = null
+
+  companion object {
+    private const val MAX_UTTERANCE_MS = 15_000L
+  }
 
   init {
     reactContext.addLifecycleEventListener(this)
@@ -27,97 +58,167 @@ class AutoPulseVoiceModule(
   override fun getName(): String = "AutoPulseVoice"
 
   override fun onInit(status: Int) {
-    ready = status == TextToSpeech.SUCCESS
-    initializationFailed = !ready
+    handler.post {
+      if (destroyed) return@post
+      ready = status == TextToSpeech.SUCCESS
+      initializationFailed = !ready
 
-    if (ready) {
-      applyLanguage("en-US")
-      val text = pendingText
-      val languageTag = pendingLanguageTag
-      val promise = pendingPromise
-      pendingText = null
-      pendingPromise = null
-      if (!text.isNullOrBlank() && promise != null) {
-        speakNow(text, languageTag, promise)
+      if (ready) {
+        tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+          override fun onStart(utteranceId: String?) = Unit
+
+          override fun onDone(utteranceId: String?) {
+            handler.post { finishActive(utteranceId, true) }
+          }
+
+          override fun onError(utteranceId: String?) {
+            handler.post { finishActive(utteranceId, false) }
+          }
+
+          override fun onError(utteranceId: String?, errorCode: Int) {
+            handler.post { finishActive(utteranceId, false) }
+          }
+
+          override fun onStop(utteranceId: String?, interrupted: Boolean) {
+            handler.post { finishActive(utteranceId, false) }
+          }
+        })
+
+        val queued = pending
+        pending = null
+        if (queued != null) queueOrSpeak(queued)
+      } else {
+        finishPending()
+        finishActive(null, false)
       }
-    } else {
-      pendingPromise?.resolve(false)
-      pendingText = null
-      pendingPromise = null
     }
+  }
+
+  private fun finishPending() {
+    pending?.promise?.resolve(false)
+    pending = null
+  }
+
+  private fun finishActive(utteranceId: String?, delivered: Boolean) {
+    val current = active ?: return
+    if (utteranceId != null && utteranceId != current.utteranceId) return
+    active = null
+    activeTimeout?.let { handler.removeCallbacks(it) }
+    activeTimeout = null
+    current.promise.resolve(delivered)
   }
 
   private fun applyLanguage(languageTag: String): Boolean {
-    val locale = when (languageTag) {
-      "es-ES" -> Locale("es", "ES")
-      else -> Locale.US
-    }
-    val result = tts?.setLanguage(locale) ?: TextToSpeech.LANG_NOT_SUPPORTED
-    return result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED
+    if (languageTag != "en-US" && languageTag != "es-ES") return false
+    val engine = tts ?: return false
+    val locale = Locale.forLanguageTag(languageTag)
+    val available = engine.isLanguageAvailable(locale)
+    if (available < TextToSpeech.LANG_AVAILABLE) return false
+    return engine.setLanguage(locale) >= TextToSpeech.LANG_AVAILABLE
   }
 
-  private fun speakNow(text: String, languageTag: String, promise: Promise) {
-    if (!applyLanguage(languageTag)) {
-      promise.resolve(false)
-      return
-    }
-    val result = tts?.speak(
-      text,
-      TextToSpeech.QUEUE_FLUSH,
-      null,
-      "autopulse-${System.currentTimeMillis()}"
-    )
-    promise.resolve(result == TextToSpeech.SUCCESS)
-  }
-
-  private fun queueOrSpeak(text: String, languageTag: String, promise: Promise) {
-    if (text.isBlank() || initializationFailed) {
-      promise.resolve(false)
+  private fun speakNow(request: SpeechRequest) {
+    if (!applyLanguage(request.languageTag)) {
+      request.promise.resolve(false)
       return
     }
 
+    val engine = tts
+    if (engine == null) {
+      request.promise.resolve(false)
+      return
+    }
+
+    // Never replace an unfinished critical message with a lower-priority one.
+    if ((active?.priority ?: -1) > request.priority) {
+      request.promise.resolve(false)
+      return
+    }
+
+    finishActive(null, false)
+    engine.stop()
+
+    val id = "autopulse-" + nextUtteranceId.getAndIncrement().toString()
+    active = ActiveSpeech(id, request.priority, request.promise)
+
+    val timeout = Runnable {
+      if (active?.utteranceId == id) {
+        finishActive(id, false)
+        engine.stop()
+      }
+    }
+    activeTimeout = timeout
+    handler.postDelayed(timeout, MAX_UTTERANCE_MS)
+
+    try {
+      val result = engine.speak(request.text, TextToSpeech.QUEUE_FLUSH, null, id)
+      if (result != TextToSpeech.SUCCESS) finishActive(id, false)
+      // On acceptance, wait for onDone/onError/onStop or the timeout above.
+    } catch (_: Exception) {
+      finishActive(id, false)
+    }
+  }
+
+  private fun queueOrSpeak(request: SpeechRequest) {
+    if (destroyed || initializationFailed || request.text.isBlank()) {
+      request.promise.resolve(false)
+      return
+    }
     if (!ready) {
-      // Safety messages can arrive immediately after JS mounts. Keep only the
-      // newest message until Android TTS reports readiness.
-      pendingPromise?.resolve(false)
-      pendingText = text
-      pendingLanguageTag = languageTag
-      pendingPromise = promise
+      if ((pending?.priority ?: -1) > request.priority) {
+        request.promise.resolve(false)
+        return
+      }
+      finishPending()
+      pending = request
       return
     }
+    speakNow(request)
+  }
 
-    speakNow(text, languageTag, promise)
+  private fun enqueue(text: String, languageTag: String, priority: Int, promise: Promise) {
+    handler.post {
+      queueOrSpeak(SpeechRequest(text, languageTag, priority.coerceIn(0, 3), promise))
+    }
   }
 
   @ReactMethod
   fun speak(text: String, promise: Promise) {
-    queueOrSpeak(text, "en-US", promise)
+    enqueue(text, "en-US", 1, promise)
   }
 
   @ReactMethod
   fun speakLocalized(text: String, languageTag: String, promise: Promise) {
-    queueOrSpeak(text, languageTag, promise)
+    enqueue(text, languageTag, 1, promise)
+  }
+
+  @ReactMethod
+  fun speakAlert(text: String, languageTag: String, priority: Int, promise: Promise) {
+    enqueue(text, languageTag, priority, promise)
   }
 
   @ReactMethod
   fun stop(promise: Promise) {
-    pendingPromise?.resolve(false)
-    pendingText = null
-    pendingPromise = null
-    tts?.stop()
-    promise.resolve(true)
+    handler.post {
+      finishPending()
+      finishActive(null, false)
+      tts?.stop()
+      promise.resolve(true)
+    }
   }
 
   override fun onHostResume() = Unit
   override fun onHostPause() = Unit
 
   override fun onHostDestroy() {
-    pendingPromise?.resolve(false)
-    pendingText = null
-    pendingPromise = null
-    tts?.stop()
-    tts?.shutdown()
-    tts = null
-    ready = false
+    handler.post {
+      destroyed = true
+      finishPending()
+      finishActive(null, false)
+      tts?.stop()
+      tts?.shutdown()
+      tts = null
+      ready = false
+    }
   }
 }

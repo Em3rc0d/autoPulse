@@ -382,7 +382,7 @@ function DriverLiveSessionContent({
     }
     if (!shouldSpeakLiveAlert(voiceAlert, preferences, liveVoiceMemory.current, spokenAt)) return;
     const phrase = driverAlertPhrase(voiceAlert.key, preferences.voiceLanguage);
-    void speakDriverMessage(phrase, preferences.voiceLanguage).then(spoken => {
+    void speakDriverMessage(phrase, preferences.voiceLanguage, voiceAlert.severity).then(spoken => {
       if (spoken) liveVoiceMemory.current = markLiveAlertSpoken(voiceAlert, spokenAt);
     });
   }, [voiceAlert?.key, voiceAlert?.severity, preferences, terminalOutcome]);
