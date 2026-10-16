@@ -95,3 +95,9 @@ No new APK until adversarial smoke + full CI green on exact HEAD, remaining P1 s
 - Audited `performStop()` against `LiveSessionRepository.interruptSession()` instead of trusting mocked repository tests. A Live stop writes `STOPPING` **before** draining final telemetry blocks. On timeout, flush failure or completion-transaction error, the repository previously rejected `STOPPING -> INTERRUPTED`, leaving a phantom in-progress row until restart.
 - The repository now permits `STOPPING -> INTERRUPTED`, preserves `stopReason`, saves explicit failureCode and terminal event, rejects `INTERRUPTED -> COMPLETED`, and treats repeat interruptions idempotently.
 - Added a true libSQL/Drizzle integration regression to the existing `liveSessionRepository.test.ts` covering stop, failure, idempotent terminalization and forbidden completion.
+
+## Hardening pass 8 — real SQLite process-restart/orphan regression
+
+- Extended the libSQL/Drizzle integration suite with a simulated Android process-restart scenario. Creates and activates a real local DB session, records a STOPPING request, runs `recoverOrphanedSessions()`, and requires INTERRUPTED with explicit unexpected-termination reason, durable counters and one recovery audit event.
+- A second startup recovery must return zero orphans and never duplicate the recovery audit event.
+- This checks repository SQL semantics against the migration-backed SQLite-compatible test database. It does not simulate killing a physical Android process, disk corruption, Android lifecycle callbacks or broken native Bluetooth state; those remain device-level gates.
