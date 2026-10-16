@@ -1,10 +1,16 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useVehicle } from '../../infrastructure/hooks/useVehicle';
 import { useSessionSummary } from '../../infrastructure/hooks/useSessionSummary';
 import { useLocalContext } from '../../infrastructure/hooks/useLocalContext';
-import { SessionIntegrityState } from '../../domain/telemetry/models/sessionSummaryResult';
+import { SessionAcquisitionMode, SessionIntegrityState } from '../../domain/telemetry/models/sessionSummaryResult';
+import { useProductDb } from '../../infrastructure/hooks/useProductDb';
+import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
+import { TelemetryBlockRepository } from '../../infrastructure/database/product/repositories/TelemetryBlockRepository';
+import { BinaryObd2V3Codec } from '../../infrastructure/telemetry-codecs/binary-obd2-v3/BinaryObd2V3Codec';
+import { RoadTestObservabilityService, type RoadTestObservabilityReport } from '../../application/observability/RoadTestObservabilityService';
+import { exportRoadTestJson } from '../../application/observability/RoadTestLocalExport';
 import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
 import { uiText, useUiLanguage } from '../../application/localization/UiLanguage';
 
@@ -17,6 +23,10 @@ export default function SessionSummaryScreen() {
 
   const { context } = useLocalContext();
   const workspaceId = context?.defaultWorkspaceId;
+  const db = useProductDb();
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportNote, setExportNote] = useState<string | null>(null);
+  const [roadTestReport, setRoadTestReport] = useState<RoadTestObservabilityReport | null>(null);
 
   const { vehicle } = useVehicle(vehicleId);
   const { summary, loading, progress, error } = useSessionSummary(workspaceId, sessionId);
@@ -34,6 +44,31 @@ export default function SessionSummaryScreen() {
 
   const handleDone = () => {
     navigation.navigate('History');
+  };
+
+  const handleLocalExport = async () => {
+    // Export can only be initiated in the post-session Summary screen, never
+    // during active driving. Service rechecks the durable terminal state.
+    if (exportBusy || !db || !workspaceId || typeof sessionId !== 'string'
+      || !summary || summary.acquisitionMode !== SessionAcquisitionMode.REAL_BLE) return;
+    setExportBusy(true);
+    setExportNote(null);
+    try {
+      const report = await new RoadTestObservabilityService(
+        new LiveSessionRepository(db),
+        new TelemetryBlockRepository(db),
+        new BinaryObd2V3Codec(),
+      ).analyze(workspaceId, sessionId);
+      setRoadTestReport(report);
+      const outcome = await exportRoadTestJson(report, sessionId);
+      setExportNote(outcome.status === 'EXPORTED'
+        ? t('Local JSON exported to selected folder. Keep it private.','JSON local exportado a la carpeta elegida. Consérvalo privado.')
+        : t('Export cancelled; no file was created.','Exportación cancelada; no se creó ningún archivo.'));
+    } catch {
+      setExportNote(t('Could not export. Session integrity or Android storage needs review.','No se pudo exportar. Revisa la integridad de la sesión o el almacenamiento Android.'));
+    } finally {
+      setExportBusy(false);
+    }
   };
 
   const handleCheck = () => {
@@ -254,6 +289,46 @@ export default function SessionSummaryScreen() {
             ))
           )}
         </View>
+
+        {summary.acquisitionMode === SessionAcquisitionMode.REAL_BLE && (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>{t('ROAD TEST · Technical Metrics','ROAD TEST · Métricas técnicas')}</Text>
+            <Text style={styles.exportNotice}>{t(
+              'Offline analysis of a finished session. Full-session figures only; no GPS, VIN or raw OBD payload in export.',
+              'Análisis offline de sesión terminada. Solo cifras de sesión completa; sin GPS, VIN ni datos OBD crudos en la exportación.',
+            )}</Text>
+            {roadTestReport && (
+              <View testID="road-test-metric-results">
+                <Text style={styles.exportNotice}>
+                  {t('Evidence state','Estado de evidencia')}: {roadTestReport.metrics.trust}
+                  {' · '}{roadTestReport.metrics.totalEligibleAttempts} {t('requests','solicitudes')}
+                </Text>
+                {roadTestReport.metrics.perPid.filter(item => ['0105','010C','010D'].includes(item.requestId)).map(item => (
+                  <View key={item.requestId} style={styles.roadMetricRow}>
+                    <Text style={styles.roadMetricLabel}>{item.requestId}</Text>
+                    <Text style={styles.roadMetricValue}>
+                      {item.responseYieldPercent === null ? '—' : `${item.responseYieldPercent}%`}
+                      {' · p95 '}{item.responseLatencyMs.p95 === null ? '—' : `${item.responseLatencyMs.p95} ms`}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+            <TouchableOpacity
+              testID="session-summary-export-metrics"
+              accessibilityRole="button"
+              accessibilityLabel={t('Export local road test diagnostics','Exportar diagnóstico local ROAD TEST')}
+              style={[styles.exportButton, exportBusy && styles.exportButtonDisabled]}
+              disabled={exportBusy}
+              onPress={() => { void handleLocalExport(); }}
+            >
+              <Text style={styles.exportButtonText}>{exportBusy
+                ? t('Preparing diagnostics…','Preparando diagnóstico…')
+                : t('Export local diagnostic JSON','Exportar diagnóstico JSON local')}</Text>
+            </TouchableOpacity>
+            {exportNote && <Text testID="road-test-export-note" style={styles.exportNotice}>{exportNote}</Text>}
+          </View>
+        )}
       </ScrollView>
 
       <View style={styles.footer}>
@@ -300,6 +375,13 @@ const styles = StyleSheet.create({
   metricFoot: { flexDirection: 'row', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: '#374151', paddingTop: 7 },
   metricFootText: { color: '#6b7280', fontSize: 9, fontFamily: 'SpaceMono_400Regular' },
   noDataText: { color: '#9ca3af', fontSize: 12, fontFamily: 'Inter_400Regular', fontStyle: 'italic', paddingVertical: 10 },
+  exportNotice: { color: '#94a3b8', fontSize: 11, lineHeight: 17, marginVertical: 8 },
+  exportButton: { minHeight: 46, borderRadius: 12, backgroundColor: '#2563eb', alignItems: 'center', justifyContent: 'center', marginTop: 8, paddingHorizontal: 12 },
+  exportButtonDisabled: { opacity: 0.55 },
+  exportButtonText: { color: '#eff6ff', fontSize: 12, fontWeight: '800', textAlign: 'center' },
+  roadMetricRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#334155' },
+  roadMetricLabel: { color: '#cbd5e1', fontFamily: 'SpaceMono_400Regular', fontSize: 11 },
+  roadMetricValue: { color: '#bfdbfe', fontFamily: 'SpaceMono_400Regular', fontSize: 11 },
   footer: { paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#1a2227', borderTopWidth: 1, borderTopColor: '#2a3439', flexDirection: 'row', gap: 9 },
   primaryButton: { backgroundColor: '#3b82f6', paddingVertical: 14, paddingHorizontal: 32, borderRadius: 12, width: '100%', alignItems: 'center' },
   primaryButtonText: { color: '#fff', fontSize: 15, fontFamily: 'Inter_600SemiBold' },
