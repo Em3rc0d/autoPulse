@@ -19,6 +19,15 @@ export const DEFAULT_DRIVER_PREFERENCES: DriverPreferences = {
 
 const STORAGE_KEY = '@autopulse/driver-preferences/v1';
 
+// One process-local source of truth for runtime voice preference changes.
+// Publish only successful, durable writes; failures must not switch Live voice.
+const preferenceListeners = new Set<(preferences: DriverPreferences) => void>();
+
+export function subscribeDriverPreferences(listener: (preferences: DriverPreferences) => void): () => void {
+  preferenceListeners.add(listener);
+  return () => { preferenceListeners.delete(listener); };
+}
+
 function normalizePreferences(value: Partial<DriverPreferences> | null | undefined): DriverPreferences {
   const language: VoiceLanguage = value?.voiceLanguage === 'es-ES' ? 'es-ES' : 'en-US';
   return {
@@ -44,6 +53,7 @@ export async function loadDriverPreferences(): Promise<DriverPreferences> {
 export async function saveDriverPreferences(preferences: DriverPreferences): Promise<DriverPreferences> {
   const normalized = normalizePreferences(preferences);
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+  preferenceListeners.forEach(listener => listener(normalized));
   return normalized;
 }
 

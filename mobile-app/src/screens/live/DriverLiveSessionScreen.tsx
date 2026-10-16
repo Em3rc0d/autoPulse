@@ -20,7 +20,7 @@ import {
   persistPhysicalValidationReceipt,
 } from '../../application/diagnostics/PhysicalValidationReceipt';
 import { loadVehicleDocuments } from '../../application/driver-intelligence/VehicleDocumentPersistence';
-import { DEFAULT_DRIVER_PREFERENCES, loadDriverPreferences, type DriverPreferences } from '../../application/settings/DriverPreferences';
+import { DEFAULT_DRIVER_PREFERENCES, loadDriverPreferences, subscribeDriverPreferences, type DriverPreferences } from '../../application/settings/DriverPreferences';
 import type { LiveSessionTerminalOutcome } from '../../application/live/RealLiveSessionController';
 import { motionUnknownHeading } from '../../application/localization/MotionStateCopy';
 import {
@@ -289,9 +289,23 @@ function DriverLiveSessionContent({
 
   useEffect(() => {
     let mounted = true;
-    void loadDriverPreferences().then(next => { if (mounted) setPreferences(next); });
-    return () => { mounted = false; };
+    let receivedDurableUpdate = false;
+    const unsubscribe = subscribeDriverPreferences(next => {
+      if (!mounted) return;
+      receivedDurableUpdate = true;
+      setPreferences(next);
+    });
+    void loadDriverPreferences().then(next => {
+      // A pending storage read must never overwrite a newer save notification.
+      if (mounted && !receivedDurableUpdate) setPreferences(next);
+    });
+    return () => { mounted = false; unsubscribe(); };
   }, []);
+
+  useEffect(() => {
+    // The same alert in a newly selected spoken language is a new message.
+    liveVoiceMemory.current = {};
+  }, [preferences.voiceLanguage]);
 
   useEffect(() => {
     const timer = setInterval(() => setClock(Date.now()), 500);

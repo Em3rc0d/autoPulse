@@ -66,3 +66,10 @@ No new APK until adversarial smoke + full CI green on exact HEAD, remaining P1 s
 
 - Live interruption no longer creates arbitrary English spoken prose. The session interruption sends the semantic `SESSION_INTERRUPTED` key through the preference-aware `DriverVoiceNotificationService`, which chooses locale, phrase and native severity priority. Detailed reasons remain in stored/visual evidence instead of a long robotic sentence.
 - A new CI test forces English, Spanish and muted preferences and verifies the native voice boundary arguments.
+
+## Hardening pass 5 — live voice locale consistency
+
+- DriverPreferences now broadcasts changes only after AsyncStorage confirms successful persistence.
+- Live subscribes to durable changes and ignores older in-flight preference reads; unmount cleans its listener.
+- A language switch resets Live voice cooldown memory so a still-active safety alert can be announced in the newly selected locale, subject to alert-level preferences.
+- New fault-injection CI checks pending writes, write failures and unsubscribe cleanup. No database/cloud localization dependency.
