@@ -266,10 +266,19 @@ export class RealLiveSessionController {
 
         try {
           const recoveredConnection = await this.prepareConnection(previous);
-          if (this.terminalPromise) return false;
+          if (this.terminalPromise) {
+            // A native reconnect may finish after Stop was requested.
+            // Never hand a newly attached device to Check during that race.
+            try { await recoveredConnection.device.cancelConnection(); } catch { /* already disconnected */ }
+            return false;
+          }
 
           const vehiclePathAlive = await this.probeVehiclePath(recoveredConnection);
-          if (!vehiclePathAlive || this.terminalPromise) continue;
+          if (this.terminalPromise) {
+            try { await recoveredConnection.device.cancelConnection(); } catch { /* already disconnected */ }
+            return false;
+          }
+          if (!vehiclePathAlive) continue;
 
           activeBleController.retainConnection(recoveredConnection, 'LIVE');
           this.installTransport(recoveredConnection);
@@ -343,13 +352,17 @@ export class RealLiveSessionController {
   }
 
   private async performStop(mode: 'NORMAL' | 'INTERRUPTED', reason?: string): Promise<void> {
-    const wasRunning = this.currentState === 'ACTIVE' || this.currentState === 'RECOVERING';
+    const wasRecovering = this.currentState === 'RECOVERING';
+    const wasRunning = this.currentState === 'ACTIVE' || wasRecovering;
     this.currentState = mode === 'NORMAL' ? 'STOPPING' : 'INTERRUPTED';
 
     this.bleDisconnectSubscription?.remove();
     this.bleDisconnectSubscription = null;
 
-    let stopFailureReason: string | null = null;
+    // A manual stop while recovery is underway must not be reported as a
+    // clean completion. The physical BLE handoff is not yet trustworthy.
+    let stopFailureReason: string | null =
+      wasRecovering && mode === 'NORMAL' ? 'STOP_DURING_RECOVERY' : null;
     if (wasRunning && mode === 'NORMAL') {
       try {
         await this.sessionRepo.requestStop(this.workspaceId, this.sessionId, 'USER_INITIATED');
@@ -361,6 +374,9 @@ export class RealLiveSessionController {
     }
 
     this.poller?.stop();
+    // Do not release the owner lease while an asynchronous native reconnect is
+    // still in progress. Recovery checks terminalPromise and exits boundedly.
+    if (this.recoveryPromise) await this.recoveryPromise;
 
     const stopTime = Date.now();
     this.recordingStatus = 'FLUSHING';
@@ -399,9 +415,7 @@ export class RealLiveSessionController {
     this.obdController?.disconnect();
     const completedCleanly = mode === 'NORMAL' && !this.commitQueue?.getHasFailed() &&
       !drainTimedOut && stopFailureReason === null;
-    if (completedCleanly) {
-      activeBleController.releaseClaim('LIVE');
-    } else {
+    if (!completedCleanly) {
       await activeBleController.disconnectAndRelease();
     }
     this.foregroundServiceFailureUnsubscribe?.();
@@ -412,6 +426,9 @@ export class RealLiveSessionController {
     if (completedCleanly) {
       try {
         await this.sessionRepo.completeSession(this.workspaceId, this.sessionId);
+        // Only now is this connection eligible for handoff to Check. The DB
+        // commit may fail or still be in flight while a second screen mounts.
+        activeBleController.releaseClaim('LIVE');
         this.currentState = 'COMPLETED';
         this.onSessionTerminal?.({ state: 'COMPLETED' });
         return;

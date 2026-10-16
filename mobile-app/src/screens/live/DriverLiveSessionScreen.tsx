@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, Vibration, View } from 'react-native';
 import { useRoute } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import LiveSessionScreen from './LiveSessionScreen';
 import { DriverModeSelector } from './components/DriverModeSelector';
 import { DriverModeProvider, useDriverMode } from './components/DriverModeContext';
@@ -514,20 +515,20 @@ export default function DriverLiveSessionScreen() {
 
   if (!characterizationComplete) {
     return (
-      <View style={styles.characterizationContainer}>
+      <SafeAreaView edges={['top']} style={styles.characterizationContainer} testID="live-characterization-safe-area">
         <ActivityIndicator size="large" color="#10b981" />
         <Text style={styles.characterizationTitle}>Checking vehicle…</Text>
         <Text style={styles.characterizationText}>Read-only compatibility and diagnostic scan.</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container} testID="driver-live-safe-area">
       <DriverModeProvider supportedPids={supportedPids}>
         <DriverLiveSessionContent advisories={advisories} vehicleId={vehicleId} />
       </DriverModeProvider>
-    </View>
+    </SafeAreaView>
   );
 }
 
