@@ -54,7 +54,12 @@ jobs:
         run: |
           set -euo pipefail
           chmod +x ./gradlew
-          ./gradlew :app:compileDebugKotlin --no-daemon --console=plain --max-workers=2
+          # Debug React-Android AAR Jetifier needs more than the project's
+          # default 2 GiB Gradle heap on a cold GitHub runner.
+          # Constrain workers and keep Kotlin compiler in-process to bound RSS.
+          ./gradlew :app:compileDebugKotlin --no-daemon --console=plain --max-workers=1 \
+            '-Dorg.gradle.jvmargs=-Xmx4608m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8' \
+            -Pkotlin.compiler.execution.strategy=in-process
 
       - name: Assert Kotlin class exists and APK/AAB were not produced
         run: |
