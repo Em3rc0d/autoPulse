@@ -29,6 +29,78 @@ describe('Active BLE lease — adversarial native race regression', () => {
   });
   afterEach(() => { lease.releaseConnection(); });
 
+
+  it('hands an idle adapter Live → Check → Live without creating a second device', async () => {
+    const original = connection('handoff-cycle');
+    lease.retainConnection(original as any);
+    expect(lease.claimConnection('handoff-cycle', 'LIVE')).toBe(original);
+    expect(lease.claimConnection('handoff-cycle', 'CHECK')).toBeNull();
+    lease.releaseClaim('LIVE');
+    expect(lease.claimConnection('handoff-cycle', 'CHECK')).toBe(original);
+    expect(lease.claimConnection('handoff-cycle', 'LIVE')).toBeNull();
+    lease.releaseClaim('CHECK');
+    expect(lease.claimConnection('handoff-cycle', 'LIVE')).toBe(original);
+    expect(lease.getOwner()).toBe('LIVE');
+    expect(original.device.connect).not.toHaveBeenCalled();
+    expect(original.device.cancelConnection).not.toHaveBeenCalled();
+  });
+
+  it('rejects a different physical adapter at idle until old native link disconnects', () => {
+    lease.retainConnection(connection('first') as any);
+    expect(() => lease.retainConnection(connection('second') as any))
+      .toThrow('BLE_IDLE_CONNECTION_REQUIRES_DISCONNECT');
+    expect(lease.getConnection('first')).not.toBeNull();
+    expect(lease.getConnection('second')).toBeNull();
+  });
+
+  it('does not let a stale owner release a newer Check claim', () => {
+    const current = connection('stale');
+    lease.retainConnection(current as any);
+    lease.claimConnection('stale', 'LIVE');
+    lease.releaseClaim('LIVE');
+    lease.claimConnection('stale', 'CHECK');
+    lease.releaseClaim('LIVE');
+    expect(lease.getOwner()).toBe('CHECK');
+    expect(lease.getConnection('stale')).toBe(current);
+  });
+
+  it('cancellation after discovery must not promote an invalidated reconnect', async () => {
+    const pending = deferred<any>();
+    const conn = connection('discovery', {
+      discoverAllServicesAndCharacteristics: jest.fn(() => pending.promise),
+    });
+    lease.retainConnection(conn as any);
+    lease.claimConnection('discovery', 'CHECK');
+    const recovery = lease.reconnectClaimedConnection('discovery', 'CHECK');
+    await new Promise(resolve => setTimeout(resolve, 300));
+    expect(conn.device.discoverAllServicesAndCharacteristics).toHaveBeenCalledTimes(1);
+    lease.releaseClaim('CHECK');
+    lease.claimConnection('discovery', 'LIVE');
+    pending.resolve(conn.device);
+    expect(await recovery).toBeNull();
+    expect(lease.getOwner()).toBe('LIVE');
+    expect(lease.getConnection('discovery')).toBe(conn);
+  });
+
+  it('removes one subscriber without muting surviving BLE observers', () => {
+    const first = jest.fn();
+    const second = jest.fn();
+    const unsubscribe = lease.subscribe(first);
+    const unsubscribeSecond = lease.subscribe(second);
+    try {
+      lease.retainConnection(connection('notifications') as any);
+      expect(first).toHaveBeenCalledTimes(1);
+      expect(second).toHaveBeenCalledTimes(1);
+      unsubscribe();
+      lease.releaseConnection();
+      expect(first).toHaveBeenCalledTimes(1);
+      expect(second).toHaveBeenCalledTimes(2);
+    } finally {
+      unsubscribe();
+      unsubscribeSecond();
+    }
+  });
+
   it('retains a successful claimed Check reconnect', async () => {
     const device = connection('success');
     device.device.connect.mockResolvedValue(device.device);

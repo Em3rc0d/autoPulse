@@ -101,3 +101,12 @@ No new APK until adversarial smoke + full CI green on exact HEAD, remaining P1 s
 - Extended the libSQL/Drizzle integration suite with a simulated Android process-restart scenario. Creates and activates a real local DB session, records a STOPPING request, runs `recoverOrphanedSessions()`, and requires INTERRUPTED with explicit unexpected-termination reason, durable counters and one recovery audit event.
 - A second startup recovery must return zero orphans and never duplicate the recovery audit event.
 - This checks repository SQL semantics against the migration-backed SQLite-compatible test database. It does not simulate killing a physical Android process, disk corruption, Android lifecycle callbacks or broken native Bluetooth state; those remain device-level gates.
+
+## Hardening pass 9 — expanded adversarial smoke (2026-10-16)
+
+- Expanded `smoke:adversarial` to include the real Check execution boundary, Android foreground-service lifecycle, and BLE owner handoff suite, not just the narrower mocks/replay.
+- Prohibited overlapping physical Check OBD command dispatch with a fail-closed single-command slot. The slot spans inter-command pacing, request/response transport, normalization and observer receipt, and is cleared on success, cancellation and failures.
+- Cancel during an in-flight ECU response now rejects the late response instead of promoting it to a normal Check result. Cancel during the serial pacing delay cannot send any additional ECU command.
+- Added protocol mismatch, subfunction/parallel rejection, all authorized read-only OBD services, and refusal to resend a response-pending continuation.
+- Added a Live → Check → Live handoff sequence, identity preservation, old-owner release resistance, cancellation during discovery, subscriber cleanup, idempotent foreground-service start/stop and subscriber fault containment.
+- Consolidated smoke to execute new suites only once in CI, avoiding duplicate Jest/Actions overhead. Tests are deterministic mocks; **they do not claim physical Android BLE/audio certification**.
