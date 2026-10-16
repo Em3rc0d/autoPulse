@@ -31,6 +31,15 @@ export interface RoadTestPidMetric {
   readonly validUpdateIntervalMs: Distribution;
 }
 
+const SAFE_SIGNAL: Readonly<Record<RoadTestPid, { label: string; unit: string }>> = {
+  '0105': { label: 'COOLANT', unit: '°C' },
+  '010D': { label: 'SPEED', unit: 'km/h' },
+  '010C': { label: 'RPM', unit: 'RPM' },
+  '0104': { label: 'ENGINE_LOAD', unit: '%' },
+  '0111': { label: 'THROTTLE_POSITION', unit: '%' },
+  '0142': { label: 'ECU_VOLTAGE', unit: 'V' },
+};
+
 export interface SafeRoadTestEvent {
   readonly sequence: number;
   readonly command: RoadTestPid;
@@ -170,9 +179,9 @@ export function calculateRoadTestMetrics(
         ? event.latencyMs : null,
       values: Object.freeze(readings.map(reading => Object.freeze({
         // Restrict signal name and unit to a bounded, non-identifying label.
-        signal: reading.signalId.slice(0, 40),
+        signal: SAFE_SIGNAL[pid].label,
         value: reading.value as number,
-        unit: reading.unit.slice(0, 16),
+        unit: SAFE_SIGNAL[pid].unit,
       }))),
     }));
   }

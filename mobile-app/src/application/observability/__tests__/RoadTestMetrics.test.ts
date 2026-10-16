@@ -103,8 +103,10 @@ describe('ROAD TEST-001 deterministic observability', () => {
   });
 
   it('quarantines invalid timestamps, NaN values and bad latency without inventing numerical evidence', () => {
-    const bad = event(1, '010C', 'SUCCESS', 1000, Number.NaN, Number.NaN);
-    bad.requestedAt = 2000;
+    const bad = {
+      ...event(1, '010C', 'SUCCESS', 1000, Number.NaN, Number.NaN),
+      requestedAt: 2000,
+    };
     const data = calculateRoadTestMetrics([bad, event(2, '010C', 'NO_DATA', 2200, 10, null)]);
     const rpm = data.perPid.find(x => x.requestId === '010C')!;
     expect(data.issues).toEqual(expect.arrayContaining(['INVALID_EVENT_TIMESTAMPS', 'INVALID_STORED_LATENCY', 'INVALID_GOOD_READING']));
@@ -131,8 +133,11 @@ describe('ROAD TEST-001 deterministic observability', () => {
   });
 
   it('flags sequence gaps and excludes false ECU labels or quality INVALID', () => {
-    const fake = event(3, '010C');
-    fake.decodedReadings[0].quality = 'INVALID';
+    const source = event(3, '010C');
+    const fake = {
+      ...source,
+      decodedReadings: [{ ...source.decodedReadings[0], quality: 'INVALID' as const }],
+    };
     const data = calculateRoadTestMetrics([event(1, '010C'), fake]);
     expect(data.issues).toContain('EVENT_SEQUENCE_GAP');
     expect(data.perPid.find(x=>x.requestId==='010C')!.validResponses).toBe(1);
