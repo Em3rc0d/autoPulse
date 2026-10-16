@@ -11,6 +11,7 @@
     "test": "jest --runInBand",
     "typecheck": "tsc --noEmit",
     "verify": "npm run typecheck && npm run test",
+    "smoke:adversarial": "jest --runInBand --runTestsByPath src/application/localization/__tests__/UiCatalog.test.ts src/infrastructure/voice/__tests__/AndroidDriverVoice.test.ts __tests__/infrastructure/ble/probe/ProbeHandshake.test.ts __tests__/infrastructure/ble/probe/BleCompatibilityProbe.test.ts src/infrastructure/ble/real/pipeline/__tests__/ObdFrameParser.correlation.test.ts src/application/live/__tests__/RealLiveSessionController.test.ts src/application/live/__tests__/TelemetryCommitQueue.test.ts src/application/live/__tests__/LiveEcuTruth.test.ts src/domain/driver-intelligence/__tests__/MotionStatePolicy.test.ts src/application/check/live/__tests__/CheckTransportRecovery.test.ts src/application/check/replay/__tests__/DiagnosticReplayHardening.test.ts src/infrastructure/database/product/repositories/__tests__/OrphanRecovery.integration.test.ts",
     "icon:apply": "node scripts/apply-approved-icon.js",
     "icon:check": "node scripts/apply-approved-icon.js --check",
     "apk:check": "node scripts/build-local-apk.js --check",

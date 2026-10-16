@@ -38,5 +38,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify TypeScript and tests
+      - name: Adversarial smoke — BLE, OBD, Live, Check, SQLite, i18n, voice
+        run: npm run smoke:adversarial
+
+      - name: Verify TypeScript and full test suite
         run: npm run verify

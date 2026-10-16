@@ -87,6 +87,32 @@ describe('RealLiveSessionController Integration', () => {
     errorLog.mockRestore();
   });
 
+  it('records interruption if a final telemetry flush throws', async () => {
+    const ctrl = createController();
+    ctrl['currentState'] = 'ACTIVE';
+    (ctrl as any).assembler.flush = jest.fn(() => { throw new Error('codec exception'); });
+    const log = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await ctrl.stopSession();
+      expect(mockSessionRepo.completeSession).not.toHaveBeenCalled();
+      expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith('ws1', 'sess1', 'TELEMETRY_FINAL_FLUSH_FAILED');
+      expect(ctrl['currentState']).toBe('INTERRUPTED');
+    } finally { log.mockRestore(); }
+  });
+
+  it('does not claim a completed session when completion persistence rejects', async () => {
+    const ctrl = createController();
+    ctrl['currentState'] = 'ACTIVE';
+    mockSessionRepo.completeSession.mockRejectedValueOnce(new Error('DB locked'));
+    const log = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await ctrl.stopSession();
+      expect(mockSessionRepo.completeSession).toHaveBeenCalledTimes(1);
+      expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith('ws1', 'sess1', 'SESSION_COMPLETION_FAILED');
+      expect(ctrl['currentState']).toBe('INTERRUPTED');
+    } finally { log.mockRestore(); }
+  });
+
   it('Failed final block prevents COMPLETED', async () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';
