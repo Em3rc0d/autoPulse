@@ -1,14 +1,10 @@
 name: AutoPulse Android Native Verify — No APK
 
+# Run only when native Android sources/toolchain change or before the
+# next authorized QA build. PR paths filter cumulative diffs and previously
+# recompiled all Kotlin sources after every unrelated JS-only update.
 on:
-  pull_request:
-    branches:
-      - fix/release-obd-ble-hardening-20261015
-    paths:
-      - 'mobile-app/android/**'
-      - 'mobile-app/package.json'
-      - 'mobile-app/package-lock.json'
-      - '.github/workflows/android-native-verify.yml'
+  workflow_dispatch:
 
 permissions:
   contents: read
