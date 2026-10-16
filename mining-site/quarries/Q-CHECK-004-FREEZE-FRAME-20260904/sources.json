@@ -1,0 +1,33 @@
+{
+  "quarry_id": "Q-CHECK-004-FREEZE-FRAME-20260904",
+  "status": "SEMANTIC_BOUNDARY_CLOSED_FIXTURES_OPEN",
+  "captured_on": "2026-09-04",
+  "scope": "Standard OBD freeze-frame evidence acquisition for AutoPulse Check",
+  "sources": [
+    {
+      "id": "SRC-ELM327-DATASHEET",
+      "kind": "ADAPTER_VENDOR_TECHNICAL_DOCUMENTATION",
+      "name": "ELM327 OBD to RS232 Interpreter Datasheet",
+      "url": "https://www.elmelectronics.com/wp-content/uploads/2017/01/ELM327DS.pdf",
+      "role": "Evidence for standard Mode 02 purpose and for Mode 04 clearing stored freeze-frame evidence, reinforcing the read-only preservation contract."
+    },
+    {
+      "id": "SRC-WIKIPEDIA-OBD2-PIDS",
+      "kind": "SECONDARY_REFERENCE",
+      "url": "https://en.wikipedia.org/wiki/OBD-II_PIDs",
+      "role": "Cross-reference for Service 01 vs Service 02 current/snapshot distinction and PID 02 freeze-frame DTC semantics."
+    },
+    {
+      "id": "SRC-AUTOPULSE-PID-QUARRY",
+      "kind": "RESEARCH_EVIDENCE",
+      "path": "mining-site/quarries/Q-OBD2-PID-CATALOG-20260904/",
+      "role": "Reference definitions potentially reusable by a service-aware Mode 02 decoder; does not prove Mode 02 support on a vehicle."
+    }
+  ],
+  "promotion": {
+    "semantic_boundary": "CLOSED",
+    "fixtures": "OPEN",
+    "multi_frame_scope": "FIXTURE_BOUNDED",
+    "runtime": "BLOCKED"
+  }
+}

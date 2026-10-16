@@ -138,6 +138,13 @@ export default function ConnectObdScreen() {
 
       const connectionHandleId = `conn_${Math.random().toString(36).substr(2, 9)}`;
 
+      const previous = activeBleController.getActiveConnection();
+      if (previous && activeBleController.getOwner() !== 'IDLE') {
+        throw new Error('BLE_CONNECTION_LEASED');
+      }
+      if (previous && previous.device.id !== probeResult.device.id) {
+        await activeBleController.disconnectAndRelease();
+      }
       activeBleController.retainConnection({
         connectionHandleId,
         device: probeResult.device,

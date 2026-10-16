@@ -51,23 +51,27 @@ jest.mock('../../../application/config', () => ({
 }));
 
 describe('LiveSessionScreen', () => {
-  it('renders without ReferenceError and keeps ECU and adapter voltage separate', () => {
+  it('renders the bounded live signal set and keeps ECU and adapter voltage separate', () => {
     const { getByText } = render(<LiveSessionScreen />);
 
     expect(getByText('Engine RPM')).toBeTruthy();
     expect(getByText('Vehicle Speed')).toBeTruthy();
     expect(getByText('Engine Coolant')).toBeTruthy();
+    expect(getByText('Engine Load')).toBeTruthy();
+    expect(getByText('Throttle Position')).toBeTruthy();
     expect(getByText('ECU Voltage')).toBeTruthy();
     expect(getByText('Adapter Voltage')).toBeTruthy();
   });
 
-  it('renders cards using two-column layout contract (width 48%)', () => {
+  it('renders all live cards using the two-column layout contract (width 48%)', () => {
     const { getByTestId } = render(<LiveSessionScreen />);
 
     const cardIds = [
       'live-metric-card-engine-rpm',
       'live-metric-card-vehicle-speed',
       'live-metric-card-engine-coolant',
+      'live-metric-card-engine-load',
+      'live-metric-card-throttle-position',
       'live-metric-card-ecu-voltage',
       'live-metric-card-adapter-voltage'
     ];

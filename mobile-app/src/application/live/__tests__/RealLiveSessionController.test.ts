@@ -1,8 +1,7 @@
-jest.mock('react-native', () => ({
-  AppState: {
-    addEventListener: jest.fn().mockReturnValue({ remove: jest.fn() }),
-    currentState: 'active'
-  }
+jest.mock('../LiveForegroundService', () => ({
+  startLiveForegroundService: jest.fn().mockReturnValue(true),
+  stopLiveForegroundService: jest.fn(),
+  subscribeLiveForegroundServiceFailure: jest.fn().mockReturnValue(jest.fn()),
 }));
 
 import { RealLiveSessionController } from '../RealLiveSessionController';
@@ -69,6 +68,23 @@ describe('RealLiveSessionController Integration', () => {
 
     expect(mockSessionRepo.requestStop).toHaveBeenCalledTimes(1);
     expect(mockSessionRepo.completeSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not abandon BLE cleanup when requestStop throws', async () => {
+    const ctrl = createController();
+    ctrl['currentState'] = 'ACTIVE';
+    mockSessionRepo.requestStop.mockRejectedValueOnce(new Error('SQLite unavailable'));
+    const errorLog = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    await ctrl.stopSession();
+
+    expect(mockSessionRepo.completeSession).not.toHaveBeenCalled();
+    expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith(
+      'ws1', 'sess1', 'SESSION_STOP_REQUEST_FAILED'
+    );
+    expect(ctrl['currentState']).toBe('INTERRUPTED');
+    expect(ctrl.recordingStatus).toBe('CLOSED');
+    errorLog.mockRestore();
   });
 
   it('Failed final block prevents COMPLETED', async () => {
@@ -162,24 +178,9 @@ describe('RealLiveSessionController Integration', () => {
     expect(recovery).not.toHaveBeenCalled();
   });
 
-  it('App background uses the Release-1 APP_BACKGROUND interruption policy', async () => {
+  it('app visibility is not treated as a terminal transport event', () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';
-
-    (ctrl as any).handleAppStateChange('background');
-    await ctrl['terminalPromise'];
-
-    expect(mockSessionRepo.completeSession).not.toHaveBeenCalled();
-    expect(mockSessionRepo.interruptSession).toHaveBeenCalledTimes(1);
-    expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith('ws1', 'sess1', 'APP_BACKGROUND');
-    expect(ctrl['currentState']).toBe('INTERRUPTED');
-  });
-
-  it('Returning/remaining active does not terminate the session', () => {
-    const ctrl = createController();
-    ctrl['currentState'] = 'ACTIVE';
-
-    (ctrl as any).handleAppStateChange('active');
 
     expect(ctrl['terminalPromise']).toBeNull();
     expect(mockSessionRepo.interruptSession).not.toHaveBeenCalled();

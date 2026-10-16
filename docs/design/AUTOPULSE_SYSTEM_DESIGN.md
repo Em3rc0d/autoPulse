@@ -300,13 +300,21 @@ After substantial phone repositioning, recalibration may be needed; future desig
 
 ## 11. Recording and persistence architecture
 
-### 11.1 Release-1 background policy
+### 11.1 V1 closure background policy
 
-Recording is foreground-only.
+Background continuity is service-gated.
 
-If an ACTIVE Live session leaves foreground, AutoPulse terminates recording as explicit interruption with reason such as `APP_BACKGROUND`.
+An ACTIVE Live session may continue while the app is not visible only when the Android connected-device foreground service starts and remains healthy.
 
-This is not a crash workaround; it is current product policy. True background recording would be a separate capability requiring explicit design, Android service behavior and certification.
+Rules:
+
+- foreground-service availability is part of the acquisition contract;
+- a foreground-service start/native failure produces an explicit terminal outcome;
+- background continuity never invents samples for missing time;
+- physical BLE/ECU path loss still enters bounded recovery;
+- abrupt Android process death is recovered on the next boot from durable evidence;
+- the old `APP_BACKGROUND` terminal behavior belongs to earlier foreground-only artifacts and is not the v4.3 closure contract;
+- this behavior is not public-release evidence until it passes exact-artifact physical certification.
 
 ### 11.2 Telemetry blocks
 

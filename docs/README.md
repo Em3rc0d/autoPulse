@@ -2,7 +2,7 @@
 
 **Status:** active documentation authority
 **Scope:** AutoPulse repository knowledge, product decisions, implementation evidence, physical validation and release truth
-**Last major evidence update:** 2026-08-24 / 2026-08-25 UTC boundary
+**Last major evidence update:** 2026-09-29 V1 closure run
 
 AutoPulse documentation is organized as an evidence pipeline rather than a flat folder of notes.
 
@@ -115,7 +115,9 @@ Release documentation must be conservative. “Observed” is not “supported�
 - Logan quarry: `mining-site/quarries/Q-001_RENAULT_LOGAN_2014.md`
 - Duster quarry: `mining-site/quarries/Q-002_RENAULT_DUSTER_2014.md`
 - Golden Dataset: `golden-dataset/AUTOPULSE_GOLDEN_DATASET_V1.md`
-- Release plan: `release/AUTOPULSE_LIVE_V1_RELEASE_PLAN.md`
+- Current V1 closure authority: `release/AUTOPULSE_V1_CLOSURE_AUTHORITY.md`
+- Driving/physical certification receipt: `test/V43_DRIVING_CERTIFICATION_RECEIPT.md`
+- Historical release plan: `release/AUTOPULSE_LIVE_V1_RELEASE_PLAN.md`
 - Compatibility contract: `release/COMPATIBILITY_CONTRACT_V1.md`
 - Logan lifecycle gate: `release/R1_RENAULT_LOGAN_PHYSICAL_GATE.md`
 
@@ -134,7 +136,7 @@ These invariants are promoted and must remain consistent across Design, Build, T
 9. Healthy driving state should be visually quiet. Transitional, degraded and critical states should be progressively louder.
 10. Voice describes meaning and action, not a continuous reading of raw PIDs.
 11. Off-Road phone sensors are a subordinate sidecar. They must never destabilize, stop or starve ECU acquisition.
-12. Release-1 recording is foreground-only. Backgrounding an ACTIVE session becomes explicit interruption unless a separately designed and certified background mode is introduced later.
+12. V1 background continuity is permitted only through the certified Android connected-device foreground-service contract; service failure is explicit, and older APP_BACKGROUND terminal behavior remains historical to foreground-only artifacts.
 13. A clean user stop is not a failed or partial session merely because the final fixed-duration telemetry window is shorter.
 14. Process termination cannot be synchronously intercepted with certainty; orphan recovery occurs on next boot and must preserve only durable evidence.
 15. A public compatibility claim is bounded by the physical compatibility matrix, never by aspiration.
