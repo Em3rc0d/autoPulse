@@ -9,7 +9,9 @@ Record at least these phase windows: `STATIONARY_PREFLIGHT`, `DRIVING`, `STATION
 
 A valid ECU observation is a finite numeric decoded reading from an **OBD** command and evidence-provenance origin `OBD2`, with `quality=GOOD`; adapter-only `ATRV`, GNSS/phone sensors, missing or invalid readings do not qualify. Preserve the source ECU address when known and `unattributed` otherwise.
 
-The source stores `ObdAcquisitionEvent` records with `command`, `requestedAt`, `completedAt`, `latencyMs`, `status`, `decodedReadings`, and `sequenceNumber`. It stores block and event counts for reconstructed Session Summary, but the app currently **does not expose an approved bulk export or calculated percentile screen**. Until there is a verified read-only analysis/extraction path, mark event-level metrics `MEASUREMENT_BLOCKED` rather than infer them from screenshots.
+The source stores `ObdAcquisitionEvent` records with `command`, `requestedAt`, `completedAt`, `latencyMs`, `status`, `decodedReadings`, and `sequenceNumber`. **MK10.5 adds a post-session, user-initiated local JSON export** from `SessionSummaryScreen`: `RoadTestObservabilityService` reads the persisted V3 blocks, rechecks session ownership/terminal state, validates metadata/CRC, and computes deterministic p50/p95/max and valid update intervals. Android Storage Access Framework allows choosing the destination without a background upload. The export is sanitised (bounded Mode 01 PIDs; no VIN/GPS/raw ELM payload/vehicle ID; hashed session reference). **Physical Android SAF/UI usability remains unverified until the authorized APK test.**
+
+Any metric not derivable from this complete-session V3 data (e.g., native BLE RF packet loss, exact trip phases, verified audible alert delivery, reliable `ATRV` reconstruction) remains `MEASUREMENT_BLOCKED` or requires separate evidence. Existing historical recordings may contain gaps or a partial codec; the report must flag these as `DEGRADED`, never invent values.
 
 ## 2. Metrics frozen before the physical trial
 

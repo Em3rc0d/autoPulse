@@ -116,3 +116,10 @@ No new APK until adversarial smoke + full CI green on exact HEAD, remaining P1 s
 - The operator approved the three-tier architecture direction (Discovery / bounded priority Live / parked Deep Check) and requested a metric-gated road pilot, **not** APK creation in this phase.
 - The controlled road pilot scope and staged GO/HOLD decisions are frozen in `docs/release/ROAD_TEST_001_CONTRACT.md`, with metric definitions in `docs/release/ROAD_TEST_001_MEASUREMENT_SPEC.md` and unexecuted receipt in `docs/test/ROAD_TEST_001_RECEIPT.md`.
 - This earlier CI evidence is not a driving certification. Artifact, UI SafeArea/audio and all physical gates remain blocked until one QA candidate is separately authorized and tested.
+
+## MK10.5 — Offline observability and export (2026-10-16)
+
+- Added `RoadTestMetrics` pure deterministic quantiles and per-PID attempt/valid response/update timing calculations, with explicit `UNAVAILABLE` and `DEGRADED` evidence instead of invented measurements.
+- Added `RoadTestObservabilityService`: terminal real-BLE session and workspace verification; CRC-checked committed V3 blocks; block/event count, sequence, format and decoder validation; bounded 25k-event/5000-block caps.
+- Added explicit Android Storage Access Framework local JSON export from **Session Summary** only. No new packages, manifest permissions, backend calls or polling changes. Export omits raw OBD, GPS and direct identifiers.
+- Added pure adversarial, V3 round-trip, local SAF failure/cancellation, and SQLite-backed integration regressions. Source tests are NOT an Android physical certification; ROAD TEST-001 G0/HOLD persists pending QA artifact authorization.

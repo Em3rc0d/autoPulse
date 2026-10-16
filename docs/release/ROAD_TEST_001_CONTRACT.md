@@ -106,3 +106,10 @@ Do not upload VIN/plate, personal routes/GPS traces, account identifiers, raw vo
 - Any runtime change after a failed physical run creates a new SHA/artifact identity and reruns affected physical gates.
 - A QA pilot may proceed only on a separately authorized exact candidate. No GO from this document triggers GitHub Actions APK workflow.
 - This contract supplements, does not supersede, `AUTOPULSE_V1_CLOSURE_AUTHORITY.md`, `V43_DRIVING_CERTIFICATION_RECEIPT.md` or the general `RELEASE_CANDIDATE_RUNBOOK.md`.
+
+## MK10.5 observability implementation status
+
+- Deterministic offline metrics for the six bounded Mode 01 Live requests are implemented and tested; includes outcome counts, yield, latency p50/p95/max, valid per-PID update gaps and explicit duplicate/sequence/corruption issues.
+- The Session Summary UI exposes a **post-session-only** button for user-selected Android local JSON export; underlying terminal/workspace/real-BLE gates are checked again in the service.
+- Exported JSON contains safe per-command timestamp/result/value rows, **not** raw ELM fragments, VIN, exact route, vehicle identity, adapter identity or un-hashed session ID.
+- **No background export and no Live polling changes.** Export UI, Android SAF and actual measured values remain subject to device-level verification on the separately authorized QA candidate.
