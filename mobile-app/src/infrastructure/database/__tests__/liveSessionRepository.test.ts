@@ -152,6 +152,34 @@ describe('LiveSessionRepository', () => {
   describe('Exception flows', () => {
     let intSessionId: string;
 
+    it('persists STOPPING -> INTERRUPTED when final telemetry persistence fails', async () => {
+      const id = await repo.createSession('WS_1', 'VEH_1', 'OP_1', 'ADP_1');
+      await repo.beginPreparation('WS_1', id);
+      await repo.attachCapabilitySnapshot('WS_1', id, 'SNAP_1', '1.0', '6', 'BLE');
+      await repo.activateSession('WS_1', id);
+      await repo.requestStop('WS_1', id, 'USER_INITIATED');
+
+      let session = await db.query.liveSessions.findFirst({ where: eq(schema.liveSessions.id, id) });
+      expect(session?.status).toBe('STOPPING');
+
+      await repo.interruptSession('WS_1', id, 'TELEMETRY_DRAIN_TIMEOUT');
+      session = await db.query.liveSessions.findFirst({ where: eq(schema.liveSessions.id, id) });
+      expect(session).toMatchObject({
+        status: 'INTERRUPTED',
+        failureCode: 'TELEMETRY_DRAIN_TIMEOUT',
+        stopReason: 'USER_INITIATED',
+      });
+      expect(session?.endedAt).toBeGreaterThan(0);
+
+      // Retrying terminalization must not append duplicate terminal events.
+      await repo.interruptSession('WS_1', id, 'TELEMETRY_DRAIN_TIMEOUT');
+      const events = await db.query.liveSessionEvents.findMany({
+        where: eq(schema.liveSessionEvents.sessionId, id),
+      });
+      expect(events.filter(event => event.eventType === 'SESSION_INTERRUPTED')).toHaveLength(1);
+      await expect(repo.completeSession('WS_1', id)).rejects.toThrow(/Invalid transition/);
+    });
+
     it('interruptSession and recovery', async () => {
       intSessionId = await repo.createSession('WS_1', 'VEH_1', 'OP_1', 'ADP_1');
       await repo.beginPreparation('WS_1', intSessionId);
@@ -209,6 +237,44 @@ describe('LiveSessionRepository', () => {
 
       const session = await db.query.liveSessions.findFirst({ where: eq(schema.liveSessions.id, failSessionId) });
       expect(session?.status).toBe('FAILED');
+    });
+
+    it('recovers real SQLite STOPPING orphan exactly once after simulated app restart', async () => {
+      const id = await repo.createSession('WS_1', 'VEH_1', 'OP_1', 'ADP_1');
+      await repo.beginPreparation('WS_1', id);
+      await repo.attachCapabilitySnapshot('WS_1', id, 'SNAP_1', '1.0', '6', 'BLE');
+      await repo.activateSession('WS_1', id);
+      await repo.requestStop('WS_1', id, 'USER_INITIATED');
+
+      const before = await db.query.liveSessions.findFirst({ where: eq(schema.liveSessions.id, id) });
+      expect(before?.status).toBe('STOPPING');
+
+      // Represents initializeProductDb() discovering a session whose JS
+      // controller disappeared while the final block was still pending.
+      const recoveredCount = await repo.recoverOrphanedSessions('WS_1');
+      expect(recoveredCount).toBeGreaterThanOrEqual(1);
+      const after = await db.query.liveSessions.findFirst({ where: eq(schema.liveSessions.id, id) });
+      expect(after).toMatchObject({
+        status: 'INTERRUPTED',
+        failureCode: 'UNEXPECTED_APP_TERMINATION',
+        stopReason: 'USER_INITIATED',
+        totalBlocks: 0,
+        totalEvents: 0,
+        totalReadings: 0,
+        lastCommittedSequence: null,
+      });
+      expect(after?.endedAt).toBeGreaterThan(0);
+
+      const events = await db.query.liveSessionEvents.findMany({
+        where: eq(schema.liveSessionEvents.sessionId, id),
+      });
+      expect(events.filter(event => event.eventType === 'SESSION_RECOVERED_AS_INTERRUPTED')).toHaveLength(1);
+
+      expect(await repo.recoverOrphanedSessions('WS_1')).toBe(0);
+      const subsequentEvents = await db.query.liveSessionEvents.findMany({
+        where: eq(schema.liveSessionEvents.sessionId, id),
+      });
+      expect(subsequentEvents.filter(event => event.eventType === 'SESSION_RECOVERED_AS_INTERRUPTED')).toHaveLength(1);
     });
 
     it('rejects cross-workspace access', async () => {

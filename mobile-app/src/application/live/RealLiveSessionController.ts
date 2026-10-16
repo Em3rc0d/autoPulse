@@ -1,4 +1,3 @@
-import { AppState, NativeEventSubscription } from 'react-native';
 import type { Subscription } from 'react-native-ble-plx';
 import { RealObdController } from '../../infrastructure/ble/real/RealObdController';
 import {
@@ -12,6 +11,10 @@ import {
 import { LiveSessionRepository } from '../../infrastructure/database/product/repositories/live-session.repository';
 import { ITelemetryBlockRepository } from '../../domain/telemetry/repositories/TelemetryBlockRepository';
 import {
+  resolveLivePollingPlan,
+  withProvenAdapterVoltage,
+} from '../../domain/obd/LiveObdPollingPolicy';
+import {
   TelemetryCommitQueue,
   CommitQueueEvent,
   TelemetryCommitQueueDrainTimeoutError
@@ -20,6 +23,11 @@ import { CommandResult, CommandRequest } from '../../infrastructure/ble/real/pip
 import { ObdAcquisitionMapper } from '../../domain/telemetry/factories/ObdAcquisitionMapper';
 import { TelemetryBlockAssembler } from '../../domain/telemetry/logic/TelemetryBlockAssembler';
 import { BinaryObd2V3Codec } from '../../infrastructure/telemetry-codecs/binary-obd2-v3/BinaryObd2V3Codec';
+import {
+  startLiveForegroundService,
+  stopLiveForegroundService,
+  subscribeLiveForegroundServiceFailure,
+} from './LiveForegroundService';
 
 export type RecordingStatus = 'NOT_STARTED' | 'RECORDING' | 'FLUSHING' | 'DEGRADED' | 'FAILED' | 'CLOSED';
 
@@ -32,13 +40,16 @@ export interface LiveSessionTerminalOutcome {
 
 const RECOVERY_DELAYS_MS = [0, 1500, 3500] as const;
 const RECOVERY_CONNECT_TIMEOUT_MS = 3500;
+const RECOVERY_STOP_SETTLEMENT_TIMEOUT_MS = 9000;
 
 /**
  * Release-1 lifecycle policy:
- * - Live acquisition is foreground-only.
+ * - App visibility is not a terminal transport event.
  * - Temporary adapter/ECU transport failures receive a bounded recovery window.
  * - Recovery never fabricates telemetry; any missing interval remains missing evidence.
- * - Leaving the app while ACTIVE/RECOVERING still produces explicit interruption.
+ * - A connected-device foreground service owns background eligibility.
+ * - Live polling is bounded to signals consumed by Driving View v2 so a weak link
+ *   does not burn freshness budget on unrelated capability-catalog signals.
  */
 export class RealLiveSessionController {
   private obdController: RealObdController | null = null;
@@ -53,8 +64,8 @@ export class RealLiveSessionController {
   private assembler: TelemetryBlockAssembler | null = null;
   private codec = new BinaryObd2V3Codec();
   private commitQueue: TelemetryCommitQueue | null = null;
-  private appStateSubscription: NativeEventSubscription | null = null;
   private bleDisconnectSubscription: Subscription | null = null;
+  private foregroundServiceFailureUnsubscribe: (() => void) | null = null;
 
   private terminalPromise: Promise<void> | null = null;
   private recoveryPromise: Promise<boolean> | null = null;
@@ -68,7 +79,8 @@ export class RealLiveSessionController {
     private workspaceId: string,
     public sessionId: string,
     private connectionHandleId: string,
-    private supportedPids: string[]
+    private supportedPids: string[],
+    private pollAdapterVoltage: boolean = false,
   ) {}
 
   public async start(
@@ -86,9 +98,21 @@ export class RealLiveSessionController {
       }
     });
 
-    const conn = activeBleController.getConnection(this.connectionHandleId);
+    const conn = activeBleController.claimConnection(this.connectionHandleId, 'LIVE');
     if (!conn) {
-      await this.handleUnexpectedDisconnect('CONNECTION_LOST');
+      await this.handleUnexpectedDisconnect('CONNECTION_UNAVAILABLE_OR_LEASED');
+      return;
+    }
+
+    this.foregroundServiceFailureUnsubscribe?.();
+    this.foregroundServiceFailureUnsubscribe = subscribeLiveForegroundServiceFailure(reason => {
+      if (this.currentState === 'ACTIVE' || this.currentState === 'RECOVERING') {
+        void this.handleUnexpectedDisconnect(reason);
+      }
+    });
+
+    if (!startLiveForegroundService()) {
+      await this.handleUnexpectedDisconnect('FOREGROUND_SERVICE_UNAVAILABLE');
       return;
     }
 
@@ -104,12 +128,14 @@ export class RealLiveSessionController {
 
     this.installTransport(conn);
 
-    this.appStateSubscription = AppState.addEventListener('change', nextState => {
-      this.handleAppStateChange(nextState);
-    });
 
     this.recordingStatus = 'RECORDING';
     this.poller?.start(250);
+  }
+
+  private livePollRequests(): string[] {
+    const plan = resolveLivePollingPlan(this.supportedPids);
+    return withProvenAdapterVoltage(plan.requestIds, this.pollAdapterVoltage);
   }
 
   private installTransport(conn: ActiveConnection) {
@@ -121,7 +147,7 @@ export class RealLiveSessionController {
     this.observePhysicalDisconnect(conn);
     this.poller = new RealTelemetryPoller(
       this.obdController,
-      this.supportedPids,
+      this.livePollRequests(),
       result => {
         if (this.onUiUpdate) this.handleCommandResult(result, this.onUiUpdate);
       },
@@ -129,14 +155,6 @@ export class RealLiveSessionController {
     );
   }
 
-  private handleAppStateChange(nextState: string) {
-    if (
-      nextState !== 'active' &&
-      (this.currentState === 'ACTIVE' || this.currentState === 'RECOVERING')
-    ) {
-      void this.handleUnexpectedDisconnect('APP_BACKGROUND');
-    }
-  }
 
   private observePhysicalDisconnect(conn: ActiveConnection) {
     this.bleDisconnectSubscription?.remove();
@@ -149,7 +167,8 @@ export class RealLiveSessionController {
 
   private handlePollerDiagnostic(event: PollerDiagnosticEvent, conn: ActiveConnection) {
     if (event.type !== 'TRANSPORT_STALLED' || this.currentState !== 'ACTIVE') return;
-    void this.attemptConnectionRecovery('ECU_RESPONSE_LOST', conn);
+    const recoveryReason = event.reason === 'DISCONNECTED' ? 'DEVICE_DISCONNECTED' : 'ECU_RESPONSE_LOST';
+    void this.attemptConnectionRecovery(recoveryReason, conn);
   }
 
   private async delay(ms: number) {
@@ -192,7 +211,7 @@ export class RealLiveSessionController {
 
     try {
       const firstProbe = await probeController.executeCommand(request0100());
-      if (firstProbe.status === 'SUCCESS_DECODED' || firstProbe.status === 'SUCCESS_RAW') {
+      if (this.provesVehiclePathFrom0100(firstProbe)) {
         return true;
       }
 
@@ -206,13 +225,19 @@ export class RealLiveSessionController {
       });
 
       const secondProbe = await probeController.executeCommand(request0100());
-      return secondProbe.status === 'SUCCESS_DECODED' || secondProbe.status === 'SUCCESS_RAW';
+      return this.provesVehiclePathFrom0100(secondProbe);
     } catch (error) {
       console.warn('[RealLiveSessionController] Recovery probe failed', error);
       return false;
     } finally {
       probeController.disconnect();
     }
+  }
+
+  private provesVehiclePathFrom0100(result: CommandResult): boolean {
+    return result.status === 'SUCCESS_DECODED' && result.obdFrames.some(frame =>
+      frame.validity === 'VALID' && frame.service === '41' && frame.pid === '00' && frame.payloadBytes.length >= 4
+    );
   }
 
   public attemptConnectionRecovery(
@@ -242,12 +267,21 @@ export class RealLiveSessionController {
 
         try {
           const recoveredConnection = await this.prepareConnection(previous);
-          if (this.terminalPromise) return false;
+          if (this.terminalPromise) {
+            // A native reconnect may finish after Stop was requested.
+            // Never hand a newly attached device to Check during that race.
+            try { await recoveredConnection.device.cancelConnection(); } catch { /* already disconnected */ }
+            return false;
+          }
 
           const vehiclePathAlive = await this.probeVehiclePath(recoveredConnection);
-          if (!vehiclePathAlive || this.terminalPromise) continue;
+          if (this.terminalPromise) {
+            try { await recoveredConnection.device.cancelConnection(); } catch { /* already disconnected */ }
+            return false;
+          }
+          if (!vehiclePathAlive) continue;
 
-          activeBleController.retainConnection(recoveredConnection);
+          activeBleController.retainConnection(recoveredConnection, 'LIVE');
           this.installTransport(recoveredConnection);
           this.currentState = 'ACTIVE';
           this.recordingStatus = 'RECORDING';
@@ -263,7 +297,11 @@ export class RealLiveSessionController {
       }
 
       if (!this.terminalPromise) {
-        await this.handleUnexpectedDisconnect(`${reason}_RECOVERY_FAILED`);
+        // Never await terminalization FROM the recovery promise: performStop
+        // waits for this same recovery promise to settle before BLE teardown.
+        // Awaiting here forms a self-deadlock on exhausted retries.
+        void this.handleUnexpectedDisconnect(`${reason}_RECOVERY_FAILED`)
+          .catch(error => console.error('[RealLiveSessionController] Recovery terminalization failed', error));
       }
       return false;
     })().finally(() => {
@@ -319,19 +357,41 @@ export class RealLiveSessionController {
   }
 
   private async performStop(mode: 'NORMAL' | 'INTERRUPTED', reason?: string): Promise<void> {
-    const wasActive = this.currentState === 'ACTIVE';
+    const wasRecovering = this.currentState === 'RECOVERING';
+    const wasRunning = this.currentState === 'ACTIVE' || wasRecovering;
     this.currentState = mode === 'NORMAL' ? 'STOPPING' : 'INTERRUPTED';
 
-    this.appStateSubscription?.remove();
-    this.appStateSubscription = null;
     this.bleDisconnectSubscription?.remove();
     this.bleDisconnectSubscription = null;
 
-    if (wasActive && mode === 'NORMAL') {
-      await this.sessionRepo.requestStop(this.workspaceId, this.sessionId, 'USER_INITIATED');
+    // A manual stop while recovery is underway must not be reported as a
+    // clean completion. The physical BLE handoff is not yet trustworthy.
+    let stopFailureReason: string | null =
+      wasRecovering && mode === 'NORMAL' ? 'STOP_DURING_RECOVERY' : null;
+    if (wasRunning && mode === 'NORMAL') {
+      try {
+        await this.sessionRepo.requestStop(this.workspaceId, this.sessionId, 'USER_INITIATED');
+      } catch (error) {
+        // Persistence failures must not keep the BLE poller and native service running.
+        console.error('[RealLiveSessionController] Stop request failed:', error);
+        stopFailureReason = 'SESSION_STOP_REQUEST_FAILED';
+      }
     }
 
     this.poller?.stop();
+    // Do not release the owner lease while an asynchronous native reconnect is
+    // still in progress. Recovery checks terminalPromise and exits boundedly.
+    if (this.recoveryPromise) {
+      let timeout: ReturnType<typeof setTimeout> | null = null;
+      const settled = await Promise.race([
+        this.recoveryPromise.then(() => true, () => false),
+        new Promise<boolean>(resolve => {
+          timeout = setTimeout(() => resolve(false), RECOVERY_STOP_SETTLEMENT_TIMEOUT_MS);
+        }),
+      ]);
+      if (timeout) clearTimeout(timeout);
+      if (!settled) stopFailureReason = stopFailureReason ?? 'RECOVERY_STOP_TIMEOUT';
+    }
 
     const stopTime = Date.now();
     this.recordingStatus = 'FLUSHING';
@@ -339,9 +399,12 @@ export class RealLiveSessionController {
     await new Promise(r => setTimeout(r, 100));
 
     if (this.assembler && !this.commitQueue?.getHasFailed()) {
-      const finalBlock = this.assembler.flush(stopTime);
-      if (finalBlock) {
-        this.enqueueBlock(finalBlock);
+      try {
+        const finalBlock = this.assembler.flush(stopTime);
+        if (finalBlock) this.enqueueBlock(finalBlock);
+      } catch (error) {
+        console.error('[RealLiveSessionController] Final telemetry flush failed:', error);
+        stopFailureReason = 'TELEMETRY_FINAL_FLUSH_FAILED';
       }
     }
 
@@ -358,29 +421,47 @@ export class RealLiveSessionController {
             error
           );
         } else {
-          throw error;
+          console.error('[RealLiveSessionController] Telemetry drain failed:', error);
+          stopFailureReason = 'TELEMETRY_DRAIN_FAILED';
         }
       }
     }
 
     this.obdController?.disconnect();
-    activeBleController.releaseConnection();
+    const completedCleanly = mode === 'NORMAL' && !this.commitQueue?.getHasFailed() &&
+      !drainTimedOut && stopFailureReason === null;
+    if (!completedCleanly) {
+      await activeBleController.disconnectAndRelease();
+    }
+    this.foregroundServiceFailureUnsubscribe?.();
+    this.foregroundServiceFailureUnsubscribe = null;
+    stopLiveForegroundService();
     this.recordingStatus = 'CLOSED';
 
-    if (mode === 'NORMAL' && !this.commitQueue?.getHasFailed() && !drainTimedOut) {
-      await this.sessionRepo.completeSession(this.workspaceId, this.sessionId);
-      this.currentState = 'COMPLETED';
-      this.onSessionTerminal?.({ state: 'COMPLETED' });
-    } else {
-      const failReason = drainTimedOut ? 'TELEMETRY_DRAIN_TIMEOUT' : (reason || 'TELEMETRY_PERSISTENCE_FAILED');
+    if (completedCleanly) {
       try {
-        await this.sessionRepo.interruptSession(this.workspaceId, this.sessionId, failReason);
-      } catch (err) {
-        console.error('Failed to record session interruption', err);
+        await this.sessionRepo.completeSession(this.workspaceId, this.sessionId);
+        // Only now is this connection eligible for handoff to Check. The DB
+        // commit may fail or still be in flight while a second screen mounts.
+        activeBleController.releaseClaim('LIVE');
+        this.currentState = 'COMPLETED';
+        this.onSessionTerminal?.({ state: 'COMPLETED' });
+        return;
+      } catch (error) {
+        console.error('[RealLiveSessionController] Completion persistence failed:', error);
+        stopFailureReason = 'SESSION_COMPLETION_FAILED';
+        await activeBleController.disconnectAndRelease();
       }
-      this.currentState = 'INTERRUPTED';
-      this.onSessionTerminal?.({ state: 'INTERRUPTED', reason: failReason });
     }
+    const failReason = drainTimedOut ? 'TELEMETRY_DRAIN_TIMEOUT' :
+      (stopFailureReason || reason || 'TELEMETRY_PERSISTENCE_FAILED');
+    try {
+      await this.sessionRepo.interruptSession(this.workspaceId, this.sessionId, failReason);
+    } catch (err) {
+      console.error('Failed to record session interruption', err);
+    }
+    this.currentState = 'INTERRUPTED';
+    this.onSessionTerminal?.({ state: 'INTERRUPTED', reason: failReason });
   }
 
   public forceCleanup() {

@@ -56,6 +56,24 @@ export const DEMO_PROFILES: Record<string, SignalAdvisoryProfile> = {
       { context: 'GENERAL', label: 'Extremo', min: 300, minInclusive: false, unit: 'km/h', displayOrder: 4 }
     ]
   },
+  ENGINE_LOAD: {
+    vehicleId: 'demo',
+    signalId: 'ENGINE_LOAD',
+    sourceType: 'GENERIC_REFERENCE',
+    calibrationStatus: 'GENERIC_ONLY',
+    hysteresisMs: 0,
+    sustainDurationMs: 0,
+    bands: [],
+  },
+  THROTTLE_POSITION: {
+    vehicleId: 'demo',
+    signalId: 'THROTTLE_POSITION',
+    sourceType: 'GENERIC_REFERENCE',
+    calibrationStatus: 'GENERIC_ONLY',
+    hysteresisMs: 0,
+    sustainDurationMs: 0,
+    bands: [],
+  },
   CONTROL_VOLTAGE: {
     vehicleId: 'demo',
     signalId: 'CONTROL_VOLTAGE',

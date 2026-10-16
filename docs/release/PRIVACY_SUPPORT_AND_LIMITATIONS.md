@@ -10,7 +10,9 @@ The Release-1 application does not upload diagnostic sessions or vehicle telemet
 
 Uninstalling the app removes app-managed local data according to Android behavior. Android backup is disabled for the production application, so AutoPulse does not promise cloud restoration of local diagnostic history. Users should treat deletion/uninstallation as irreversible unless an explicit export feature is added and certified.
 
-Bluetooth permissions are used to discover and communicate with a nearby supported OBD adapter. On Android versions where the platform requires location permission for Bluetooth discovery, AutoPulse requests it only for adapter discovery; Release 1 does not provide a location-tracking feature.
+Bluetooth permissions are used to discover and communicate with a nearby supported OBD adapter. Android platform/version behavior may also require location permission for Bluetooth discovery.
+
+Off-Road can additionally consume foreground phone-location evidence such as GNSS speed, altitude, heading and accuracy when location permission has already been granted. AutoPulse does not open a location-permission dialog during an ACTIVE Live session. Phone/location evidence is kept semantically separate from ECU evidence and is not allowed to control the OBD connection lifecycle. V1 does not claim route tracking or cloud location history.
 
 ## Diagnostic limitations
 
@@ -35,7 +37,7 @@ Compatibility grades mean:
 - `DEGRADED`: basic operation is reliable but a documented non-essential behavior is limited;
 - `UNSUPPORTED`: AutoPulse could not establish a sufficiently reliable and distinguishable diagnostic path.
 
-Bluetooth Classic, Wi-Fi, USB, iOS, OEM/Mode 22 expansion and background recording are outside the public Release-1 promise unless explicitly added to a later certified matrix.
+Bluetooth Classic, Wi-Fi, USB, iOS and OEM/Mode 22 expansion are outside the public Release-1 promise unless explicitly added to a later certified matrix. Background continuity is limited to the Android connected-device foreground-service contract defined in the V1 closure authority and remains subject to exact-artifact physical certification.
 
 ## Approved short disclosure
 

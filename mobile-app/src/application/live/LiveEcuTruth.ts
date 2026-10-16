@@ -10,6 +10,7 @@ export interface LiveEcuTruthInput {
   elapsedMs: number;
   sessionError?: string | null;
   delayedAfterMs?: number;
+  lastValidEcuSampleAgeMs?: number;
 }
 
 export interface LiveEcuTruthPresentation {
@@ -38,6 +39,7 @@ export function deriveLiveEcuTruth({
   elapsedMs,
   sessionError,
   delayedAfterMs = DEFAULT_FIRST_ECU_SAMPLE_DELAY_MS,
+  lastValidEcuSampleAgeMs,
 }: LiveEcuTruthInput): LiveEcuTruthPresentation {
   if (sessionError?.startsWith(RECOVERING_PREFIX)) {
     return {
@@ -55,6 +57,17 @@ export function deriveLiveEcuTruth({
       label: interrupted ? 'SESSION INTERRUPTED' : 'RECORDING DEGRADED',
       detail: interrupted ? interruptionDetail(sessionError) : sessionError,
       tone: 'error',
+    };
+  }
+
+  // Receiving one valid sample in the past must not keep a permanent LIVE badge.
+  if (hasValidEcuSample && lastValidEcuSampleAgeMs !== undefined &&
+      lastValidEcuSampleAgeMs > 15_000) {
+    return {
+      state: 'ECU_DATA_DELAYED',
+      label: 'ECU DATA STALE',
+      detail: 'No fresh ECU-origin observation in the last 15 seconds. Previous samples are historical.',
+      tone: 'delayed',
     };
   }
 
@@ -92,9 +105,10 @@ export function commandResultContainsValidEcuSample(result: {
   if (result.status !== 'SUCCESS_DECODED') return false;
   if (!result.request?.family?.startsWith('OBD_MODE_')) return false;
 
-  return Boolean(result.decodedValues?.some(decoded => {
-    if (decoded.value === null || decoded.value === undefined) return false;
-    if (typeof decoded.value === 'number') return Number.isFinite(decoded.value);
-    return true;
-  }));
+  // Live state is unlocked only by finite numeric ECU evidence. Capability bitmaps,
+  // strings, arrays, NaN and Infinity may be valid decoder artifacts elsewhere, but
+  // they are not a live driving observation and must not make the UI claim LIVE ECU DATA.
+  return Boolean(result.decodedValues?.some(decoded =>
+    typeof decoded.value === 'number' && Number.isFinite(decoded.value)
+  ));
 }

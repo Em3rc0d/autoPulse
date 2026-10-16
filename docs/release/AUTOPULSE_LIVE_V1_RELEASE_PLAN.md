@@ -2,7 +2,8 @@
 
 **Target:** first public Android release
 **Product boundary:** AutoPulse Live v1, local-first
-**Documentation status date:** 2026-08-24 / 2026-08-25 UTC boundary
+**Documentation status date:** historical plan updated for closure on 2026-09-29  
+**Current authority:** `AUTOPULSE_V1_CLOSURE_AUTHORITY.md`
 
 ## Release promise
 

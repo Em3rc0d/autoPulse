@@ -11,20 +11,22 @@ export class ObdFrameParser {
     for (const line of candidateLines) {
       const hex = line.normalizedText;
 
-      // Check for negative response: 7F <service> <code...>
-      if (hex.includes('7F')) {
-        const idx = hex.indexOf('7F');
-        if (hex.length >= idx + 6) {
-           const requestedService = hex.substring(idx + 2, idx + 4);
-           const responseCode = hex.substring(idx + 4, idx + 6);
-           negatives.push({
-             requestedService,
-             responseCode,
-             sourceEcu: idx > 0 ? hex.substring(0, idx) : null,
-             rawLine: line.originalText
-           });
-           continue;
-        }
+      // 7F <requested service> <NRC> must precede a positive response.
+      // A literal '7F' inside a positive PID payload is NOT a negative reply.
+      const positiveMarker = request.expectedService || '41';
+      const positiveIndex = hex.indexOf(positiveMarker);
+      const negativeIndex = hex.indexOf('7F');
+      const requestedServiceCode = request.command.slice(0, 2).toUpperCase();
+      if (negativeIndex >= 0 && (positiveIndex < 0 || negativeIndex < positiveIndex) &&
+          hex.length >= negativeIndex + 6 &&
+          hex.substring(negativeIndex + 2, negativeIndex + 4) === requestedServiceCode) {
+        negatives.push({
+          requestedService: requestedServiceCode,
+          responseCode: hex.substring(negativeIndex + 4, negativeIndex + 6),
+          sourceEcu: negativeIndex > 0 ? hex.substring(0, negativeIndex) : null,
+          rawLine: line.originalText,
+        });
+        continue;
       }
 
       // Check for standard Mode 01/09 responses
@@ -76,6 +78,19 @@ export class ObdFrameParser {
           rawLine: line.originalText,
           validity: 'INCOMPLETE'
         });
+        continue;
+      }
+
+      // Never promote a reply for a different PID to this request's telemetry.
+      // Extra ECU/header material is preserved in rawLine, not guessed into values.
+      if (request.expectedPid && pid !== request.expectedPid.toUpperCase()) {
+        frames.push({ sourceAddress, service, pid, payloadBytes: [], declaredLength: null,
+          rawLine: line.originalText, validity: 'AMBIGUOUS' });
+        continue;
+      }
+      if (payloadHex.length % 2 !== 0) {
+        frames.push({ sourceAddress, service, pid, payloadBytes: [], declaredLength: null,
+          rawLine: line.originalText, validity: 'INCOMPLETE' });
         continue;
       }
 

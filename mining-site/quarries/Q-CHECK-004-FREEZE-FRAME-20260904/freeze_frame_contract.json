@@ -1,0 +1,24 @@
+{
+  "contract_id": "CHECK-FREEZE-FRAME-SEMANTICS-V0",
+  "status": "RESEARCH_CANDIDATE_NOT_RUNTIME",
+  "service": "02",
+  "rules": {
+    "freeze_frame_is_current_data": false,
+    "freeze_frame_is_live_history": false,
+    "preserve_service_context": true,
+    "associated_dtc_is_evidence_relationship": true,
+    "invent_wall_clock_timestamp": false,
+    "blind_mode02_pid_sweep": false
+  },
+  "result_states": [
+    "FRAME_OBSERVED",
+    "NO_FRAME_AVAILABLE",
+    "SERVICE_UNSUPPORTED",
+    "PID_NOT_AVAILABLE_IN_FRAME",
+    "NO_DATA",
+    "INVALID_RESPONSE",
+    "TIMEOUT",
+    "UNATTRIBUTED"
+  ],
+  "runtime_gate": "BLOCKED_UNTIL_FREEZE_FRAME_FIXTURES"
+}

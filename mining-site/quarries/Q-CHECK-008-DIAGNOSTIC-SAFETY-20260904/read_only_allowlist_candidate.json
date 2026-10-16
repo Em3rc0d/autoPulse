@@ -1,0 +1,29 @@
+{
+  "contract_id": "CHECK-CORE-SAFETY-ALLOWLIST-CANDIDATE-V0",
+  "status": "RESEARCH_CANDIDATE_NOT_RUNTIME",
+  "default_action": "BLOCK",
+  "classes": [
+    "READ_ONLY_PROVEN",
+    "READ_ONLY_EXPECTED",
+    "UNKNOWN",
+    "MUTATING"
+  ],
+  "semantic_families": [
+    {"mode":"01","purpose":"CURRENT_DATA","classification":"READ_ONLY_PROVEN","runtime":"DESCRIPTOR_REQUIRED"},
+    {"mode":"02","purpose":"FREEZE_FRAME_READ","classification":"READ_ONLY_PROVEN","runtime":"BLOCKED_UNTIL_Q_CHECK_004"},
+    {"mode":"03","purpose":"STORED_DTC_READ","classification":"READ_ONLY_PROVEN","runtime":"BLOCKED_UNTIL_FIXTURES"},
+    {"mode":"04","purpose":"CLEAR_DIAGNOSTIC_INFORMATION","classification":"MUTATING","runtime":"BLOCK"},
+    {"mode":"05","purpose":"OXYGEN_SENSOR_TEST_RESULTS","classification":"READ_ONLY_EXPECTED","runtime":"BLOCK_UNTIL_RESEARCH"},
+    {"mode":"06","purpose":"MONITOR_TEST_RESULTS","classification":"READ_ONLY_PROVEN","runtime":"BLOCKED_UNTIL_Q_CHECK_005"},
+    {"mode":"07","purpose":"PENDING_DTC_READ","classification":"READ_ONLY_PROVEN","runtime":"BLOCKED_UNTIL_FIXTURES"},
+    {"mode":"08","purpose":"SPECIAL_CONTROL","classification":"MUTATING","runtime":"BLOCK"},
+    {"mode":"09","purpose":"VEHICLE_INFORMATION_READ","classification":"READ_ONLY_PROVEN","runtime":"BLOCKED_UNTIL_Q_CHECK_006"},
+    {"mode":"0A","purpose":"PERMANENT_DTC_READ","classification":"READ_ONLY_PROVEN","runtime":"BLOCKED_UNTIL_FIXTURES"}
+  ],
+  "unregistered_request_defaults": {
+    "RAW_DIAGNOSTIC": "UNKNOWN_BLOCK",
+    "VENDOR_SPECIFIC": "UNKNOWN_BLOCK",
+    "UDS": "UNKNOWN_BLOCK"
+  },
+  "runtime_gate": "BLOCKED_UNTIL_POLICY_AND_ADVERSARIAL_TESTS"
+}

@@ -12,6 +12,12 @@ export class TelemetryCommitQueueDrainTimeoutError extends Error {
   }
 }
 
+// Blocks are normally emitted every 5 seconds. Eight pending blocks represents
+// roughly forty seconds of persistence lag. Beyond that point continuing to
+// acquire indefinitely risks unbounded memory growth and a misleading "recording"
+// state, so the session must fail closed and preserve the evidence already queued.
+export const MAX_PENDING_TELEMETRY_BLOCKS = 8;
+
 export class TelemetryCommitQueue {
   private queue: EncodedTelemetryBlock[] = [];
   private isProcessing = false;
@@ -26,6 +32,17 @@ export class TelemetryCommitQueue {
 
   public enqueue(block: EncodedTelemetryBlock) {
     if (this.hasFailed) return; // Do not enqueue more if we are already failed
+
+    if (this.queue.length >= MAX_PENDING_TELEMETRY_BLOCKS) {
+      this.hasFailed = true;
+      this.onEvent({
+        type: 'FAILED',
+        errorReason: 'TELEMETRY_BACKPRESSURE_OVERFLOW',
+        block,
+      });
+      return;
+    }
+
     this.queue.push(block);
     this.processNext();
   }
@@ -38,22 +55,30 @@ export class TelemetryCommitQueue {
     this.isProcessing = true;
     const block = this.queue[0];
 
+    try {
     // Attempt 1
     let result = await this.repository.commitBlock(this.workspaceId, this.sessionId, block);
 
     // Check if retryable
     if (!result.success) {
       if (this.isRetryable((result as any).reason)) {
-        // Retry exactly once with identical block
+        // Retry exactly once with identical block. Repository writes are idempotent
+        // by session + block sequence + byte-identical payload.
         result = await this.repository.commitBlock(this.workspaceId, this.sessionId, block);
       }
+    }
+
+    // A backpressure overflow may have failed the queue while an older database
+    // write was still in flight. That completed write remains durable evidence, but
+    // the queue must not resume normal processing after the terminal failure.
+    if (this.hasFailed) {
+      return;
     }
 
     if (!result.success) {
       this.hasFailed = true;
       // We retain the block in the queue (do not shift)
       this.onEvent({ type: 'FAILED', errorReason: (result as any).reason, block });
-      this.isProcessing = false;
       return;
     }
 
@@ -61,8 +86,15 @@ export class TelemetryCommitQueue {
     this.queue.shift(); // Remove from queue
     this.onEvent({ type: 'COMMITTED', block });
 
-    this.isProcessing = false;
-    this.processNext();
+    } catch (error) {
+      if (!this.hasFailed) {
+        this.hasFailed = true;
+        this.onEvent({ type: 'FAILED', errorReason: 'DATABASE_WRITE_FAILED', block });
+      }
+    } finally {
+      this.isProcessing = false;
+      if (!this.hasFailed && this.queue.length > 0) void this.processNext();
+    }
   }
 
   /**
