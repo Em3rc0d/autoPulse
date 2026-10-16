@@ -96,7 +96,7 @@ A P0/P1 includes fabricated telemetry, silent block/data loss, active-looking UI
 
 ## 4. Evidence, privacy and reproducibility
 
-Each measurement/evidence entry must link to `runId`, artifact SHA-256, `sessionId`, vehicle+adapter+Android tuple, stage, timestamps, original source class and hash. A screenshot supports visible behavior but is **not** a raw ECU stream or proof of response timing. The current Session Summary contains block integrity and per-signal counts; latency percentiles require replay/analysis of persisted `ObdAcquisitionEvent` data and are currently **not surfaced in the app**. See measurement spec for `MEASUREMENT_BLOCKED` treatment.
+Each measurement/evidence entry must link to `runId`, artifact SHA-256, `sessionId`, vehicle+adapter+Android tuple, stage, timestamps, original source class and hash. A screenshot supports visible behavior but is **not** a raw ECU stream or proof of response timing. The current Session Summary contains block integrity and per-signal counts; latency percentiles now appear in the completed-session UI through the MK10.5 post-session analysis/export flow (six bounded Mode 01 commands; full-session only); that UI and Android SAF export remain **physically unverified** until testing the exact QA APK. See measurement spec for `MEASUREMENT_BLOCKED` treatment.
 
 Do not upload VIN/plate, personal routes/GPS traces, account identifiers, raw voice recordings, secrets or unredacted vehicle/user metadata to the public repository. Keep original evidence private and publish hashes/sanitized descriptions.
 
