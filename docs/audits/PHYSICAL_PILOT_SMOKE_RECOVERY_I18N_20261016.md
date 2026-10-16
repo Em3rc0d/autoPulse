@@ -55,3 +55,9 @@ No new APK until adversarial smoke + full CI green on exact HEAD, remaining P1 s
 - The Promise resolves `true` only when `UtteranceProgressListener.onDone` is delivered for the current utterance. `onError`, `onStop`, missing locale, initialization failure, preemption and a 15-second watchdog resolve `false`.
 - Lower priority voice cannot preempt an active critical utterance; overlapping utterance IDs are matched to avoid late old callbacks resolving a newer request.
 - This is source-level implementation plus structural CI, **not proof of Kotlin compilation, hardware audio, installed voice data, volume, audio route or operating-system process survival**. Actual native compilation and Android instrumentation remain open until a gated APK is authorized.
+
+## Hardening pass 3 — durable language preference
+
+- The Settings UI now serializes preference writes, disables concurrent toggle/button updates during persistence, and switches shared UI/voice locale only **after** storage confirms the write.
+- If storage fails, settings roll back to the previous locale and display a localizable error; no unhandled Promise rejection from the Settings controls.
+- `SettingsScreen.persistence.test.tsx` injects a pending write and a rejected write, asserting no premature language switch and an explicit visible error.
