@@ -191,7 +191,9 @@ export default function CheckRunScreen() {
         const recovered = await activeBleController.reconnectClaimedConnection(
           connectionHandleId,
           'CHECK',
+          () => cancellationRef.current.isCancelled,
         );
+        if (cancellationRef.current.isCancelled) throw new Error('CHECK_CANCELLED');
         if (!recovered) {
           throw new Error(`CHECK_TRANSPORT_RECOVERY_FAILED:${checkErrorMessage(firstFailure)}`);
         }

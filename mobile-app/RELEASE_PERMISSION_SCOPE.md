@@ -29,7 +29,7 @@ These permissions are required by the current V1 implementation and are enforced
 | `android.permission.INTERNET` | Platform/network stack | Network-capable surfaces exist, while Live acquisition remains local-first and does not depend on cloud connectivity. |
 | `android.permission.VIBRATE` | Live advisories | Haptic notification for driver/session advisories. |
 
-Release-1 acquisition policy remains **foreground-only**. `RealLiveSessionController` interrupts an active recording with `APP_BACKGROUND` when the application leaves the active state. The current foreground service must not be interpreted as permission to claim background recording.
+**Current v4.3 V1 closure authority:** background acquisition is conditional on a successfully started and healthy connected-device foreground service. App visibility alone is not a terminal event. A foreground-service start/native failure terminates or interrupts the session explicitly; process death is reconciled from durable evidence. Do **not** claim background continuity until certified on the exact physical APK. The historical foreground-only `APP_BACKGROUND` rule applied to older artifacts and is superseded by `docs/release/AUTOPULSE_V1_CLOSURE_AUTHORITY.md`.
 
 ## Conditionally allowed permissions
 
@@ -39,6 +39,8 @@ These permissions may be present in the V1 APK but are not considered core AutoP
 | --- | --- | --- |
 | `android.permission.READ_EXTERNAL_STORAGE` | `expo-file-system` / media-file compatibility | Temporarily allowed for legacy Android compatibility. Do not remove until Garage/media-library behavior is validated on the oldest supported Android lane. |
 | `android.permission.WRITE_EXTERNAL_STORAGE` | `expo-file-system` / media-file compatibility | Temporarily allowed for legacy Android compatibility. Same gate as above. |
+
+**MK10.5 ROAD TEST-001 local export:** Android Storage Access Framework asks the operator to choose an explicit folder **after a session has terminated**, then writes sanitized JSON via `expo-file-system`. This does not require broad `READ_EXTERNAL_STORAGE`/`WRITE_EXTERNAL_STORAGE` permissions; both are explicitly removed from the **release** manifest and forbidden by the built-APK allowlist. SAF directory access is an operator-mediated document-provider grant, not background storage access. The source manifest is insufficient: re-verify the merged effective permission list on the exact QA artifact.
 | `android.permission.ACCESS_NETWORK_STATE` | ExoPlayer dependency chain | Allowed as dependency bookkeeping; it is not an AutoPulse evidence or acquisition capability. Candidate for removal when non-V1 AV/AI surfaces are pruned. |
 | `com.em3rc0dth.autopulse.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION` | Android/merged app manifest | App-internal receiver protection permission. No user prompt and no external data capability. |
 

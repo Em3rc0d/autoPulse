@@ -1,0 +1,17 @@
+{
+  "motion.confirmParked": "CONFIRMANDO DETENCIÓN",
+  "motion.confirmMoving": "CONFIRMANDO MOVIMIENTO",
+  "motion.conflict": "MOVIMIENTO EN CONFLICTO",
+  "motion.indeterminate": "MOVIMIENTO SIN CONFIRMAR",
+  "motion.dataLimited": "DATOS DE MOVIMIENTO LIMITADOS",
+  "voice.AUTOPULSE_READY": "AUTOPULSE LISTO.",
+  "voice.ENGINE_OK": "MOTOR OK.",
+  "voice.TEMP_RISING": "ATENCIÓN. TEMPERATURA SUBIENDO.",
+  "voice.ENGINE_HOT": "ALTO. MOTOR CALIENTE.",
+  "voice.CHECK_ENGINE": "REVISA MOTOR.",
+  "voice.LOW_VOLTAGE": "REVISA. BAJO VOLTAJE.",
+  "voice.OIL_PRESSURE": "ALTO. PRESIÓN DE ACEITE.",
+  "voice.FIRE_RISK": "ALTO. RIESGO DE FUEGO.",
+  "voice.SIGNAL_LOST": "SEÑAL PERDIDA.",
+  "voice.SESSION_INTERRUPTED": "SESIÓN AUTOPULSE DETENIDA."
+}
