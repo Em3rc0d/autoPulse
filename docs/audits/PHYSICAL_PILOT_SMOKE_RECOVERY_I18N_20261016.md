@@ -81,3 +81,11 @@ No new APK until adversarial smoke + full CI green on exact HEAD, remaining P1 s
 - **Fixed TTS initialization hang:** if Android never calls `TextToSpeech.onInit`, a bounded 8 s watchdog resolves pending requests false, and tears down the unusable native engine.
 - **Fixed durable preference listeners:** one subscriber throwing cannot misreport a successful AsyncStorage write as failure.
 - New Jest fault-injection tests cover recovery exhaustion, perpetual discovery, observer exceptions and Kotlin watchdog structure. Native compilation remains a separate gate.
+
+## Hardening pass 6 — BLE lease fencing and late native promise checks (2026-10-16)
+
+- Previous `ActiveBleConnectionController.reconnectClaimedConnection` verified the lease at entry only, then awaited native GATT disconnect/connect/discovery and unconditionally reassigned `activeConnection`. A stale Check promise could therefore resurrect a cancelled/handed-off connection, or its catch could disconnect the new LIVE owner.
+- A monotonically increasing lease generation invalidates old native continuations on claim/release/retain/disconnect. Recovery rechecks ownership after every await and suppresses stale reassignment and stale-error teardown. Check now passes its cancellation token to reconnect and checks cancellation again before the retry.
+- Physical disconnect now fences new lease acquisitions until its native promise settles. Subscriber exceptions no longer interrupt BLE state transitions.
+- CI adds seven adversarial races for reassignments, disconnect-teardown, cancellation, and observer exceptions in `ActiveBleConnectionController.test.ts`; this is replay-level evidence, not Android radio certification.
+- Still open: device-level force power cut at every stage and late native promise handling when BLE APIs never settle; platform-level disconnect timeouts are separate from local lease fencing.

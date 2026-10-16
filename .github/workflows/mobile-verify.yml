@@ -41,5 +41,8 @@ jobs:
       - name: Adversarial smoke — BLE, OBD, Live, Check, SQLite, i18n, voice
         run: npm run smoke:adversarial
 
+      - name: BLE lease race smoke — no APK
+        run: npx jest --runInBand --runTestsByPath src/infrastructure/ble/__tests__/ActiveBleConnectionController.test.ts
+
       - name: Verify TypeScript and full test suite
         run: npm run verify
