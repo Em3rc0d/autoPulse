@@ -21,6 +21,7 @@ import {
 import { loadVehicleDocuments } from '../../application/driver-intelligence/VehicleDocumentPersistence';
 import { DEFAULT_DRIVER_PREFERENCES, loadDriverPreferences, type DriverPreferences } from '../../application/settings/DriverPreferences';
 import type { LiveSessionTerminalOutcome } from '../../application/live/RealLiveSessionController';
+import { motionUnknownHeading } from '../../application/localization/MotionStateCopy';
 import {
   evaluateDriverAdvisories,
   vehicleHealthFromCompatibility,
@@ -166,6 +167,7 @@ function DrivingPresentationSurface({
   alert,
   alertEpisode,
   motionState,
+  motionReason,
   motionEvidenceAvailable,
   presentation,
   voiceEnabled,
@@ -174,6 +176,7 @@ function DrivingPresentationSurface({
   alert: DriverAlertDefinition | null;
   alertEpisode: AlertEpisode;
   motionState: MotionState;
+  motionReason: string;
   motionEvidenceAvailable: boolean;
   presentation: DrivingModePresentation;
   voiceEnabled: boolean;
@@ -189,11 +192,9 @@ function DrivingPresentationSurface({
     ? driverAlertPhrase(alert.key, language).replace(/\.$/, '')
     : unresolved
       ? (language === 'es-ES' ? 'CONDICIÓN SIN RESOLVER' : 'CONDITION UNRESOLVED')
-      : motionDataLimited
-        ? (language === 'es-ES' ? 'DATOS DE MOVIMIENTO LIMITADOS' : 'MOTION DATA LIMITED')
-        : motionStateConfirming
-          ? (language === 'es-ES' ? 'CONFIRMANDO MOVIMIENTO' : 'MOTION CONFIRMING')
-          : (language === 'es-ES' ? 'NORMAL' : 'NORMAL');
+      : motionState === 'UNKNOWN'
+        ? motionUnknownHeading(motionReason, motionEvidenceAvailable, language)
+        : 'NORMAL';
   const icon = alert?.icon ?? (unresolved || motionDataLimited ? '▲' : '●');
   const secondaryA = presentation.stateFirst ? presentation.primary : presentation.secondaryA;
   const secondaryB = presentation.stateFirst ? presentation.secondaryA : presentation.secondaryB;
@@ -400,6 +401,7 @@ function DriverLiveSessionContent({
           alert={effectiveAlert}
           alertEpisode={alertEpisode}
           motionState={motion.state}
+          motionReason={motion.reason}
           motionEvidenceAvailable={hasUsableMotionEvidence(motion)}
           presentation={presentation}
           voiceEnabled={preferences.voiceAlertsEnabled}

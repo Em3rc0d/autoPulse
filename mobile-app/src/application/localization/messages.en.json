@@ -1,0 +1,7 @@
+{
+  "motion.confirmParked": "CONFIRMING STOP",
+  "motion.confirmMoving": "CONFIRMING MOVEMENT",
+  "motion.conflict": "MOTION CONFLICT",
+  "motion.indeterminate": "MOTION UNCONFIRMED",
+  "motion.dataLimited": "MOTION DATA LIMITED"
+}

@@ -18,6 +18,8 @@ export async function speakDriverMessage(
     if (nativeVoice.speakLocalized) {
       return await nativeVoice.speakLocalized(message.trim(), language);
     }
+    // An English-only legacy bridge cannot certify a Spanish safety warning.
+    if (language !== 'en-US') return false;
     return await nativeVoice.speak(message.trim());
   } catch (error) {
     console.warn('[AutoPulseVoice] Speech degraded:', error);
