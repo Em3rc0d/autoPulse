@@ -61,3 +61,8 @@ No new APK until adversarial smoke + full CI green on exact HEAD, remaining P1 s
 - The Settings UI now serializes preference writes, disables concurrent toggle/button updates during persistence, and switches shared UI/voice locale only **after** storage confirms the write.
 - If storage fails, settings roll back to the previous locale and display a localizable error; no unhandled Promise rejection from the Settings controls.
 - `SettingsScreen.persistence.test.tsx` injects a pending write and a rejected write, asserting no premature language switch and an explicit visible error.
+
+## Hardening pass 4 — one-shot interruption alerts
+
+- Live interruption no longer creates arbitrary English spoken prose. The session interruption sends the semantic `SESSION_INTERRUPTED` key through the preference-aware `DriverVoiceNotificationService`, which chooses locale, phrase and native severity priority. Detailed reasons remain in stored/visual evidence instead of a long robotic sentence.
+- A new CI test forces English, Spanish and muted preferences and verifies the native voice boundary arguments.
