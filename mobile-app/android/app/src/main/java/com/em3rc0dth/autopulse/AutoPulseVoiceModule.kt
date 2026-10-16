@@ -118,6 +118,12 @@ class AutoPulseVoiceModule(
   }
 
   private fun speakNow(request: SpeechRequest) {
+    // Check the currently speaking priority BEFORE changing the Android voice
+    // locale, so a rejected advisory cannot alter a critical utterance.
+    if ((active?.priority ?: -1) > request.priority) {
+      request.promise.resolve(false)
+      return
+    }
     if (!applyLanguage(request.languageTag)) {
       request.promise.resolve(false)
       return
@@ -125,12 +131,6 @@ class AutoPulseVoiceModule(
 
     val engine = tts
     if (engine == null) {
-      request.promise.resolve(false)
-      return
-    }
-
-    // Never replace an unfinished critical message with a lower-priority one.
-    if ((active?.priority ?: -1) > request.priority) {
       request.promise.resolve(false)
       return
     }
