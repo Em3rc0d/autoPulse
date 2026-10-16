@@ -122,9 +122,12 @@ describe('RealCheckPlannedExecutor physical boundary', () => {
       );
       await executor.executeCommand(planned('03','43'), 0, 0);
       const second = executor.executeCommand(planned('07','47'), 0, 10);
+      // Attach the rejection assertion BEFORE the fake clock advances:
+      // otherwise Jest observes a transient unhandled promise rejection.
+      const rejectsOnCancel = expect(second).rejects.toThrow('CHECK_CANCELLED');
       cancel.cancel();
       await jest.advanceTimersByTimeAsync(650);
-      await expect(second).rejects.toThrow('CHECK_CANCELLED');
+      await rejectsOnCancel;
       expect(executeCommand).toHaveBeenCalledTimes(1);
     } finally {
       jest.clearAllTimers();
