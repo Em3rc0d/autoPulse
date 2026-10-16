@@ -7,6 +7,9 @@ Scope: npm production dependency audit for the release-hardening branch. Evidenc
 - Upgrade direct runtime dependency `axios` from 1.18.1 to **1.20.0** with matching lockfile integrity; its HTTP/fetch security fixes apply to mobile app dependencies as well as developer tooling.
 - Do not run `npm audit fix --force` or auto-upgrade React Native 0.74 / Expo SDK 51; this would be a different architecture/compatibility migration requiring its own certification.
 
+## Approved icon provenance
+The original user-approved image asset ZIP is committed at `mobile-app/assets/approved-icon-assets.zip` and checked against SHA-256 `8ade7116a2e6ea5f0b148c049fcab2e2b488ce2c14684a32fcd1f18a51420341`; each extracted image is independently checked against `scripts/approved-icon-hashes.json` before release builds. No regenerated logo may replace these files.
+
 ## Gate
 ```
 cd mobile-app

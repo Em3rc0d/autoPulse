@@ -51,6 +51,7 @@ const packageConfig = JSON.parse(fs.readFileSync(path.join(root, 'package.json')
 if (packageConfig.main !== 'index.js' || !exists(path.join(root, 'index.js'))) {
   fail('Expected custom index.js entrypoint to register the foreground service and Expo app.');
 }
+run(process.execPath, [path.join(root, 'scripts', 'install-approved-icon.js')]);
 run(process.execPath, [path.join(root, 'scripts', 'apply-approved-icon.js'), '--check']);
 if (checkOnly) {
   console.log('[AutoPulse APK] PREFLIGHT PASS: SDK, Gradle wrapper, Java, approved icon.');

@@ -41,6 +41,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Install and certify approved AutoPulse launcher artwork
+        run: node scripts/install-approved-icon.js
+
       - name: Install locked dependencies
         run: npm ci
 

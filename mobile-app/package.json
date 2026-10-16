@@ -14,7 +14,8 @@
     "icon:apply": "node scripts/apply-approved-icon.js",
     "icon:check": "node scripts/apply-approved-icon.js --check",
     "apk:check": "node scripts/build-local-apk.js --check",
-    "apk:internal": "node scripts/build-local-apk.js"
+    "apk:internal": "node scripts/build-local-apk.js",
+    "icon:install": "node scripts/install-approved-icon.js"
   },
   "dependencies": {
     "@expo-google-fonts/inter": "^0.4.2",

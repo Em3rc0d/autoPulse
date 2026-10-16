@@ -7,14 +7,14 @@ This process produces an **internal QA APK** with a fully embedded Expo/React Na
 - Clone or switch to the hardened AutoPulse branch.
 - Node.js 22 LTS, JDK 17, Android SDK API 36, Android SDK build-tools and NDK required by android/build.gradle, Gradle wrapper included in repository.
 - Set ANDROID_HOME to the Android SDK folder.
-- Download `autopulse_icon_assets_approved.zip` from the approved conversation artifact, extract it outside the repo (contains `mobile-app/assets` and native Android `mipmap-*` icons). Do not regenerate or substitute these images.
+- The exact approved `mobile-app/assets/approved-icon-assets.zip` is versioned in Git and its SHA-256 plus each extracted PNG SHA-256 is checked at build time. Nothing is fetched from external image services.
 
 ## Steps
 
 From `mobile-app/`:
 
 ```bash
-npm run icon:apply -- --source /absolute/path/to/autopulse_icon_ready
+npm run icon:install
 npm run apk:check
 npm run apk:internal
 ```
@@ -29,4 +29,4 @@ APK: `mobile-app/dist/autopulse-internal-<sha-prefix>.apk` alongside JSON proven
 - If Android SDK API 36, Java or Gradle dependencies are missing, install them locally; do not enable GitHub Actions as a workaround.
 - A green build is not proof of safety. Stationary checks and physical vehicle certification remain mandatory before a driving pilot.
 - Do not use internal debug signing for Google Play production releases. Production AAB signing follows the separate production release contract.
-- The approved image binaries are **not yet committed to GitHub**; this script loads them from the approved artifact and validates hashes before compilation.
+- The approved image archive is **committed as an exact Git blob**. The installer unpacks and verifies all Expo/Android icon assets before Gradle or APK signing.
