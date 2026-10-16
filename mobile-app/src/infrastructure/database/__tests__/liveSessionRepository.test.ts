@@ -152,6 +152,34 @@ describe('LiveSessionRepository', () => {
   describe('Exception flows', () => {
     let intSessionId: string;
 
+    it('persists STOPPING -> INTERRUPTED when final telemetry persistence fails', async () => {
+      const id = await repo.createSession('WS_1', 'VEH_1', 'OP_1', 'ADP_1');
+      await repo.beginPreparation('WS_1', id);
+      await repo.attachCapabilitySnapshot('WS_1', id, 'SNAP_1', '1.0', '6', 'BLE');
+      await repo.activateSession('WS_1', id);
+      await repo.requestStop('WS_1', id, 'USER_INITIATED');
+
+      let session = await db.query.liveSessions.findFirst({ where: eq(schema.liveSessions.id, id) });
+      expect(session?.status).toBe('STOPPING');
+
+      await repo.interruptSession('WS_1', id, 'TELEMETRY_DRAIN_TIMEOUT');
+      session = await db.query.liveSessions.findFirst({ where: eq(schema.liveSessions.id, id) });
+      expect(session).toMatchObject({
+        status: 'INTERRUPTED',
+        failureCode: 'TELEMETRY_DRAIN_TIMEOUT',
+        stopReason: 'USER_INITIATED',
+      });
+      expect(session?.endedAt).toBeGreaterThan(0);
+
+      // Retrying terminalization must not append duplicate terminal events.
+      await repo.interruptSession('WS_1', id, 'TELEMETRY_DRAIN_TIMEOUT');
+      const events = await db.query.liveSessionEvents.findMany({
+        where: eq(schema.liveSessionEvents.sessionId, id),
+      });
+      expect(events.filter(event => event.eventType === 'SESSION_INTERRUPTED')).toHaveLength(1);
+      await expect(repo.completeSession('WS_1', id)).rejects.toThrow(/Invalid transition/);
+    });
+
     it('interruptSession and recovery', async () => {
       intSessionId = await repo.createSession('WS_1', 'VEH_1', 'OP_1', 'ADP_1');
       await repo.beginPreparation('WS_1', intSessionId);

@@ -89,3 +89,9 @@ No new APK until adversarial smoke + full CI green on exact HEAD, remaining P1 s
 - Physical disconnect now fences new lease acquisitions until its native promise settles. Subscriber exceptions no longer interrupt BLE state transitions.
 - CI adds seven adversarial races for reassignments, disconnect-teardown, cancellation, and observer exceptions in `ActiveBleConnectionController.test.ts`; this is replay-level evidence, not Android radio certification.
 - Still open: device-level force power cut at every stage and late native promise handling when BLE APIs never settle; platform-level disconnect timeouts are separate from local lease fencing.
+
+## Hardening pass 7 — durable STOPPING → INTERRUPTED terminalization
+
+- Audited `performStop()` against `LiveSessionRepository.interruptSession()` instead of trusting mocked repository tests. A Live stop writes `STOPPING` **before** draining final telemetry blocks. On timeout, flush failure or completion-transaction error, the repository previously rejected `STOPPING -> INTERRUPTED`, leaving a phantom in-progress row until restart.
+- The repository now permits `STOPPING -> INTERRUPTED`, preserves `stopReason`, saves explicit failureCode and terminal event, rejects `INTERRUPTED -> COMPLETED`, and treats repeat interruptions idempotently.
+- Added a true libSQL/Drizzle integration regression to the existing `liveSessionRepository.test.ts` covering stop, failure, idempotent terminalization and forbidden completion.
