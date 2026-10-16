@@ -53,7 +53,15 @@ export async function loadDriverPreferences(): Promise<DriverPreferences> {
 export async function saveDriverPreferences(preferences: DriverPreferences): Promise<DriverPreferences> {
   const normalized = normalizePreferences(preferences);
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
-  preferenceListeners.forEach(listener => listener(normalized));
+  for (const listener of preferenceListeners) {
+    try {
+      listener(normalized);
+    } catch (error) {
+      // Persistence succeeded. A crashed/removed view subscriber cannot roll
+      // back a durable language change or block other active subscribers.
+      console.warn('[DriverPreferences] Subscriber failed:', error);
+    }
+  }
   return normalized;
 }
 

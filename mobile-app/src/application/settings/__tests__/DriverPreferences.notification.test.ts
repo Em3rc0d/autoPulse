@@ -53,6 +53,23 @@ describe('durable driver preferences runtime broadcast', () => {
     } finally { unsubscribe(); }
   });
 
+  it('isolates a broken Live listener after the durable write', async () => {
+    const first = jest.fn(() => { throw new Error('unmounted view'); });
+    const second = jest.fn();
+    const stopFirst = subscribeDriverPreferences(first);
+    const stopSecond = subscribeDriverPreferences(second);
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      await expect(saveDriverPreferences({ ...DEFAULT_DRIVER_PREFERENCES, voiceLanguage: 'es-ES' })).resolves.toMatchObject({ voiceLanguage: 'es-ES' });
+      expect(second).toHaveBeenCalledWith(expect.objectContaining({ voiceLanguage: 'es-ES' }));
+      expect(warn).toHaveBeenCalled();
+    } finally {
+      stopFirst();
+      stopSecond();
+      warn.mockRestore();
+    }
+  });
+
   it('stops broadcasting to unmounted Live views', async () => {
     const listener = jest.fn();
     const unsubscribe = subscribeDriverPreferences(listener);

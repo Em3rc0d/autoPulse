@@ -19,6 +19,9 @@ describe('Android native TTS completion contract — source structural gate', ()
   it('has bounded timeouts, main-thread ownership and does not allow low priority over critical', () => {
     expect(native).toContain('Handler(Looper.getMainLooper())');
     expect(native).toContain('MAX_UTTERANCE_MS');
+    expect(native).toContain('MAX_INITIALIZATION_MS');
+    expect(native).toContain('initializationFailed = true');
+    expect(native).toContain('handler.postDelayed(timeout, MAX_INITIALIZATION_MS)');
     expect(native).toContain('if ((active?.priority ?: -1) > request.priority)');
     expect(native).toContain('LANG_AVAILABLE');
     expect(native).toContain('fun speakAlert(text: String, languageTag: String, priority: Int, promise: Promise)');

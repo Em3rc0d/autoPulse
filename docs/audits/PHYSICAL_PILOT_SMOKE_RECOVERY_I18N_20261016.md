@@ -73,3 +73,11 @@ No new APK until adversarial smoke + full CI green on exact HEAD, remaining P1 s
 - Live subscribes to durable changes and ignores older in-flight preference reads; unmount cleans its listener.
 - A language switch resets Live voice cooldown memory so a still-active safety alert can be announced in the newly selected locale, subject to alert-level preferences.
 - New fault-injection CI checks pending writes, write failures and unsubscribe cleanup. No database/cloud localization dependency.
+
+## Additional recovery audit: confirmed self-deadlock and native initialization timeout
+
+- **Fixed pending regression:** Exhausted `attemptConnectionRecovery()` awaited terminalization, while `performStop()` awaited the exact same `recoveryPromise`. This promise cycle could freeze the session permanently. Terminalization is now dispatched without awaiting from within the recovery task.
+- **Fixed bounded stop:** waiting for a native GATT discovery/reconnect promise now has a 9 s stop settlement ceiling and fail-closed interruption path. Late reconnect outcomes retain a terminal guard; native instrumentation remains required.
+- **Fixed TTS initialization hang:** if Android never calls `TextToSpeech.onInit`, a bounded 8 s watchdog resolves pending requests false, and tears down the unusable native engine.
+- **Fixed durable preference listeners:** one subscriber throwing cannot misreport a successful AsyncStorage write as failure.
+- New Jest fault-injection tests cover recovery exhaustion, perpetual discovery, observer exceptions and Kotlin watchdog structure. Native compilation remains a separate gate.

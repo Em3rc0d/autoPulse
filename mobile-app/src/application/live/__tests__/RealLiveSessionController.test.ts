@@ -157,6 +157,54 @@ describe('RealLiveSessionController Integration', () => {
     }
   });
 
+  it('exhausts bounded recovery and terminates without deadlocking its own promise', async () => {
+    const ctrl = createController();
+    ctrl['currentState'] = 'ACTIVE';
+    const terminal = jest.fn();
+    (ctrl as any).onSessionTerminal = terminal;
+    jest.spyOn(ctrl as any, 'delay').mockResolvedValue(undefined);
+    jest.spyOn(ctrl as any, 'prepareConnection').mockRejectedValue(new Error('BLE_CONNECT_REFUSED'));
+    const consoleWarn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const failed = await Promise.race([
+        ctrl.attemptConnectionRecovery('DEVICE_DISCONNECTED', { device: {} } as any),
+        new Promise<'HUNG'>(resolve => setTimeout(() => resolve('HUNG'), 500)),
+      ]);
+      expect(failed).toBe(false);
+      await ctrl['terminalPromise'];
+      expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith(
+        'ws1', 'sess1', 'DEVICE_DISCONNECTED_RECOVERY_FAILED'
+      );
+      expect(terminal).toHaveBeenCalledTimes(1);
+      expect(terminal).toHaveBeenCalledWith({
+        state: 'INTERRUPTED', reason: 'DEVICE_DISCONNECTED_RECOVERY_FAILED'
+      });
+    } finally {
+      consoleWarn.mockRestore();
+    }
+  });
+
+  it('bounds stop when a native discovery promise never settles', async () => {
+    const ctrl = createController();
+    ctrl['currentState'] = 'RECOVERING';
+    (ctrl as any).recoveryPromise = new Promise<boolean>(() => undefined);
+    const disconnect = jest.spyOn(activeBleController, 'disconnectAndRelease').mockResolvedValue(undefined);
+    const originalTimeout = global.setTimeout;
+    const timer = jest.spyOn(global, 'setTimeout').mockImplementation(((callback: (...args: any[]) => void, ms: number, ...args: any[]) => {
+      if (ms === 9000) return originalTimeout(callback, 1, ...args);
+      return originalTimeout(callback, ms, ...args);
+    }) as typeof setTimeout);
+    try {
+      await ctrl.stopSession();
+      expect(mockSessionRepo.completeSession).not.toHaveBeenCalled();
+      expect(mockSessionRepo.interruptSession).toHaveBeenCalledWith('ws1', 'sess1', 'STOP_DURING_RECOVERY');
+      expect(disconnect).toHaveBeenCalledTimes(1);
+    } finally {
+      timer.mockRestore();
+      disconnect.mockRestore();
+    }
+  });
+
   it('Failed final block prevents COMPLETED', async () => {
     const ctrl = createController();
     ctrl['currentState'] = 'ACTIVE';

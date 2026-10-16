@@ -40,6 +40,7 @@ export interface LiveSessionTerminalOutcome {
 
 const RECOVERY_DELAYS_MS = [0, 1500, 3500] as const;
 const RECOVERY_CONNECT_TIMEOUT_MS = 3500;
+const RECOVERY_STOP_SETTLEMENT_TIMEOUT_MS = 9000;
 
 /**
  * Release-1 lifecycle policy:
@@ -296,7 +297,11 @@ export class RealLiveSessionController {
       }
 
       if (!this.terminalPromise) {
-        await this.handleUnexpectedDisconnect(`${reason}_RECOVERY_FAILED`);
+        // Never await terminalization FROM the recovery promise: performStop
+        // waits for this same recovery promise to settle before BLE teardown.
+        // Awaiting here forms a self-deadlock on exhausted retries.
+        void this.handleUnexpectedDisconnect(`${reason}_RECOVERY_FAILED`)
+          .catch(error => console.error('[RealLiveSessionController] Recovery terminalization failed', error));
       }
       return false;
     })().finally(() => {
@@ -376,7 +381,17 @@ export class RealLiveSessionController {
     this.poller?.stop();
     // Do not release the owner lease while an asynchronous native reconnect is
     // still in progress. Recovery checks terminalPromise and exits boundedly.
-    if (this.recoveryPromise) await this.recoveryPromise;
+    if (this.recoveryPromise) {
+      let timeout: ReturnType<typeof setTimeout> | null = null;
+      const settled = await Promise.race([
+        this.recoveryPromise.then(() => true, () => false),
+        new Promise<boolean>(resolve => {
+          timeout = setTimeout(() => resolve(false), RECOVERY_STOP_SETTLEMENT_TIMEOUT_MS);
+        }),
+      ]);
+      if (timeout) clearTimeout(timeout);
+      if (!settled) stopFailureReason = stopFailureReason ?? 'RECOVERY_STOP_TIMEOUT';
+    }
 
     const stopTime = Date.now();
     this.recordingStatus = 'FLUSHING';

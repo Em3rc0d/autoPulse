@@ -45,21 +45,35 @@ class AutoPulseVoiceModule(
   private var pending: SpeechRequest? = null
   private var active: ActiveSpeech? = null
   private var activeTimeout: Runnable? = null
+  private var initializationTimeout: Runnable? = null
 
   companion object {
     private const val MAX_UTTERANCE_MS = 15_000L
+    private const val MAX_INITIALIZATION_MS = 8_000L
   }
 
   init {
     reactContext.addLifecycleEventListener(this)
     tts = TextToSpeech(reactContext, this)
+    val timeout = Runnable {
+      if (!ready && !initializationFailed && !destroyed) {
+        initializationFailed = true
+        finishPending()
+        tts?.shutdown()
+        tts = null
+      }
+    }
+    initializationTimeout = timeout
+    handler.postDelayed(timeout, MAX_INITIALIZATION_MS)
   }
 
   override fun getName(): String = "AutoPulseVoice"
 
   override fun onInit(status: Int) {
     handler.post {
-      if (destroyed) return@post
+      if (destroyed || initializationFailed) return@post
+      initializationTimeout?.let { handler.removeCallbacks(it) }
+      initializationTimeout = null
       ready = status == TextToSpeech.SUCCESS
       initializationFailed = !ready
 
@@ -213,6 +227,8 @@ class AutoPulseVoiceModule(
   override fun onHostDestroy() {
     handler.post {
       destroyed = true
+      initializationTimeout?.let { handler.removeCallbacks(it) }
+      initializationTimeout = null
       finishPending()
       finishActive(null, false)
       tts?.stop()
