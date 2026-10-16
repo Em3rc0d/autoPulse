@@ -110,3 +110,9 @@ No new APK until adversarial smoke + full CI green on exact HEAD, remaining P1 s
 - Added protocol mismatch, subfunction/parallel rejection, all authorized read-only OBD services, and refusal to resend a response-pending continuation.
 - Added a Live → Check → Live handoff sequence, identity preservation, old-owner release resistance, cancellation during discovery, subscriber cleanup, idempotent foreground-service start/stop and subscriber fault containment.
 - Consolidated smoke to execute new suites only once in CI, avoiding duplicate Jest/Actions overhead. Tests are deterministic mocks; **they do not claim physical Android BLE/audio certification**.
+
+## ROAD TEST-001 precommit (contract only; 2026-10-16)
+
+- The operator approved the three-tier architecture direction (Discovery / bounded priority Live / parked Deep Check) and requested a metric-gated road pilot, **not** APK creation in this phase.
+- The controlled road pilot scope and staged GO/HOLD decisions are frozen in `docs/release/ROAD_TEST_001_CONTRACT.md`, with metric definitions in `docs/release/ROAD_TEST_001_MEASUREMENT_SPEC.md` and unexecuted receipt in `docs/test/ROAD_TEST_001_RECEIPT.md`.
+- This earlier CI evidence is not a driving certification. Artifact, UI SafeArea/audio and all physical gates remain blocked until one QA candidate is separately authorized and tested.
