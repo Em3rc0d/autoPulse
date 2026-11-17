@@ -19,12 +19,16 @@ for (const arg of args) if (!allowedArgs.has(arg)) throw Error('Unsupported opti
 function exists(file) { return fs.existsSync(file); }
 function fail(message) { console.error('[AutoPulse APK] BLOCKED: ' + message); process.exit(1); }
 function run(executable, commands, extraEnv) {
-  console.log('[AutoPulse APK] ' + executable + ' ' + commands.join(' '));
-  const result = spawnSync(executable, commands, {
+  // Windows needs a command shell for npm.cmd, but shell:true breaks the
+  // absolute node.exe path under "C:\\Program Files" and quoted script args.
+  const isWindowsNpm = process.platform === 'win32' && executable === 'npm';
+  const command = isWindowsNpm ? 'npm.cmd' : executable;
+  console.log('[AutoPulse APK] ' + command + ' ' + commands.join(' '));
+  const result = spawnSync(command, commands, {
     cwd: root,
     env: { ...process.env, ...extraEnv },
     stdio: 'inherit',
-    shell: process.platform === 'win32',
+    shell: isWindowsNpm,
   });
   if (result.error) fail(result.error.message);
   if (result.status !== 0) fail(executable + ' failed with exit code ' + result.status);
@@ -43,7 +47,7 @@ if (!exists(path.join(root, 'android', 'gradlew')) ||
     !exists(path.join(root, 'android', 'gradlew.bat'))) {
   fail('Gradle wrapper missing. Use the complete repository including mobile-app/android.');
 }
-const java = spawnSync('java', ['-version'], { encoding: 'utf8', shell: process.platform === 'win32' });
+const java = spawnSync('java', ['-version'], { encoding: 'utf8', shell: false });
 if (java.error || java.status !== 0) fail('JDK 17+ is missing. Set JAVA_HOME and install the JDK.');
 if (!exists(path.join(root, 'package-lock.json'))) fail('package-lock.json is missing.');
 if (!exists(path.join(root, 'app.json'))) fail('Expo configuration missing.');
@@ -80,8 +84,9 @@ if (result.error || result.status !== 0) fail('Gradle assembleRelease failed.');
 const apk = path.join(root, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk');
 if (!exists(apk)) fail('Gradle finished but app-release.apk does not exist.');
 // A successful Gradle exit is not enough: prove Expo's embedded bundle exists.
-const jar = spawnSync('jar', ['tf', apk], { encoding: 'utf8', maxBuffer: 12 * 1024 * 1024,
-  shell: process.platform === 'win32' });
+const jar = spawnSync('jar', ['tf', apk], {
+  encoding: 'utf8', maxBuffer: 12 * 1024 * 1024, shell: false,
+});
 if (jar.error || jar.status !== 0) fail('Could not inspect the APK with JDK jar.');
 const apkEntries = jar.stdout.split(/\r?\n/);
 if (!apkEntries.includes('assets/index.android.bundle')) {
@@ -94,8 +99,17 @@ const buildTools = exists(buildToolsRoot)
 const signerExe = process.platform === 'win32' ? 'apksigner.bat' : 'apksigner';
 const signer = buildTools.map(version => path.join(buildToolsRoot, version, signerExe)).find(exists);
 if (!signer) fail('Android apksigner is not installed under SDK/build-tools.');
-const signature = spawnSync(signer, ['verify', '--verbose', apk], {
-  stdio: 'inherit', shell: process.platform === 'win32',
+// Calling a .bat file through shell:true loses paths with spaces on Windows.
+  // apksigner.bat is a wrapper around the build-tools lib/apksigner.jar.
+const signerCommand = process.platform === 'win32' ? 'java' : signer;
+const signerArgs = process.platform === 'win32'
+  ? ['-jar', path.join(path.dirname(signer), 'lib', 'apksigner.jar'), 'verify', '--verbose', apk]
+  : ['verify', '--verbose', apk];
+if (process.platform === 'win32' && !exists(signerArgs[1])) {
+  fail('Android apksigner.jar is missing under SDK/build-tools.');
+}
+const signature = spawnSync(signerCommand, signerArgs, {
+  stdio: 'inherit', shell: false,
 });
 if (signature.error || signature.status !== 0) fail('APK signature verification failed.');
 const bytes = fs.readFileSync(apk);
