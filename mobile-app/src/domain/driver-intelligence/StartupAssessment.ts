@@ -3,14 +3,14 @@ import type { DriverAdvisory } from './models';
 export type StartupAssessmentPhase =
   | 'CONNECTING'
   | 'QUICK_CHECK'
-  | 'DIAGNOSTIC_SCAN'
+  | 'CHARACTERIZATION'
   | 'COLD_START_OBSERVATION'
   | 'READY';
 
 export interface StartupAssessmentInput {
   connected: boolean;
-  criticalChecksComplete: boolean;
-  diagnosticScanComplete: boolean;
+  preflightReachabilityVerified: boolean;
+  characterizationComplete: boolean;
   coldStartObservationComplete: boolean;
   startedAt: number;
   now: number;
@@ -30,9 +30,9 @@ const hasCriticalFinding = (advisories: readonly DriverAdvisory[] = []) =>
 
 /**
  * Startup is deliberately progressive. A driver may enter Live telemetry before the
- * full diagnostic/cold-start observation is complete, but AutoPulse must not emit a
- * definitive startup briefing until the diagnostic scan and cold-start observation
- * have matured. Critical/warning findings may interrupt immediately.
+ * read-only OBD characterization and cold-start observation have completed.
+ * PRE-FLIGHT READY never certifies a comprehensive Check or vehicle health.
+ * Warnings can still be presented before the normal startup briefing.
  */
 export function resolveStartupAssessment(input: StartupAssessmentInput): StartupAssessmentState {
   const criticalFindingPresent = hasCriticalFinding(input.advisories);
@@ -47,7 +47,7 @@ export function resolveStartupAssessment(input: StartupAssessmentInput): Startup
     };
   }
 
-  if (!input.criticalChecksComplete) {
+  if (!input.preflightReachabilityVerified) {
     return {
       phase: 'QUICK_CHECK',
       canBrief: criticalFindingPresent,
@@ -57,9 +57,9 @@ export function resolveStartupAssessment(input: StartupAssessmentInput): Startup
     };
   }
 
-  if (!input.diagnosticScanComplete) {
+  if (!input.characterizationComplete) {
     return {
-      phase: 'DIAGNOSTIC_SCAN',
+      phase: 'CHARACTERIZATION',
       canBrief: criticalFindingPresent,
       canDriveLive: true,
       scanInProgress: true,

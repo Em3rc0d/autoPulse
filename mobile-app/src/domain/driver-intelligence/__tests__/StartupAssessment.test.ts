@@ -13,25 +13,25 @@ const warning: DriverAdvisory = {
 };
 
 describe('StartupAssessment', () => {
-  it('does not declare startup ready while diagnostics or cold-start observation are still running', () => {
+  it('does not declare startup ready without a verified OBD preflight and cold-start evidence', () => {
     const diagnostic = resolveStartupAssessment({
       connected: true,
-      criticalChecksComplete: true,
-      diagnosticScanComplete: false,
+      preflightReachabilityVerified: true,
+      characterizationComplete: false,
       coldStartObservationComplete: false,
       startedAt: 0,
       now: 120000,
     });
 
-    expect(diagnostic.phase).toBe('DIAGNOSTIC_SCAN');
+    expect(diagnostic.phase).toBe('CHARACTERIZATION');
     expect(diagnostic.canDriveLive).toBe(true);
     expect(diagnostic.canBrief).toBe(false);
     expect(diagnostic.scanInProgress).toBe(true);
 
     const coldStart = resolveStartupAssessment({
       connected: true,
-      criticalChecksComplete: true,
-      diagnosticScanComplete: true,
+      preflightReachabilityVerified: true,
+      characterizationComplete: true,
       coldStartObservationComplete: false,
       startedAt: 0,
       now: 180000,
@@ -41,11 +41,11 @@ describe('StartupAssessment', () => {
     expect(coldStart.canBrief).toBe(false);
   });
 
-  it('allows a real warning to interrupt before the full startup scan completes', () => {
+  it('allows a warning before read-only characterization completes', () => {
     const state = resolveStartupAssessment({
       connected: true,
-      criticalChecksComplete: false,
-      diagnosticScanComplete: false,
+      preflightReachabilityVerified: false,
+      characterizationComplete: false,
       coldStartObservationComplete: false,
       startedAt: 0,
       now: 10000,
@@ -57,11 +57,11 @@ describe('StartupAssessment', () => {
     expect(state.canBrief).toBe(true);
   });
 
-  it('permits the normal startup briefing only after the scan and cold-start observation mature', () => {
+  it('permits the startup briefing only after verified read-only characterization and fresh cold-start evidence', () => {
     const state = resolveStartupAssessment({
       connected: true,
-      criticalChecksComplete: true,
-      diagnosticScanComplete: true,
+      preflightReachabilityVerified: true,
+      characterizationComplete: true,
       coldStartObservationComplete: true,
       startedAt: 0,
       now: 240000,

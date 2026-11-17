@@ -59,8 +59,8 @@ export function DriverStartupCoordinator({ characterizationStatus, advisories }:
 
   const assessment = useMemo(() => resolveStartupAssessment({
     connected: startupGate.ecuEvidenceCurrent,
-    criticalChecksComplete: startupGate.readOnlyCharacterizationVerified,
-    diagnosticScanComplete: startupGate.readOnlyCharacterizationVerified,
+    preflightReachabilityVerified: startupGate.readOnlyCharacterizationVerified,
+    characterizationComplete: startupGate.readOnlyCharacterizationVerified,
     coldStartObservationComplete: maturity.complete,
     startedAt: Math.min(
       observations.ENGINE_RPM?.firstObservedAt ?? nowMs,
@@ -77,7 +77,7 @@ export function DriverStartupCoordinator({ characterizationStatus, advisories }:
     characterizationStatus === 'LIMITED' || characterizationStatus === 'NOT_RUN';
   const spanish = preferences.voiceLanguage === 'es-ES';
   const title = limitedCheck
-    ? (spanish ? 'CHEQUEO LIMITADO' : 'CHECK LIMITED')
+    ? (spanish ? 'OBD LIMITADO' : 'OBD LIMITED')
     : limitedSignals
       ? (spanish ? 'DATOS LIMITADOS' : 'DATA LIMITED')
       : maturity.kind === 'COLD' ? 'COLD START' : 'STARTUP';
