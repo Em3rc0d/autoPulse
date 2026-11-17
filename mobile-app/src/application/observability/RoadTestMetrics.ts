@@ -84,7 +84,7 @@ function nearestRank(values: readonly number[]): Distribution {
 function matchingReadings(event: ObdAcquisitionEvent, pid: RoadTestPid) {
   return event.decodedReadings.filter(reading =>
     reading.origin === 'OBD2'
-    && reading.service.toUpperCase() === '01'
+    && reading.service.toUpperCase() === '41'
     && reading.pid?.toUpperCase() === pid.slice(2)
     && (reading.quality === 'GOOD' || (reading.quality as string) === 'VALID')
     && typeof reading.value === 'number'
@@ -156,11 +156,19 @@ export function calculateRoadTestMetrics(
       ? matchingReadings(event, pid)
       : [];
     if (event.decodedReadings.some(reading =>
-      reading.service.toUpperCase() === '01'
+      reading.service.toUpperCase() === '41'
       && reading.pid?.toUpperCase() === pid.slice(2)
       && (reading.quality === 'GOOD' || (reading.quality as string) === 'VALID')
       && (typeof reading.value !== 'number' || !Number.isFinite(reading.value))
     )) issues.add('INVALID_GOOD_READING');
+
+    // A SUCCESS with persisted decoded readings must not silently certify
+    // complete analysis if no reading correlates to this request. This caught
+    // the Logan pilot regression: live responses use service 0x41 (not 0x01).
+    if (timestampsValid && outcome === 'SUCCESS'
+      && event.decodedReadings.length > 0 && readings.length === 0) {
+      issues.add('UNMATCHED_SUCCESS_READINGS');
+    }
 
     if (readings.length > 0) {
       metric.validResponses++;

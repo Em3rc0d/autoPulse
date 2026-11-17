@@ -22,7 +22,7 @@ function event(sequence: number, command: string, status = 'SUCCESS', time = 100
     warnings: [],
     decodedReadings: value === null ? [] : [{
       signalId: 'RPM',
-      service: '01',
+      service: '41',
       pid,
       value,
       unit: 'rpm',
@@ -79,6 +79,54 @@ describe('ROAD TEST-001 deterministic observability', () => {
     expect(serialized).not.toContain('test-private-session');
     expect(serialized).not.toContain('ATRV');
     expect(data.perPid).toHaveLength(6);
+  });
+
+  it('reconciles the October Logan-shaped 100-event trace without treating ATRV as ECU PID 0142', () => {
+    const commands = ['010D', '010C', '0104', '0111', 'ATRV'];
+    const events = Array.from({ length: 100 }, (_, i) => {
+      const command = commands[i % commands.length];
+      const specimen = event(i + 1, command, 'SUCCESS', 1000 + i * 600, 300,
+        command === '010D' ? 0 : command === '010C' ? 760 : command === 'ATRV' ? 14.2 : 42);
+      if (command !== 'ATRV') return specimen;
+      return { ...specimen, decodedReadings: specimen.decodedReadings.map(reading => ({
+        ...reading, signalId: 'ADAPTER_VOLTAGE', service: 'AT', pid: null,
+      })) };
+    });
+    const result = calculateRoadTestMetrics(events);
+    expect(result.trust).toBe('COMPLETE');
+    expect(result.totalEligibleAttempts).toBe(80);
+    for (const pid of ['010D', '010C', '0104', '0111']) {
+      const metric = result.perPid.find(item => item.requestId === pid)!;
+      expect(metric.attempts).toBe(20);
+      expect(metric.validResponses).toBe(20);
+      expect(metric.validReadings).toBe(20);
+      expect(metric.responseYieldPercent).toBe(100);
+    }
+    for (const pid of ['0105', '0142']) {
+      const metric = result.perPid.find(item => item.requestId === pid)!;
+      expect(metric.attempts).toBe(0);
+      expect(metric.responseYieldPercent).toBeNull();
+    }
+    expect(result.safeEvents.filter(e => e.values.length === 1)).toHaveLength(80);
+    expect(result.safeEvents.filter(e => e.command === '010D').every(e => e.values[0].value === 0)).toBe(true);
+  });
+
+  it('accepts only correlated 0x41 Mode 01 ECU replies and flags mismatches instead of COMPLETE', () => {
+    const good = event(1, '010C', 'SUCCESS', 1000, 100, 750);
+    const wrongService = event(2, '010C', 'SUCCESS', 1300, 100, 770);
+    wrongService.decodedReadings[0].service = '01'; // request service, not an ECU reply
+    const wrongPid = event(3, '010C', 'SUCCESS', 1600, 100, 780);
+    wrongPid.decodedReadings[0].pid = '0D';
+    const wrongOrigin = event(4, '010C', 'SUCCESS', 1900, 100, 790);
+    wrongOrigin.decodedReadings[0].origin = 'VIRTUAL';
+    const result = calculateRoadTestMetrics([good,wrongService,wrongPid,wrongOrigin]);
+    const rpm = result.perPid.find(item => item.requestId === '010C')!;
+    expect(rpm.attempts).toBe(4);
+    expect(rpm.validResponses).toBe(1);
+    expect(rpm.validReadings).toBe(1);
+    expect(result.trust).toBe('DEGRADED');
+    expect(result.issues).toContain('UNMATCHED_SUCCESS_READINGS');
+    expect(result.safeEvents.map(item => item.values.length)).toEqual([1,0,0,0]);
   });
 
   it('rejects duplicate sequences without double-counting an ECU success', () => {

@@ -62,7 +62,7 @@ describe('ROAD TEST-001 migrated SQLite → committed V3 → readonly metrics', 
         rawText:'PRIVATE_ELM_RAW',
         frames:[], negativeResponses:[], status:'SUCCESS', warnings:[],
         decodedReadings:[{
-          signalId:'SPEED', service:'01', pid:'0D', value:0, unit:'km/h',
+          signalId:'SPEED', service:'41', pid:'0D', value:0, unit:'km/h',
           rawBytes:[0], origin:'OBD2', quality:'GOOD', sourceEcu:'7E8', observedAt:1200,
         }],
       }],

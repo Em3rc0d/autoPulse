@@ -14,7 +14,7 @@ function specimen(): UnencodedTelemetryBlock {
     rawFragments: [{ receivedAt: 1250, decodedText: 'PRIVATE_VIN_RAW' }],
     frames: [], negativeResponses: [], warnings: [],
     decodedReadings: [{
-      signalId: 'RPM', service: '01', pid: '0C', value: 800, unit: 'RPM',
+      signalId: 'RPM', service: '41', pid: '0C', value: 800, unit: 'RPM',
       rawBytes: [1], origin: 'OBD2', quality: 'GOOD', sourceEcu: '7E8', observedAt: 1300,
     }],
   };
