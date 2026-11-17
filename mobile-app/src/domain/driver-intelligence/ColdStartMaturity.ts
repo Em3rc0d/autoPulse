@@ -24,8 +24,17 @@ export interface ColdStartMaturity {
     | 'COLD_START_OBSERVATION_WINDOW_COMPLETE';
 }
 
-const usable = (observation?: StartupSignalObservation) =>
-  Boolean(observation && (observation.quality === 'VALID' || observation.quality === 'DEGRADED'));
+const STARTUP_EVIDENCE_FRESHNESS_MS = 15_000;
+
+const usable = (observation: StartupSignalObservation | undefined, nowMs: number) =>
+  Boolean(
+    observation &&
+    (observation.quality === 'VALID' || observation.quality === 'DEGRADED') &&
+    Number.isFinite(observation.value) &&
+    Number.isFinite(observation.observedAt) &&
+    observation.observedAt <= nowMs &&
+    nowMs - observation.observedAt <= STARTUP_EVIDENCE_FRESHNESS_MS,
+  );
 
 /**
  * Evidence-based startup maturity, not a fixed sleep timer.
@@ -34,7 +43,7 @@ const usable = (observation?: StartupSignalObservation) =>
  * never becomes a false "ready" state.
  */
 export function resolveColdStartMaturity(input: ColdStartMaturityInput): ColdStartMaturity {
-  if (!usable(input.rpm) || !usable(input.coolant)) {
+  if (!usable(input.rpm, input.nowMs) || !usable(input.coolant, input.nowMs)) {
     return { complete: false, kind: 'UNRESOLVED', reason: 'CORE_SIGNALS_MISSING' };
   }
 

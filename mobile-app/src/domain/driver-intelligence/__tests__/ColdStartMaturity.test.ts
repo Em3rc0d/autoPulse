@@ -21,6 +21,22 @@ describe('ColdStartMaturity', () => {
     expect(resolveColdStartMaturity({ nowMs: 20_000 }).complete).toBe(false);
   });
 
+  it('rejects expired observations even when old sample counts would otherwise mature startup', () => {
+    expect(resolveColdStartMaturity({
+      rpm: observation({ sampleCount: 20, observedAt: 12_000 }),
+      coolant: observation({ sampleCount: 20, observedAt: 12_000 }),
+      nowMs: 180_000,
+    })).toMatchObject({ complete: false, kind: 'UNRESOLVED', reason: 'CORE_SIGNALS_MISSING' });
+  });
+
+  it('rejects a future-dated observation as current ECU evidence', () => {
+    expect(resolveColdStartMaturity({
+      rpm: observation({ observedAt: 100_000 }),
+      coolant: observation({ observedAt: 100_000 }),
+      nowMs: 12_000,
+    }).complete).toBe(false);
+  });
+
   it('matures a warm restart after a short stable observation window', () => {
     const result = resolveColdStartMaturity({
       rpm: observation({ value: 820, firstValue: 980 }),
