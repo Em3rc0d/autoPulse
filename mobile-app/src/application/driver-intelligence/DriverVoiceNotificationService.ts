@@ -17,7 +17,7 @@ export async function announceOneShotDriverAlert(key: DriverAlertKey): Promise<b
     const preferences = await loadDriverPreferences();
     const alert = DRIVER_ALERT_LEXICON[key];
     if (!alertEnabledByPreferences(alert, preferences)) return false;
-    return await speakDriverMessage(driverAlertPhrase(key, preferences.voiceLanguage), preferences.voiceLanguage);
+    return await speakDriverMessage(driverAlertPhrase(key, preferences.voiceLanguage), preferences.voiceLanguage, alert.severity);
   } catch (error) {
     console.warn('[DriverVoiceNotificationService] Announcement degraded:', error);
     return false;

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import {
   DEFAULT_DRIVER_PREFERENCES,
@@ -13,6 +13,8 @@ export default function SettingsScreen() {
   const [preferences, setPreferences] = useState<DriverPreferences>(DEFAULT_DRIVER_PREFERENCES);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
+  const saveInFlight = useRef(false);
 
   useEffect(() => {
     let mounted = true;
@@ -23,18 +25,32 @@ export default function SettingsScreen() {
   }, []);
 
   const persist = async (patch: Partial<DriverPreferences>) => {
-    const next = { ...preferences, ...patch };
+    // Avoid overlapping async storage writes that could race and leave the UI
+    // showing a different language from the one used by native safety speech.
+    if (saveInFlight.current) return;
+    saveInFlight.current = true;
+    const before = preferences;
+    const next = { ...before, ...patch };
     setPreferences(next);
     setSaving(true);
+    setSaveError(false);
     try {
-      setPreferences(await saveDriverPreferences(next));
+      const durable = await saveDriverPreferences(next);
+      setPreferences(durable);
+      // Only publish a language switch after durable preference persistence.
+      setUiLanguage(durable.voiceLanguage);
+    } catch (error) {
+      setPreferences(before);
+      setUiLanguage(before.voiceLanguage);
+      setSaveError(true);
+      console.warn('[DriverPreferences] Could not save settings:', error);
     } finally {
+      saveInFlight.current = false;
       setSaving(false);
     }
   };
 
   const setLanguage = (voiceLanguage: VoiceLanguage) => {
-    setUiLanguage(voiceLanguage);
     void persist({ voiceLanguage });
   };
   const t = (en: string, es: string) => uiText(preferences.voiceLanguage, en, es);
@@ -60,6 +76,7 @@ export default function SettingsScreen() {
             <Text style={styles.hint}>{t('Short, controlled phrases only.','Solo frases breves y controladas.')}</Text>
           </View>
           <Switch
+            disabled={saving}
             value={preferences.voiceAlertsEnabled}
             onValueChange={value => void persist({ voiceAlertsEnabled: value })}
             trackColor={{ false: '#334155', true: '#65a30d' }}
@@ -69,8 +86,8 @@ export default function SettingsScreen() {
 
         <Text style={styles.sectionLabel}>{t('VOICE LANGUAGE','IDIOMA DE LA APP Y VOZ')}</Text>
         <View style={styles.languageRow}>
-          <LanguageButton label="English" active={preferences.voiceLanguage === 'en-US'} onPress={() => setLanguage('en-US')} />
-          <LanguageButton label="Español" active={preferences.voiceLanguage === 'es-ES'} onPress={() => setLanguage('es-ES')} />
+          <LanguageButton label="English" active={preferences.voiceLanguage === 'en-US'} disabled={saving} onPress={() => setLanguage('en-US')} />
+          <LanguageButton label="Español" active={preferences.voiceLanguage === 'es-ES'} disabled={saving} onPress={() => setLanguage('es-ES')} />
         </View>
         <Text style={styles.defaultNote}>{t('English is the default language.','El inglés es el idioma predeterminado.')}</Text>
       </View>
@@ -81,18 +98,21 @@ export default function SettingsScreen() {
           title={t('Critical','Crítico')}
           description={t('Immediate safety state. Kept enabled by default.','Estado de seguridad inmediato. Activado por defecto.')}
           value={preferences.criticalAlertsEnabled}
+          disabled={saving}
           onChange={value => void persist({ criticalAlertsEnabled: value })}
         />
         <AlertToggle
           title={t('Attention','Atención')}
           description={t('Conditions that require driver awareness.','Condiciones que requieren atención del conductor.')}
           value={preferences.attentionAlertsEnabled}
+          disabled={saving}
           onChange={value => void persist({ attentionAlertsEnabled: value })}
         />
         <AlertToggle
           title={t('Advisory','Aviso')}
           description={t('Low-priority voice. Off by default to avoid chatter.','Voz de baja prioridad. Desactivada por defecto para evitar ruido.')}
           value={preferences.advisoryAlertsEnabled}
+          disabled={saving}
           onChange={value => void persist({ advisoryAlertsEnabled: value })}
         />
       </View>
@@ -103,26 +123,27 @@ export default function SettingsScreen() {
       </View>
 
       {saving ? <Text style={styles.saving}>{t('Saving…','Guardando…')}</Text> : null}
+      {saveError ? <Text accessibilityRole="alert" testID="settings-save-error" style={styles.saveError}>{t('Could not save settings. Try again.', 'No se pudieron guardar los ajustes. Inténtalo nuevamente.')}</Text> : null}
     </ScrollView>
   );
 }
 
-function LanguageButton({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) {
+function LanguageButton({ label, active, disabled, onPress }: { label: string; active: boolean; disabled: boolean; onPress: () => void }) {
   return (
-    <TouchableOpacity style={[styles.languageButton, active && styles.languageButtonActive]} onPress={onPress}>
+    <TouchableOpacity disabled={disabled} style={[styles.languageButton, active && styles.languageButtonActive]} onPress={onPress}>
       <Text style={[styles.languageText, active && styles.languageTextActive]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
-function AlertToggle({ title, description, value, onChange }: { title: string; description: string; value: boolean; onChange: (value: boolean) => void }) {
+function AlertToggle({ title, description, value, disabled, onChange }: { title: string; description: string; value: boolean; disabled: boolean; onChange: (value: boolean) => void }) {
   return (
     <View style={styles.alertRow}>
       <View style={styles.rowCopy}>
         <Text style={styles.label}>{title}</Text>
         <Text style={styles.hint}>{description}</Text>
       </View>
-      <Switch value={value} onValueChange={onChange} trackColor={{ false: '#334155', true: '#65a30d' }} thumbColor="#f8fafc" />
+      <Switch disabled={disabled} value={value} onValueChange={onChange} trackColor={{ false: '#334155', true: '#65a30d' }} thumbColor="#f8fafc" />
     </View>
   );
 }
@@ -152,4 +173,5 @@ const styles = StyleSheet.create({
   contractTitle: { color: '#d7ff4f', fontSize: 11, fontFamily: 'Inter_700Bold' },
   contractText: { color: '#cbd5e1', fontSize: 11, lineHeight: 16, marginTop: 5 },
   saving: { color: '#64748b', fontSize: 9, textAlign: 'center', marginTop: 10 },
+  saveError: { color: '#fca5a5', fontSize: 12, marginTop: 10, textAlign: 'center' },
 });

@@ -2,6 +2,29 @@ import { ProbeHandshake } from '../../../../src/infrastructure/ble/probe/ProbeHa
 import { CandidateCombination } from '../../../../src/infrastructure/ble/probe/CharacteristicCandidateSelector';
 
 describe('ProbeHandshake', () => {
+  it('clears READ-only poll timer when command times out', async () => {
+    jest.useFakeTimers();
+    try {
+      const combo = {
+        writeCharacteristic: { serviceUuid: 'fff0', uuid: 'fff1', isWritableWithResponse: true },
+        receiveCharacteristic: { serviceUuid: 'fff0', uuid: 'fff2', isNotifiable: false, isIndicatable: false, isReadable: true },
+      } as unknown as CandidateCombination;
+      const device = {
+        writeCharacteristicWithResponseForService: jest.fn().mockResolvedValue({}),
+        readCharacteristicForService: jest.fn().mockResolvedValue({ value: null }),
+      } as any;
+      const pending = ProbeHandshake.execute(device, combo, 'ATI\\r', 100, { cancelled: false });
+      await Promise.resolve();
+      await Promise.resolve();
+      jest.advanceTimersByTime(101);
+      expect((await pending).timedOut).toBe(true);
+      expect(jest.getTimerCount()).toBe(0);
+    } finally {
+      jest.clearAllTimers();
+      jest.useRealTimers();
+    }
+  });
+
   it('should sanitize response properly', () => {
     // 1. Exact echo
     const res1 = ProbeHandshake.sanitizeResponse('ATI\r\r\nELM327 v1.5\r\n>', 'ATI\r');

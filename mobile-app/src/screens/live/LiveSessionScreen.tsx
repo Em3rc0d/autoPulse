@@ -40,7 +40,7 @@ import {
   commandResultContainsValidEcuSample,
   deriveLiveEcuTruth,
 } from '../../application/live/LiveEcuTruth';
-import { speakDriverMessage } from '../../infrastructure/voice/AndroidDriverVoice';
+import { announceOneShotDriverAlert } from '../../application/driver-intelligence/DriverVoiceNotificationService';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -132,12 +132,9 @@ export default function LiveSessionScreen({ supplement, onTerminalStateChange }:
       const reason = outcome.reason ?? 'UNKNOWN';
       setSessionError(`SESSION_INTERRUPTED:${reason}`);
       Vibration.vibrate([0, 120, 80, 120]);
-      const spokenReason = reason === 'APP_BACKGROUND'
-        ? 'because the app left the foreground'
-        : reason.startsWith('DEVICE_DISCONNECTED')
-          ? 'because the diagnostic adapter disconnected'
-          : 'unexpectedly';
-      void speakDriverMessage(`AutoPulse session stopped ${spokenReason}. Saved vehicle data is available in History.`);
+      // Safety copy is localized by semantic key, never constructed as an
+      // English sentence that the user may hear with a Spanish voice selected.
+      void announceOneShotDriverAlert('SESSION_INTERRUPTED');
     }
   };
 

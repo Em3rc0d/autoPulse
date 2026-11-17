@@ -30,12 +30,14 @@ export class ProbeHandshake {
     const startTime = Date.now();
     let writeAccepted = false;
     let timeoutHandle: NodeJS.Timeout;
+    let pollInterval: NodeJS.Timeout | null = null;
 
     return new Promise<HandshakeResult>(async (resolve) => {
       const finish = (timedOut: boolean) => {
         if (isFinished) return;
         isFinished = true;
         clearTimeout(timeoutHandle);
+        if (pollInterval) { clearInterval(pollInterval); pollInterval = null; }
         if (subscription) {
           subscription.remove();
         }
@@ -122,9 +124,9 @@ export class ProbeHandshake {
         if (!subscription && receiveCharacteristic.isReadable) {
            // We poll read manually a few times
            let attempts = 0;
-           const pollInterval = setInterval(async () => {
+           pollInterval = setInterval(async () => {
              if (isFinished || cancellationSignal.cancelled || attempts > 5) {
-               clearInterval(pollInterval);
+               if (pollInterval) clearInterval(pollInterval);
                if (!isFinished) finish(false);
                return;
              }
@@ -138,7 +140,7 @@ export class ProbeHandshake {
                  const chunk = Buffer.from(char.value, 'base64').toString('ascii');
                  accumulated += chunk;
                  if (accumulated.includes('>')) {
-                   clearInterval(pollInterval);
+                   if (pollInterval) clearInterval(pollInterval);
                    finish(false);
                  }
                }

@@ -2,6 +2,12 @@ import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
 import LiveSessionScreen from '../LiveSessionScreen';
 
+// Live renders with a native-free voice boundary. TTS semantics are exercised
+// separately in the Android voice contract and notification service suites.
+jest.mock('../../../application/driver-intelligence/DriverVoiceNotificationService', () => ({
+  announceOneShotDriverAlert: jest.fn(async () => true),
+}));
+
 jest.mock('@react-navigation/native', () => ({
   useRoute: () => ({
     params: {

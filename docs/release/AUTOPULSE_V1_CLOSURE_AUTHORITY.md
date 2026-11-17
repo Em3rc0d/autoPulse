@@ -166,3 +166,9 @@ Closure code + CI
 ```
 
 No new feature MK enters before this sequence closes.
+
+## Supplemental contract — ROAD TEST-001 (2026-10-16)
+
+`docs/release/ROAD_TEST_001_CONTRACT.md` establishes a limited **first-road pilot** under this V1 closure authority; `ROAD_TEST_001_MEASUREMENT_SPEC.md` freezes metrics before capture; `docs/test/ROAD_TEST_001_RECEIPT.md` begins **NOT_EXECUTED**.
+
+The pilot is not a replacement for `V43_DRIVING_CERTIFICATION_RECEIPT.md`; an exact artifact, no P0/P1, parked qualification and explicit operator authorization are still required. The 114-PID wallet remains reference-only, with six priority Live requests and no OEM-enhanced coverage claim. No APK is authorized by the addition of these documents.

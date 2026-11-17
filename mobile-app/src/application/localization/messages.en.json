@@ -1,0 +1,17 @@
+{
+  "motion.confirmParked": "CONFIRMING STOP",
+  "motion.confirmMoving": "CONFIRMING MOVEMENT",
+  "motion.conflict": "MOTION CONFLICT",
+  "motion.indeterminate": "MOTION UNCONFIRMED",
+  "motion.dataLimited": "MOTION DATA LIMITED",
+  "voice.AUTOPULSE_READY": "AUTOPULSE READY.",
+  "voice.ENGINE_OK": "ENGINE OK.",
+  "voice.TEMP_RISING": "CAUTION. TEMP RISING.",
+  "voice.ENGINE_HOT": "STOP. ENGINE HOT.",
+  "voice.CHECK_ENGINE": "CHECK ENGINE.",
+  "voice.LOW_VOLTAGE": "CHECK. LOW VOLTAGE.",
+  "voice.OIL_PRESSURE": "STOP. OIL PRESSURE.",
+  "voice.FIRE_RISK": "STOP. FIRE RISK.",
+  "voice.SIGNAL_LOST": "SIGNAL LOST.",
+  "voice.SESSION_INTERRUPTED": "AUTOPULSE SESSION STOPPED."
+}

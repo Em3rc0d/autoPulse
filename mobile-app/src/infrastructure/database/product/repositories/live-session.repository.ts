@@ -349,7 +349,12 @@ export class LiveSessionRepository {
           return;
         }
 
-        if (session.status !== 'ACTIVE' && session.status !== 'PREPARING') {
+        // A stop request makes the durable state STOPPING *before* the final
+        // telemetry flush/commit. If that commit fails, STOPPING must be able
+        // to terminate as INTERRUPTED in the same process, not only via a
+        // later orphan scan after an Android restart.
+        if (session.status !== 'ACTIVE' && session.status !== 'PREPARING' &&
+            session.status !== 'STOPPING') {
           throw new Error(`Invalid transition: ${session.status} -> INTERRUPTED`);
         }
 

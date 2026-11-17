@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, Vibration, View } from 'react-native';
 import { useRoute } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import LiveSessionScreen from './LiveSessionScreen';
 import { DriverModeSelector } from './components/DriverModeSelector';
 import { DriverModeProvider, useDriverMode } from './components/DriverModeContext';
@@ -19,8 +20,9 @@ import {
   persistPhysicalValidationReceipt,
 } from '../../application/diagnostics/PhysicalValidationReceipt';
 import { loadVehicleDocuments } from '../../application/driver-intelligence/VehicleDocumentPersistence';
-import { DEFAULT_DRIVER_PREFERENCES, loadDriverPreferences, type DriverPreferences } from '../../application/settings/DriverPreferences';
+import { DEFAULT_DRIVER_PREFERENCES, loadDriverPreferences, subscribeDriverPreferences, type DriverPreferences } from '../../application/settings/DriverPreferences';
 import type { LiveSessionTerminalOutcome } from '../../application/live/RealLiveSessionController';
+import { motionUnknownHeading } from '../../application/localization/MotionStateCopy';
 import {
   evaluateDriverAdvisories,
   vehicleHealthFromCompatibility,
@@ -166,6 +168,7 @@ function DrivingPresentationSurface({
   alert,
   alertEpisode,
   motionState,
+  motionReason,
   motionEvidenceAvailable,
   presentation,
   voiceEnabled,
@@ -174,6 +177,7 @@ function DrivingPresentationSurface({
   alert: DriverAlertDefinition | null;
   alertEpisode: AlertEpisode;
   motionState: MotionState;
+  motionReason: string;
   motionEvidenceAvailable: boolean;
   presentation: DrivingModePresentation;
   voiceEnabled: boolean;
@@ -189,11 +193,9 @@ function DrivingPresentationSurface({
     ? driverAlertPhrase(alert.key, language).replace(/\.$/, '')
     : unresolved
       ? (language === 'es-ES' ? 'CONDICIÓN SIN RESOLVER' : 'CONDITION UNRESOLVED')
-      : motionDataLimited
-        ? (language === 'es-ES' ? 'DATOS DE MOVIMIENTO LIMITADOS' : 'MOTION DATA LIMITED')
-        : motionStateConfirming
-          ? (language === 'es-ES' ? 'CONFIRMANDO MOVIMIENTO' : 'MOTION CONFIRMING')
-          : (language === 'es-ES' ? 'NORMAL' : 'NORMAL');
+      : motionState === 'UNKNOWN'
+        ? motionUnknownHeading(motionReason, motionEvidenceAvailable, language)
+        : 'NORMAL';
   const icon = alert?.icon ?? (unresolved || motionDataLimited ? '▲' : '●');
   const secondaryA = presentation.stateFirst ? presentation.primary : presentation.secondaryA;
   const secondaryB = presentation.stateFirst ? presentation.secondaryA : presentation.secondaryB;
@@ -287,9 +289,23 @@ function DriverLiveSessionContent({
 
   useEffect(() => {
     let mounted = true;
-    void loadDriverPreferences().then(next => { if (mounted) setPreferences(next); });
-    return () => { mounted = false; };
+    let receivedDurableUpdate = false;
+    const unsubscribe = subscribeDriverPreferences(next => {
+      if (!mounted) return;
+      receivedDurableUpdate = true;
+      setPreferences(next);
+    });
+    void loadDriverPreferences().then(next => {
+      // A pending storage read must never overwrite a newer save notification.
+      if (mounted && !receivedDurableUpdate) setPreferences(next);
+    });
+    return () => { mounted = false; unsubscribe(); };
   }, []);
+
+  useEffect(() => {
+    // The same alert in a newly selected spoken language is a new message.
+    liveVoiceMemory.current = {};
+  }, [preferences.voiceLanguage]);
 
   useEffect(() => {
     const timer = setInterval(() => setClock(Date.now()), 500);
@@ -380,7 +396,7 @@ function DriverLiveSessionContent({
     }
     if (!shouldSpeakLiveAlert(voiceAlert, preferences, liveVoiceMemory.current, spokenAt)) return;
     const phrase = driverAlertPhrase(voiceAlert.key, preferences.voiceLanguage);
-    void speakDriverMessage(phrase, preferences.voiceLanguage).then(spoken => {
+    void speakDriverMessage(phrase, preferences.voiceLanguage, voiceAlert.severity).then(spoken => {
       if (spoken) liveVoiceMemory.current = markLiveAlertSpoken(voiceAlert, spokenAt);
     });
   }, [voiceAlert?.key, voiceAlert?.severity, preferences, terminalOutcome]);
@@ -400,6 +416,7 @@ function DriverLiveSessionContent({
           alert={effectiveAlert}
           alertEpisode={alertEpisode}
           motionState={motion.state}
+          motionReason={motion.reason}
           motionEvidenceAvailable={hasUsableMotionEvidence(motion)}
           presentation={presentation}
           voiceEnabled={preferences.voiceAlertsEnabled}
@@ -512,20 +529,20 @@ export default function DriverLiveSessionScreen() {
 
   if (!characterizationComplete) {
     return (
-      <View style={styles.characterizationContainer}>
+      <SafeAreaView edges={['top']} style={styles.characterizationContainer} testID="live-characterization-safe-area">
         <ActivityIndicator size="large" color="#10b981" />
         <Text style={styles.characterizationTitle}>Checking vehicle…</Text>
         <Text style={styles.characterizationText}>Read-only compatibility and diagnostic scan.</Text>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView edges={['top']} style={styles.container} testID="driver-live-safe-area">
       <DriverModeProvider supportedPids={supportedPids}>
         <DriverLiveSessionContent advisories={advisories} vehicleId={vehicleId} />
       </DriverModeProvider>
-    </View>
+    </SafeAreaView>
   );
 }
 

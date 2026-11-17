@@ -50,6 +50,9 @@ const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, m
  */
 export class RealCheckPlannedExecutor implements PlannedDiagnosticExecutor {
   private lastFinishedWallClock: number | undefined;
+  // The physical ELM link has one serial command channel. A second Check
+  // invocation must fail instead of racing an in-flight ECU response.
+  private commandInFlight = false;
 
   constructor(
     private readonly controller: RealObdController,
@@ -66,6 +69,9 @@ export class RealCheckPlannedExecutor implements PlannedDiagnosticExecutor {
     attemptIndex: number,
     startedAt: number,
   ): Promise<PlannedDiagnosticExecutionReceipt> {
+    if (this.commandInFlight) throw new Error('CHECK_EXECUTOR_CONCURRENT_COMMAND');
+    this.commandInFlight = true;
+    try {
     if (this.cancellation.isCancelled) throw new Error('CHECK_CANCELLED');
     if (!request.supportedProtocols.includes(this.protocol)) {
       throw new Error(`CHECK_EXECUTOR_PROTOCOL_NOT_PROMOTED:${request.semanticId}:${this.protocol}`);
@@ -91,9 +97,14 @@ export class RealCheckPlannedExecutor implements PlannedDiagnosticExecutor {
     };
     const result = await this.controller.executeCommand(transportRequest);
     this.lastFinishedWallClock = Date.now();
+    // Do not promote a late ECU response after the user cancelled Check.
+    if (this.cancellation.isCancelled) throw new Error('CHECK_CANCELLED');
     const receipt = adaptRealCommandResultToReceipt(request, this.protocol, result, startedAt, this.provenance);
     this.onReceipt?.(request, receipt);
     return receipt;
+    } finally {
+      this.commandInFlight = false;
+    }
   }
 
   async awaitPendingContinuation(
