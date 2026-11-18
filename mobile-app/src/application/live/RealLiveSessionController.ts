@@ -111,7 +111,7 @@ export class RealLiveSessionController {
       }
     });
 
-    if (!startLiveForegroundService()) {
+    if (!(await startLiveForegroundService())) {
       await this.handleUnexpectedDisconnect('FOREGROUND_SERVICE_UNAVAILABLE');
       return;
     }
@@ -428,14 +428,19 @@ export class RealLiveSessionController {
     }
 
     this.obdController?.disconnect();
+    this.foregroundServiceFailureUnsubscribe?.();
+    this.foregroundServiceFailureUnsubscribe = null;
+    try {
+      await stopLiveForegroundService();
+    } catch (error) {
+      console.error('[RealLiveSessionController] Foreground stop failed:', error);
+      stopFailureReason = stopFailureReason ?? 'FOREGROUND_SERVICE_STOP_FAILED';
+    }
     const completedCleanly = mode === 'NORMAL' && !this.commitQueue?.getHasFailed() &&
       !drainTimedOut && stopFailureReason === null;
     if (!completedCleanly) {
       await activeBleController.disconnectAndRelease();
     }
-    this.foregroundServiceFailureUnsubscribe?.();
-    this.foregroundServiceFailureUnsubscribe = null;
-    stopLiveForegroundService();
     this.recordingStatus = 'CLOSED';
 
     if (completedCleanly) {

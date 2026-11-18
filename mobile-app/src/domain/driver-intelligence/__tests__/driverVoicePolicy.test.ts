@@ -42,10 +42,10 @@ describe('Driver voice policy', () => {
     });
   });
 
-  it('does not speak the normal startup briefing while the deeper scan is still running', () => {
+  it('does not speak the normal startup briefing while read-only characterization is still pending', () => {
     const memory = createDriverVoiceMemory();
     expect(decideStartupVoiceWhenReady(briefing, memory, {
-      phase: 'DIAGNOSTIC_SCAN',
+      phase: 'CHARACTERIZATION',
       canBrief: false,
       canDriveLive: true,
       scanInProgress: true,

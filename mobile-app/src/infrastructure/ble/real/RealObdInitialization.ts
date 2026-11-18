@@ -40,6 +40,7 @@ export class RealObdInitialization {
       command,
       family,
       expectedService,
+      expectedPid: family === 'OBD_MODE_01' ? command.slice(2).toUpperCase() : undefined,
       timeoutMs
     };
   }
@@ -160,7 +161,10 @@ export class RealObdInitialization {
         '41'
       );
 
-      if (!this.isSuccessful(firstCapabilityResult)) {
+      if (!this.hasCapabilityBitmap(firstCapabilityResult)) {
+        await this.probeCoreSignals(snapshot, true, ['010C']);
+      }
+      if (!this.hasCapabilityBitmap(firstCapabilityResult) && snapshot.directlyObservedPids.length === 0) {
         for (const protocol of ['ATSP6', 'ATSP7', 'ATSP8', 'ATSP9', 'ATSP3', 'ATSP4', 'ATSP5']) {
           await this.executeAndRecord(snapshot, protocol, 3000, 'ELM_AT');
           firstCapabilityResult = await this.executeAndRecord(
@@ -170,24 +174,31 @@ export class RealObdInitialization {
             'OBD_MODE_01',
             '41'
           );
-          if (this.isSuccessful(firstCapabilityResult)) break;
+          if (this.hasCapabilityBitmap(firstCapabilityResult)) break;
+          await this.probeCoreSignals(snapshot, false, ['010C']);
+          if (snapshot.directlyObservedPids.length > 0) break;
         }
       }
 
-      if (this.isSuccessful(firstCapabilityResult)) {
+      if (this.hasCapabilityBitmap(firstCapabilityResult)) {
         // The bus has now answered. Re-query protocol evidence so A0 never gets
         // persisted as though it were the resolved vehicle protocol.
         await this.refreshResolvedProtocol(snapshot);
         await this.discoverMode01Capabilities(snapshot, firstCapabilityResult);
+      } else if (snapshot.directlyObservedPids.length > 0) {
+        await this.refreshResolvedProtocol(snapshot);
       } else {
-        snapshot.failureReason =
-          `${firstCapabilityResult.status}: ${firstCapabilityResult.errors.join(', ')}`;
+        snapshot.failureReason = 'NO_VALID_MODE_01_CAPABILITY_BITMAP';
+        // Failed forced-protocol probes must not strand direct signal probes
+        // on the final attempted protocol. Let the adapter negotiate again.
+        snapshot.protocol = null;
+        await this.executeAndRecord(snapshot, 'ATSP0', 3000, 'ELM_AT');
       }
 
       // Bitmap support can be incomplete or adapters can lose source attribution.
       // Directly probe every bounded signal consumed by Driving View v2 so the live
       // plan is based on observed evidence whenever the ECU can provide it.
-      await this.probeCoreSignals(snapshot);
+      await this.probeCoreSignals(snapshot, !this.hasCapabilityBitmap(firstCapabilityResult) && snapshot.directlyObservedPids.length === 0);
 
       await this.executeAndRecord(snapshot, '0900', 5000, 'OBD_MODE_09', '49');
       await this.executeAndRecord(snapshot, '0902', 5000, 'OBD_MODE_09', '49');
@@ -196,6 +207,10 @@ export class RealObdInitialization {
       await this.executeAndRecord(snapshot, '03', 5000, 'OBD_MODE_03', '43');
 
       snapshot.initializationSuccessful = snapshot.supportedPids.length > 0;
+      if (snapshot.initializationSuccessful) {
+        snapshot.failureReason = undefined;
+        if (!snapshot.protocol) await this.refreshResolvedProtocol(snapshot);
+      }
       if (!snapshot.initializationSuccessful) {
         snapshot.failureReason = snapshot.failureReason || 'NO_OBD_SIGNALS_DECODED';
       }
@@ -206,6 +221,13 @@ export class RealObdInitialization {
       snapshot.failureReason = e?.message || 'Unknown exception';
       return snapshot;
     }
+  }
+
+  private hasCapabilityBitmap(result: CommandResult): boolean {
+    return this.isSuccessful(result) && result.obdFrames.some(frame =>
+      frame.validity === 'VALID' && frame.service === '41' && frame.pid === '00' &&
+      ObdDecoder.decode([frame]).some(value => value.type === 'BITMAP')
+    );
   }
 
   private isSuccessful(result: CommandResult): boolean {
@@ -270,9 +292,12 @@ export class RealObdInitialization {
     }
   }
 
-  private async probeCoreSignals(snapshot: CapabilitySnapshot) {
-    for (const pid of LIVE_OBD_REQUEST_ORDER) {
-      const result = await this.executeAndRecord(snapshot, pid, 4000, 'OBD_MODE_01', '41');
+  private async probeCoreSignals(snapshot: CapabilitySnapshot, autoSearchPending = false, pids: readonly string[] = LIVE_OBD_REQUEST_ORDER) {
+    for (const pid of pids) {
+      // The first request after ATSP0 includes protocol search, just like 0100.
+      const timeoutMs = autoSearchPending ? 15000 : 4000;
+      autoSearchPending = false;
+      const result = await this.executeAndRecord(snapshot, pid, timeoutMs, 'OBD_MODE_01', '41');
       if (result.status === 'SUCCESS_DECODED') {
         if (!snapshot.supportedPids.includes(pid)) {
           snapshot.supportedPids.push(pid);

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import {
   resolveColdStartMaturity,
@@ -13,16 +13,18 @@ import {
 } from '../../../application/settings/DriverPreferences';
 import { speakDriverMessage } from '../../../infrastructure/voice/AndroidDriverVoice';
 import { useDriverMode } from './DriverModeContext';
+import { resolveStartupEvidenceGate, type LiveCharacterizationStatus } from '../../../domain/driver-intelligence/LiveStartupReadiness';
 
 interface Props {
-  diagnosticScanComplete: boolean;
+  characterizationStatus: LiveCharacterizationStatus;
   advisories: readonly DriverAdvisory[];
 }
 
-export function DriverStartupCoordinator({ diagnosticScanComplete, advisories }: Props) {
+export function DriverStartupCoordinator({ characterizationStatus, advisories }: Props) {
   const { observations } = useDriverMode();
   const [briefed, setBriefed] = useState(false);
   const [nowMs, setNowMs] = useState(Date.now());
+  const mountedAt = useRef(Date.now());
   const [preferences, setPreferences] = useState<DriverPreferences>(DEFAULT_DRIVER_PREFERENCES);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
 
@@ -46,10 +48,19 @@ export function DriverStartupCoordinator({ diagnosticScanComplete, advisories }:
     nowMs,
   }), [observations.ENGINE_RPM, observations.ENGINE_COOLANT, nowMs]);
 
+  // Reachability is a verified read-only preflight, not a complete vehicle Check.
+  // Fresh ECU evidence is required separately from any adapter handshake.
+  const startupGate = useMemo(() => resolveStartupEvidenceGate({
+    rpm: observations.ENGINE_RPM,
+    coolant: observations.ENGINE_COOLANT,
+    nowMs,
+    characterizationStatus,
+  }), [observations.ENGINE_RPM, observations.ENGINE_COOLANT, nowMs, characterizationStatus]);
+
   const assessment = useMemo(() => resolveStartupAssessment({
-    connected: true,
-    criticalChecksComplete: diagnosticScanComplete,
-    diagnosticScanComplete,
+    connected: startupGate.ecuEvidenceCurrent,
+    preflightReachabilityVerified: startupGate.readOnlyCharacterizationVerified,
+    characterizationComplete: startupGate.readOnlyCharacterizationVerified,
     coldStartObservationComplete: maturity.complete,
     startedAt: Math.min(
       observations.ENGINE_RPM?.firstObservedAt ?? nowMs,
@@ -57,7 +68,26 @@ export function DriverStartupCoordinator({ diagnosticScanComplete, advisories }:
     ),
     now: nowMs,
     advisories,
-  }), [diagnosticScanComplete, maturity.complete, advisories, observations.ENGINE_RPM?.firstObservedAt, observations.ENGINE_COOLANT?.firstObservedAt, nowMs]);
+  }), [startupGate.ecuEvidenceCurrent, startupGate.readOnlyCharacterizationVerified, maturity.complete,
+    advisories, observations.ENGINE_RPM?.firstObservedAt, observations.ENGINE_COOLANT?.firstObservedAt, nowMs]);
+
+  const limitedSignals = maturity.reason === 'CORE_SIGNALS_MISSING' &&
+    nowMs - mountedAt.current >= 15_000;
+  const limitedCheck = characterizationStatus === 'FAILED' ||
+    characterizationStatus === 'LIMITED' || characterizationStatus === 'NOT_RUN';
+  const spanish = preferences.voiceLanguage === 'es-ES';
+  const title = limitedCheck
+    ? (spanish ? 'OBD LIMITADO' : 'OBD LIMITED')
+    : limitedSignals
+      ? (spanish ? 'DATOS LIMITADOS' : 'DATA LIMITED')
+      : maturity.kind === 'COLD' ? 'COLD START' : 'STARTUP';
+  const message = limitedCheck
+    ? (spanish ? 'Comprobación OBD no confirmada' : 'OBD preflight not verified')
+    : limitedSignals
+      ? (spanish ? 'RPM y refrigerante sin evidencia suficiente' : 'RPM / coolant evidence incomplete')
+      : maturity.kind === 'COLD'
+        ? (spanish ? 'Observando calentamiento' : 'Observing warm-up')
+        : (spanish ? 'Reuniendo evidencia actual' : 'Collecting current evidence');
 
   useEffect(() => {
     if (briefed || !preferencesLoaded || !assessment.canBrief || assessment.scanInProgress) return;
@@ -78,10 +108,10 @@ export function DriverStartupCoordinator({ diagnosticScanComplete, advisories }:
     <View style={styles.container}>
       <View style={styles.dot} />
       <Text numberOfLines={1} style={styles.title}>
-        {maturity.kind === 'COLD' ? 'COLD START' : 'STARTUP'}
+        {title}
       </Text>
       <Text numberOfLines={1} style={styles.message}>
-        {maturity.kind === 'COLD' ? 'Observing warm-up' : 'Collecting stable evidence'}
+        {message}
       </Text>
     </View>
   );
@@ -89,7 +119,7 @@ export function DriverStartupCoordinator({ diagnosticScanComplete, advisories }:
 
 const styles = StyleSheet.create({
   container: {
-    minHeight: 30,
+    minHeight: 38,
     marginHorizontal: 12,
     marginTop: 5,
     borderRadius: 9,
@@ -101,6 +131,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dot: { width: 5, height: 5, borderRadius: 3, backgroundColor: '#60a5fa', marginRight: 6 },
-  title: { color: '#94a3b8', fontSize: 8, fontWeight: '800', letterSpacing: 0.7, marginRight: 7 },
-  message: { color: '#64748b', fontSize: 9, flex: 1 },
+  title: { color: '#cbd5e1', fontSize: 11, fontWeight: '800', letterSpacing: 0.3, marginRight: 7 },
+  message: { color: '#cbd5e1', fontSize: 12, flex: 1 },
 });

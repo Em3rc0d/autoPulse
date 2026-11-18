@@ -8,6 +8,7 @@ import { DriverModeProvider, useDriverMode } from './components/DriverModeContex
 import { PhoneSensorBridge } from './components/PhoneSensorBridge';
 import { DriverContextualIntelligence } from './components/DriverContextualIntelligence';
 import { DriverStartupCoordinator } from './components/DriverStartupCoordinator';
+import { classifyLiveCharacterization, type LiveCharacterizationStatus } from '../../domain/driver-intelligence/LiveStartupReadiness';
 import { activeBleController } from '../../infrastructure/ble/ActiveBleConnectionController';
 import { RealObdController } from '../../infrastructure/ble/real/RealObdController';
 import { ElmBleDiagnosticConnector } from '../../infrastructure/diagnostics/ElmBleDiagnosticConnector';
@@ -274,9 +275,11 @@ function ParkedAdvisoryBanner({ advisory }: { advisory?: DriverAdvisory }) {
 function DriverLiveSessionContent({
   advisories,
   vehicleId,
+  characterizationStatus,
 }: {
   advisories: readonly DriverAdvisory[];
   vehicleId?: string;
+  characterizationStatus: LiveCharacterizationStatus;
 }) {
   const [terminalOutcome, setTerminalOutcome] = useState<LiveSessionTerminalOutcome | null>(null);
   const [preferences, setPreferences] = useState<DriverPreferences>(DEFAULT_DRIVER_PREFERENCES);
@@ -424,7 +427,7 @@ function DriverLiveSessionContent({
         />
       ) : (
         <>
-          {!terminalOutcome ? <DriverStartupCoordinator diagnosticScanComplete advisories={advisories} /> : null}
+          {!terminalOutcome ? <DriverStartupCoordinator characterizationStatus={characterizationStatus} advisories={advisories} /> : null}
           {!terminalOutcome ? <DriverContextualIntelligence /> : null}
         </>
       )}
@@ -447,20 +450,26 @@ export default function DriverLiveSessionScreen() {
   const adapterMode = route.params?.adapterMode as string | undefined;
   const connectionHandleId = route.params?.connectionHandleId as string | undefined;
   const [characterizationComplete, setCharacterizationComplete] = useState(adapterMode !== 'REAL_BLE');
+  const [characterizationStatus, setCharacterizationStatus] = useState<LiveCharacterizationStatus>('NOT_RUN');
   const [advisories, setAdvisories] = useState<DriverAdvisory[]>([]);
 
   useEffect(() => {
     if (adapterMode !== 'REAL_BLE' || !connectionHandleId || !sessionId) {
+      setCharacterizationStatus(adapterMode === 'REAL_BLE' ? 'FAILED' : 'NOT_RUN');
       setCharacterizationComplete(true);
       return;
     }
+    setCharacterizationStatus('NOT_RUN');
 
     let cancelled = false;
 
     const run = async () => {
       const connection = activeBleController.getConnection(connectionHandleId);
       if (!connection) {
-        setCharacterizationComplete(true);
+        if (!cancelled) {
+          setCharacterizationStatus('FAILED');
+          setCharacterizationComplete(true);
+        }
         return;
       }
 
@@ -478,6 +487,7 @@ export default function DriverLiveSessionScreen() {
         const snapshot = await characterizeRuntimeCompatibility({ connector, vehicle: { vehicleId } });
 
         if (!cancelled) {
+          setCharacterizationStatus(classifyLiveCharacterization(snapshot.observations));
           runtimeCompatibilityStore.set(sessionId, snapshot);
           try {
             await persistCompatibilitySnapshot(sessionId, snapshot);
@@ -505,6 +515,7 @@ export default function DriverLiveSessionScreen() {
         }
       } catch (error) {
         console.warn('[DriverLiveSession] Compatibility characterization degraded:', error);
+        if (!cancelled) setCharacterizationStatus('FAILED');
       } finally {
         try {
           await connector.execute({
@@ -540,7 +551,7 @@ export default function DriverLiveSessionScreen() {
   return (
     <SafeAreaView edges={['top']} style={styles.container} testID="driver-live-safe-area">
       <DriverModeProvider supportedPids={supportedPids}>
-        <DriverLiveSessionContent advisories={advisories} vehicleId={vehicleId} />
+        <DriverLiveSessionContent advisories={advisories} vehicleId={vehicleId} characterizationStatus={characterizationStatus} />
       </DriverModeProvider>
     </SafeAreaView>
   );
