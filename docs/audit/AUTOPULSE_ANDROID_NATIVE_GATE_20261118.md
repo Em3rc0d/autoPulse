@@ -43,3 +43,13 @@ Do **not** loop APKs without preflight. Require CI green on the final code, `npm
 
 ## Open limitations
 Testing all source paths with Jest does not equate to 100% code coverage or proof on Android. No smartphone, BLE ELM327 or live vehicle is attached to this environment, so native lifecycle and true ECU evidence remain outside automated certification. A real Android smoke test is indispensable; untested paths must remain OPEN.
+
+## Follow-up — OBD negotiation repair (2026-11-18)
+
+- A raw response (including a negative response) without a valid `41 00` bitmap no longer terminates protocol fallback. A decoded bitmap from a valid correlated frame is required.
+- Mode 01 discovery/probes now explicitly carry `expectedPid` to the transport parser.
+- Exhausting the forced protocols restores `ATSP0` before direct signal probes. The first such probe has a 15-second search budget rather than the normal 4 seconds.
+- Successful direct-signal recovery clears the earlier capability-discovery failure and refreshes protocol evidence when absent.
+- Regression tests cover raw responses without a bitmap, incomplete frames, bounded fallback, restored automatic protocol and per-request PID/time budgets.
+- Final local verification: TypeScript PASS; Jest 142/142 suites, 735 passed, 2 skipped. `git diff --check` PASS.
+- `npm run apk:check`: BLOCKED because Android SDK `platforms/android-36` is absent. No APK was generated and no Actions APK build was requested. Physical adapter/ECU interoperability remains unverified. These changes address reproducible source defects; they do not establish the cause of Car Scanner failing on the same vehicle.
