@@ -19,3 +19,20 @@ diff --git a/node_modules/@supersami/rn-foreground-service/android/src/main/java
              case "dataSync":
                  return 16; // ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
              case "health":
+diff --git a/node_modules/@supersami/rn-foreground-service/index.js b/node_modules/@supersami/rn-foreground-service/index.js
+--- a/node_modules/@supersami/rn-foreground-service/index.js
++++ b/node_modules/@supersami/rn-foreground-service/index.js
+@@ -61,5 +61,12 @@
+    */
+   static async startService(notificationConfig) {
+     console.log('Start Service Triggered');
+-    return await ForegroundServiceModule.startService(notificationConfig);
++    await ForegroundServiceModule.startService(notificationConfig);
++    // The bridge promise only acknowledges startService(intent). Android calls
++    // onStartCommand asynchronously; wait for startForeground to actually succeed.
++    for (let attempt = 0; attempt < 40; attempt += 1) {
++      if ((await ForegroundServiceModule.isRunning()) > 0) return;
++      await new Promise(resolve => setTimeout(resolve, 50));
++    }
++    throw new Error('FOREGROUND_SERVICE_START_NOT_CONFIRMED');
+   }

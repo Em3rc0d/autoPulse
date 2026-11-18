@@ -69,3 +69,13 @@ Before abandoning any candidate protocol whose 0100 bitmap is unavailable, try a
 G1 remains FAIL for the tested artifact. G2/public release remain unvalidated. A native rebuild is necessary for the Java dependency patch; a JavaScript-only update cannot carry it.
 
 Validation after both repairs: TypeScript PASS; Jest 142/142 suites, 737 PASS, 2 skipped; patch-package applies both project patches successfully; git diff --check PASS. No device test or native build was executed in this environment.
+
+## Assurance follow-up — real dependency execution (2026-11-18)
+
+Further review found the native start promise acknowledges only `Context.startService(intent)`, not successful execution of `startForeground` in `onStartCommand`. The package previously marked its JS `serviceRunning` flag true and scheduled tasks without checking native readiness. Two new bridge tests failed on that code before the fix (no readiness query; false success when native readiness remains zero).
+
+Extend the versioned dependency patch to query the existing native `isRunning` counter before resolving start; bound the readiness polling to 40 attempts with 50ms delays. Never mark JS running or schedule headless tasks when readiness is not confirmed. A native bridge rejection still propagates through the existing fail-closed app lifecycle. This verifies the Android counter, not merely the dependency's JS `is_running()` flag. It does not establish Android device compatibility; bridge scheduling and native call latency still require real-device verification.
+
+New integration tests execute the installed package JS via Babel + VM with only the RN bridge/scheduler substituted. Tests cover delayed acknowledgment, persistent zero readiness, and a native error after startup. A separate integration suite feeds synthetic serial text through the actual controller normalizer/classifier/frame parser/decoder and initialization, covering empty bitmap plus RPM/coolant, KWP RPM despite negative bitmap replies, and rejection of stale PID replies/adapter voltage as ECU proof. These are synthetic fixtures, not captured Logan serial traffic.
+
+Patch installation verification: reversed both installed patches, confirmed the original incorrect Java mapping and absence of the readiness check, reapplied patches, then byte-compared against the tested files (PASS). Final verification: TypeScript PASS; Jest 144/144 suites, 743 passed, 2 skipped. No GitHub Actions runs requested. Native Gradle compile, Android lifecycle/notification behavior and physical ELM/ECU compatibility remain OPEN because this runtime lacks an Android SDK/device. No claim of zero remaining errors.
