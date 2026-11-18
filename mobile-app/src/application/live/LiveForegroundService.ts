@@ -71,7 +71,11 @@ export function startLiveForegroundService(): Promise<boolean> {
 
     nativeStartMayBeActive = true;
     try {
-      await ReactNativeForegroundService.start({
+      // The installed 2.2.5 runtime requires ServiceType, but its .d.ts omits it.
+      // An intersection keeps the native contract typed without unsafe casts.
+      const config: Parameters<typeof ReactNativeForegroundService.start>[0] & {
+        ServiceType: 'connectedDevice';
+      } = {
         id: 1234,
         title: 'AutoPulse',
         message: 'Live OBD session active',
@@ -83,7 +87,8 @@ export function startLiveForegroundService(): Promise<boolean> {
         button2: false,
         setOnlyAlertOnce: 'true',
         color: '#000000',
-      });
+      };
+      await ReactNativeForegroundService.start(config);
       if (epoch !== lifecycleEpoch) return false;
       running = true;
       return true;
