@@ -44,6 +44,9 @@ jobs:
       - name: Install and certify approved AutoPulse launcher artwork
         run: node scripts/install-approved-icon.js
 
+      - name: Reject client-readable Gemini credentials before Android packaging
+        run: node scripts/security/validate-android-build-env.js
+
       - name: Install locked dependencies
         run: npm ci
 

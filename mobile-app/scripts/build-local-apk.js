@@ -59,6 +59,10 @@ if (packageConfig.main !== 'index.js' || !exists(path.join(root, 'index.js'))) {
 }
 run(process.execPath, [path.join(root, 'scripts', 'install-approved-icon.js')]);
 run(process.execPath, [path.join(root, 'scripts', 'apply-approved-icon.js'), '--check']);
+if (!verifyOnly) {
+  // Prevent Expo from inlining real Gemini credentials into the signed APK.
+  run(process.execPath, [path.join(root, 'scripts', 'security', 'validate-android-build-env.js')]);
+}
 if (checkOnly) {
   console.log('[AutoPulse APK] PREFLIGHT PASS: SDK, Gradle wrapper, Java, approved icon.');
   process.exit(0);
