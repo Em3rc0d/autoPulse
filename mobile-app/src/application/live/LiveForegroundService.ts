@@ -75,6 +75,9 @@ export function startLiveForegroundService(): Promise<boolean> {
         id: 1234,
         title: 'AutoPulse',
         message: 'Live OBD session active',
+        // Mandatory for @supersami/rn-foreground-service 2.2.5 and API 34+.
+        // Must match AndroidManifest foregroundServiceType=connectedDevice.
+        ServiceType: 'connectedDevice',
         icon: 'ic_launcher',
         button: false,
         button2: false,
