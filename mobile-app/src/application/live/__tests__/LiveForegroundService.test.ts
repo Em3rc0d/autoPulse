@@ -39,6 +39,10 @@ describe('LiveForegroundService native async lifecycle', () => {
     expect(first).toBe(second);
     await Promise.resolve();
     expect(mockStart).toHaveBeenCalledTimes(1);
+    expect(mockStart).toHaveBeenCalledWith(expect.objectContaining({
+      ServiceType: 'connectedDevice',
+      id: 1234,
+    }));
     expect(getLiveForegroundServiceState().running).toBe(false);
 
     resolveNative();
