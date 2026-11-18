@@ -53,3 +53,19 @@ Testing all source paths with Jest does not equate to 100% code coverage or proo
 - Regression tests cover raw responses without a bitmap, incomplete frames, bounded fallback, restored automatic protocol and per-request PID/time budgets.
 - Final local verification: TypeScript PASS; Jest 142/142 suites, 735 passed, 2 skipped. `git diff --check` PASS.
 - `npm run apk:check`: BLOCKED because Android SDK `platforms/android-36` is absent. No APK was generated and no Actions APK build was requested. Physical adapter/ECU interoperability remains unverified. These changes address reproducible source defects; they do not establish the cause of Car Scanner failing on the same vehicle.
+
+## Physical retest follow-up — artifact 25cb46a3a8a6 (2026-11-18)
+
+User screenshots show repeated `FOREGROUND_SERVICE_NATIVE_ERROR` in Live, and a later initialization failure `NO_VALID_MODE_01_CAPABILITY_BITMAP`. Check separately displays KWP, coolant/RPM/speed and an inconclusive capability map. This does not establish the correctness of every Check value (raw frames were not provided), but contradicts a blanket claim that no ECU path exists.
+
+### Confirmed native dependency defect
+
+Installed `@supersami/rn-foreground-service@2.2.5` maps `connectedDevice` to literal 32 in both native dispatchers. This is the media-projection type, not the connected-device type declared by the application. Replace both with `android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE` via a versioned patch-package patch. Prior static tests only checked that the string case existed and missed the wrong return value. New regression requires the SDK constant in both dispatchers. Patch application verified using the installed patch-package executable. Real-device startup remains pending; no Android SDK is available here.
+
+### Acquisition correction
+
+Before abandoning any candidate protocol whose 0100 bitmap is unavailable, try a bounded, correlated RPM request. If directly decoded RPM proves a path, preserve that protocol, refresh its identity, and continue the existing bounded core-signal probes. Do not require a capability bitmap as the sole proof of communication. All failed candidates remain bounded and do not manufacture supported PIDs. Added a KWP regression with no bitmap but a valid RPM reply. This is a source-level repair, not proof of the exact cause of the user's bitmap failure.
+
+G1 remains FAIL for the tested artifact. G2/public release remain unvalidated. A native rebuild is necessary for the Java dependency patch; a JavaScript-only update cannot carry it.
+
+Validation after both repairs: TypeScript PASS; Jest 142/142 suites, 737 PASS, 2 skipped; patch-package applies both project patches successfully; git diff --check PASS. No device test or native build was executed in this environment.

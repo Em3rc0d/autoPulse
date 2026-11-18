@@ -1,0 +1,21 @@
+diff --git a/node_modules/@supersami/rn-foreground-service/android/src/main/java/com/supersami/foregroundservice/ForegroundService.java b/node_modules/@supersami/rn-foreground-service/android/src/main/java/com/supersami/foregroundservice/ForegroundService.java
+--- a/node_modules/@supersami/rn-foreground-service/android/src/main/java/com/supersami/foregroundservice/ForegroundService.java
++++ b/node_modules/@supersami/rn-foreground-service/android/src/main/java/com/supersami/foregroundservice/ForegroundService.java
+@@ -115,7 +115,7 @@
+                 case "camera":
+                     return 8; // ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+                 case "connectedDevice":
+-                    return 32; // ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
++                    return android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
+                 case "dataSync":
+                     return 16; // ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                 case "health":
+@@ -151,7 +151,7 @@
+             case "camera":
+                 return 8; // ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA
+             case "connectedDevice":
+-                return 32; // ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
++                return android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
+             case "dataSync":
+                 return 16; // ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+             case "health":

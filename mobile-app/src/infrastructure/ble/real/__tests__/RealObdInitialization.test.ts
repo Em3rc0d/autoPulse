@@ -47,13 +47,33 @@ describe('RealObdInitialization negotiation evidence', () => {
     const { snapshot, requests } = await discover(request => result(request));
     const lastForced = requests.findIndex(request => request.command === 'ATSP5');
     expect(lastForced).toBeGreaterThan(0);
-    expect(requests.slice(lastForced + 1, lastForced + 4).map(request => request.command))
-      .toEqual(['0100', 'ATSP0', '0105']);
+    expect(requests.slice(lastForced + 1, lastForced + 5).map(request => request.command))
+      .toEqual(['0100', '010C', 'ATSP0', '0105']);
     expect(requests.find(request => request.command === '0105')?.timeoutMs).toBe(15000);
     expect(requests.find(request => request.command === '010D')?.timeoutMs).toBe(4000);
     expect(snapshot.initializationSuccessful).toBe(false);
     expect(snapshot.protocol).toBeNull();
     expect(snapshot.failureReason).toBe('NO_VALID_MODE_01_CAPABILITY_BITMAP');
+  });
+
+  it('keeps a forced KWP path when RPM works but the bitmap is absent', async () => {
+    let protocol = '0';
+    const { snapshot, requests } = await discover(request => {
+      if (request.command.startsWith('ATSP')) protocol = request.command.slice(4);
+      const response = result(request, [], request.command === 'ATDPN' ? protocol : 'OK');
+      if (protocol === '5' && request.command === '010C') {
+        response.obdFrames = [{ ...bitmap, pid: '0C', payloadBytes: [12, 128], rawLine: '410C0C80' }];
+        response.decodedValues = [{ type: 'RPM', value: 800, unit: 'rpm' }];
+        response.status = 'SUCCESS_DECODED';
+      }
+      return response;
+    });
+    expect(snapshot.initializationSuccessful).toBe(true);
+    expect(snapshot.directlyObservedPids).toContain('010C');
+    expect(snapshot.protocol).toBe('5');
+    expect(snapshot.failureReason).toBeUndefined();
+    const lastForced = requests.findIndex(request => request.command === 'ATSP5');
+    expect(requests.slice(lastForced + 1).some(request => request.command === 'ATSP0')).toBe(false);
   });
 
   it('rejects a malformed or unrelated frame as capability proof', async () => {

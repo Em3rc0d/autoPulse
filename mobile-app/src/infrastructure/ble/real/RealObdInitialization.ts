@@ -162,6 +162,9 @@ export class RealObdInitialization {
       );
 
       if (!this.hasCapabilityBitmap(firstCapabilityResult)) {
+        await this.probeCoreSignals(snapshot, true, ['010C']);
+      }
+      if (!this.hasCapabilityBitmap(firstCapabilityResult) && snapshot.directlyObservedPids.length === 0) {
         for (const protocol of ['ATSP6', 'ATSP7', 'ATSP8', 'ATSP9', 'ATSP3', 'ATSP4', 'ATSP5']) {
           await this.executeAndRecord(snapshot, protocol, 3000, 'ELM_AT');
           firstCapabilityResult = await this.executeAndRecord(
@@ -172,6 +175,8 @@ export class RealObdInitialization {
             '41'
           );
           if (this.hasCapabilityBitmap(firstCapabilityResult)) break;
+          await this.probeCoreSignals(snapshot, false, ['010C']);
+          if (snapshot.directlyObservedPids.length > 0) break;
         }
       }
 
@@ -180,6 +185,8 @@ export class RealObdInitialization {
         // persisted as though it were the resolved vehicle protocol.
         await this.refreshResolvedProtocol(snapshot);
         await this.discoverMode01Capabilities(snapshot, firstCapabilityResult);
+      } else if (snapshot.directlyObservedPids.length > 0) {
+        await this.refreshResolvedProtocol(snapshot);
       } else {
         snapshot.failureReason = 'NO_VALID_MODE_01_CAPABILITY_BITMAP';
         // Failed forced-protocol probes must not strand direct signal probes
@@ -191,7 +198,7 @@ export class RealObdInitialization {
       // Bitmap support can be incomplete or adapters can lose source attribution.
       // Directly probe every bounded signal consumed by Driving View v2 so the live
       // plan is based on observed evidence whenever the ECU can provide it.
-      await this.probeCoreSignals(snapshot, !this.hasCapabilityBitmap(firstCapabilityResult));
+      await this.probeCoreSignals(snapshot, !this.hasCapabilityBitmap(firstCapabilityResult) && snapshot.directlyObservedPids.length === 0);
 
       await this.executeAndRecord(snapshot, '0900', 5000, 'OBD_MODE_09', '49');
       await this.executeAndRecord(snapshot, '0902', 5000, 'OBD_MODE_09', '49');
@@ -285,8 +292,8 @@ export class RealObdInitialization {
     }
   }
 
-  private async probeCoreSignals(snapshot: CapabilitySnapshot, autoSearchPending = false) {
-    for (const pid of LIVE_OBD_REQUEST_ORDER) {
+  private async probeCoreSignals(snapshot: CapabilitySnapshot, autoSearchPending = false, pids: readonly string[] = LIVE_OBD_REQUEST_ORDER) {
+    for (const pid of pids) {
       // The first request after ATSP0 includes protocol search, just like 0100.
       const timeoutMs = autoSearchPending ? 15000 : 4000;
       autoSearchPending = false;

@@ -24,6 +24,15 @@ describe('Installed Android foreground-service integration contract', () => {
     expect(runtime).toMatch(/startService\(\{[\s\S]*?ServiceType/);
   });
 
+  it('maps connectedDevice to the Android SDK constant in both native dispatchers', () => {
+    const service = read(path.join(nativeRoot, 'ForegroundService.java'));
+    const mappings = [...service.matchAll(/case "connectedDevice":\s*return ([^;]+);/g)];
+    expect(mappings).toHaveLength(2);
+    for (const mapping of mappings) {
+      expect(mapping[1]).toBe('android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE');
+    }
+  });
+
   it('requires app-side connectedDevice permission and manifest service declaration', () => {
     const manifest = read(path.join(projectRoot, 'android', 'app', 'src', 'main', 'AndroidManifest.xml'));
     expect(manifest).toContain('android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE');
