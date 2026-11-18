@@ -14,7 +14,7 @@ function read(file: string) {
 }
 
 describe('Installed Android foreground-service integration contract', () => {
-  it('uses the real native package's mandatory ServiceType field', () => {
+  it("uses the real native package's mandatory ServiceType field", () => {
     const nativeModule = read(path.join(nativeRoot, 'ForegroundServiceModule.java'));
     const service = read(path.join(nativeRoot, 'ForegroundService.java'));
     const runtime = read(path.join(packageRoot, 'index.js'));
