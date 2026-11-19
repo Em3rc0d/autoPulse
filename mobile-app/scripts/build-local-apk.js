@@ -58,13 +58,13 @@ const packageLockPath = path.join(root, 'package-lock.json');
 
 const sourceCommit = verifyOnly ? null : gitText(repoRoot, ['rev-parse', 'HEAD']);
 const sourceBranch = verifyOnly ? null : gitText(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD']);
-const workingTreeStatus = verifyOnly ? null : gitText(repoRoot, ['status', '--porcelain', '--untracked-files=all']);
-const sourceTreeClean = verifyOnly ? null : workingTreeStatus.length === 0;
-const workingTreeStatusSha256 = verifyOnly || sourceTreeClean
+const workingTreeStatusBeforeBuild = verifyOnly ? null : gitText(repoRoot, ['status', '--porcelain', '--untracked-files=all']);
+const sourceTreeCleanBeforeBuild = verifyOnly ? null : workingTreeStatusBeforeBuild.length === 0;
+const workingTreeStatusSha256BeforeBuild = verifyOnly || sourceTreeCleanBeforeBuild
   ? null
-  : crypto.createHash('sha256').update(workingTreeStatus).digest('hex');
+  : crypto.createHash('sha256').update(workingTreeStatusBeforeBuild).digest('hex');
 
-if (!verifyOnly && !sourceTreeClean && !allowDirty) {
+if (!verifyOnly && !sourceTreeCleanBeforeBuild && !allowDirty) {
   fail('Working tree is not clean. Commit/stash changes before building a certification candidate, or use --allow-dirty for a non-certifiable internal build.');
 }
 
@@ -241,7 +241,22 @@ console.log('[AutoPulse APK] Effective permissions V1 verified (' + actualPermis
 const bytes = fs.readFileSync(apk);
 const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
 const packageLockSha256 = sha256File(packageLockPath);
-const certificationEligible = !verifyOnly && sourceTreeClean === true;
+const sourceCommitAfterBuild = verifyOnly ? null : gitText(repoRoot, ['rev-parse', 'HEAD']);
+const workingTreeStatusAfterBuild = verifyOnly ? null : gitText(repoRoot, ['status', '--porcelain', '--untracked-files=all']);
+const sourceTreeCleanAfterBuild = verifyOnly ? null : workingTreeStatusAfterBuild.length === 0;
+const workingTreeStatusSha256AfterBuild = verifyOnly || sourceTreeCleanAfterBuild
+  ? null
+  : crypto.createHash('sha256').update(workingTreeStatusAfterBuild).digest('hex');
+
+if (!verifyOnly && sourceCommitAfterBuild !== sourceCommit) {
+  fail('Git HEAD changed during the APK build. Re-run from a stable source commit.');
+}
+if (!verifyOnly && !sourceTreeCleanAfterBuild && !allowDirty) {
+  fail('Working tree changed during the APK build. Certification requires clean source inputs before and after build.');
+}
+
+const sourceTreeClean = !verifyOnly && sourceTreeCleanBeforeBuild === true && sourceTreeCleanAfterBuild === true;
+const certificationEligible = !verifyOnly && sourceTreeClean;
 const destination = path.join(root, 'dist');
 fs.mkdirSync(destination, { recursive: true });
 const out = path.join(destination, 'autopulse-internal-' + sha256.slice(0, 12) + '.apk');
@@ -257,7 +272,10 @@ fs.writeFileSync(out + '.json', JSON.stringify({
   sourceCommit,
   sourceBranch,
   sourceTreeClean,
-  workingTreeStatusSha256,
+  sourceTreeCleanBeforeBuild,
+  sourceTreeCleanAfterBuild,
+  workingTreeStatusSha256BeforeBuild,
+  workingTreeStatusSha256AfterBuild,
   packageLockSha256,
   sourceCommitNote: verifyOnly
     ? 'An existing APK was inspected; source provenance must come from its original build receipt.'
