@@ -14,12 +14,29 @@ const args = process.argv.slice(2);
 const checkOnly = args.includes('--check');
 const skipCi = args.includes('--skip-install');
 const verifyOnly = args.includes('--verify-only');
-const allowedArgs = new Set(['--check', '--skip-install', '--verify-only']);
+const allowDirty = args.includes('--allow-dirty');
+const allowedArgs = new Set(['--check', '--skip-install', '--verify-only', '--allow-dirty']);
 for (const arg of args) if (!allowedArgs.has(arg)) throw Error('Unsupported option: ' + arg);
 if (checkOnly && verifyOnly) throw Error('Cannot combine --check with --verify-only');
+if (verifyOnly && allowDirty) throw Error('--allow-dirty is meaningless with --verify-only');
 
 function exists(file) { return fs.existsSync(file); }
 function fail(message) { console.error('[AutoPulse APK] BLOCKED: ' + message); process.exit(1); }
+function sha256File(file) {
+  return crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+}
+function gitText(repoRoot, gitArgs) {
+  const result = spawnSync('git', gitArgs, {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    shell: false,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  if (result.error || result.status !== 0) {
+    fail('Git provenance command failed: git ' + gitArgs.join(' '));
+  }
+  return result.stdout.trim();
+}
 function run(executable, commands, extraEnv) {
   // Windows needs a command shell for npm.cmd, but shell:true breaks the
   // absolute node.exe path under "C:\\Program Files" and quoted script args.
@@ -34,6 +51,21 @@ function run(executable, commands, extraEnv) {
   });
   if (result.error) fail(result.error.message);
   if (result.status !== 0) fail(executable + ' failed with exit code ' + result.status);
+}
+
+const repoRoot = path.resolve(root, '..');
+const packageLockPath = path.join(root, 'package-lock.json');
+
+const sourceCommit = verifyOnly ? null : gitText(repoRoot, ['rev-parse', 'HEAD']);
+const sourceBranch = verifyOnly ? null : gitText(repoRoot, ['rev-parse', '--abbrev-ref', 'HEAD']);
+const workingTreeStatus = verifyOnly ? null : gitText(repoRoot, ['status', '--porcelain', '--untracked-files=all']);
+const sourceTreeClean = verifyOnly ? null : workingTreeStatus.length === 0;
+const workingTreeStatusSha256 = verifyOnly || sourceTreeClean
+  ? null
+  : crypto.createHash('sha256').update(workingTreeStatus).digest('hex');
+
+if (!verifyOnly && !sourceTreeClean && !allowDirty) {
+  fail('Working tree is not clean. Commit/stash changes before building a certification candidate, or use --allow-dirty for a non-certifiable internal build.');
 }
 
 const sdkCandidates = [
@@ -51,7 +83,7 @@ if (!exists(path.join(root, 'android', 'gradlew')) ||
 }
 const java = spawnSync('java', ['-version'], { encoding: 'utf8', shell: false });
 if (java.error || java.status !== 0) fail('JDK 17+ is missing. Set JAVA_HOME and install the JDK.');
-if (!exists(path.join(root, 'package-lock.json'))) fail('package-lock.json is missing.');
+if (!exists(packageLockPath)) fail('package-lock.json is missing.');
 if (!exists(path.join(root, 'app.json'))) fail('Expo configuration missing.');
 const packageConfig = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
 if (packageConfig.main !== 'index.js' || !exists(path.join(root, 'index.js'))) {
@@ -208,25 +240,31 @@ if (actualPermissions.length === 0 || unexpectedPermissions.length || missingReq
 console.log('[AutoPulse APK] Effective permissions V1 verified (' + actualPermissions.length + ').');
 const bytes = fs.readFileSync(apk);
 const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
+const packageLockSha256 = sha256File(packageLockPath);
+const certificationEligible = !verifyOnly && sourceTreeClean === true;
 const destination = path.join(root, 'dist');
 fs.mkdirSync(destination, { recursive: true });
 const out = path.join(destination, 'autopulse-internal-' + sha256.slice(0, 12) + '.apk');
 fs.copyFileSync(apk, out);
 fs.writeFileSync(out + '.json', JSON.stringify({
+  schemaVersion: 2,
   kind: 'INTERNAL_ANDROID_TEST_ONLY',
   sha256,
   sizeBytes: bytes.length,
   createdAt: new Date().toISOString(),
   verifiedOnly: verifyOnly,
-  sourceCommit: verifyOnly ? null : (() => {
-    const git = spawnSync('git', ['rev-parse', 'HEAD'], {
-      cwd: path.resolve(root, '..'), encoding: 'utf8', shell: false,
-    });
-    return git.status === 0 ? git.stdout.trim() : null;
-  })(),
+  certificationEligible,
+  sourceCommit,
+  sourceBranch,
+  sourceTreeClean,
+  workingTreeStatusSha256,
+  packageLockSha256,
   sourceCommitNote: verifyOnly
-    ? 'An existing APK was inspected; build source commit must be linked to the original build log.'
-    : 'Source HEAD captured at build script execution; verify build inputs and working-tree cleanliness separately.',
+    ? 'An existing APK was inspected; source provenance must come from its original build receipt.'
+    : sourceTreeClean
+      ? 'Source HEAD and clean working tree were captured before build.'
+      : 'Built with --allow-dirty. The APK is internal-only and is NOT eligible for physical certification.',
+  packageName: 'com.em3rc0dth.autopulse',
   androidTargetSdk: 36,
   permissionNames: [...new Set(actualPermissions)].sort(),
   productionSigned: false,
