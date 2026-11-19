@@ -28,6 +28,7 @@ import {
   stopLiveForegroundService,
   subscribeLiveForegroundServiceFailure,
 } from './LiveForegroundService';
+import { flightRecorder } from '../observability/FlightRecorder';
 
 export type RecordingStatus = 'NOT_STARTED' | 'RECORDING' | 'FLUSHING' | 'DEGRADED' | 'FAILED' | 'CLOSED';
 
@@ -89,6 +90,15 @@ export class RealLiveSessionController {
     onSessionTerminal?: (outcome: LiveSessionTerminalOutcome) => void
   ) {
     if (this.currentState !== 'CREATED') return;
+    flightRecorder.record({
+      category: 'SESSION',
+      event: 'START_REQUESTED',
+      sessionId: this.sessionId,
+      details: {
+        supportedPidCount: this.supportedPids.length,
+        pollAdapterVoltage: this.pollAdapterVoltage,
+      },
+    });
     this.currentState = 'ACTIVE';
     this.onUiUpdate = onUiUpdate;
     this.onRecordingError = onRecordingError;
@@ -100,6 +110,12 @@ export class RealLiveSessionController {
 
     const conn = activeBleController.claimConnection(this.connectionHandleId, 'LIVE');
     if (!conn) {
+      flightRecorder.record({
+        category: 'BLUETOOTH',
+        event: 'CONNECTION_CLAIM_FAILED',
+        sessionId: this.sessionId,
+        details: { handleId: this.connectionHandleId },
+      });
       await this.handleUnexpectedDisconnect('CONNECTION_UNAVAILABLE_OR_LEASED');
       return;
     }
@@ -112,6 +128,11 @@ export class RealLiveSessionController {
     });
 
     if (!(await startLiveForegroundService())) {
+      flightRecorder.record({
+        category: 'SESSION',
+        event: 'FOREGROUND_SERVICE_UNAVAILABLE',
+        sessionId: this.sessionId,
+      });
       await this.handleUnexpectedDisconnect('FOREGROUND_SERVICE_UNAVAILABLE');
       return;
     }
@@ -131,6 +152,12 @@ export class RealLiveSessionController {
 
     this.recordingStatus = 'RECORDING';
     this.poller?.start(250);
+    flightRecorder.record({
+      category: 'SESSION',
+      event: 'RECORDING_STARTED',
+      sessionId: this.sessionId,
+      details: { pollRequestCount: this.livePollRequests().length },
+    });
   }
 
   private livePollRequests(): string[] {
@@ -160,6 +187,11 @@ export class RealLiveSessionController {
     this.bleDisconnectSubscription?.remove();
     this.bleDisconnectSubscription = conn.device.onDisconnected(() => {
       if (this.currentState === 'ACTIVE') {
+        flightRecorder.record({
+          category: 'BLUETOOTH',
+          event: 'DEVICE_DISCONNECTED',
+          sessionId: this.sessionId,
+        });
         void this.attemptConnectionRecovery('DEVICE_DISCONNECTED', conn);
       }
     });
@@ -168,6 +200,12 @@ export class RealLiveSessionController {
   private handlePollerDiagnostic(event: PollerDiagnosticEvent, conn: ActiveConnection) {
     if (event.type !== 'TRANSPORT_STALLED' || this.currentState !== 'ACTIVE') return;
     const recoveryReason = event.reason === 'DISCONNECTED' ? 'DEVICE_DISCONNECTED' : 'ECU_RESPONSE_LOST';
+    flightRecorder.record({
+      category: 'OBD_TRANSPORT',
+      event: 'TRANSPORT_STALLED',
+      sessionId: this.sessionId,
+      details: { reason: recoveryReason },
+    });
     void this.attemptConnectionRecovery(recoveryReason, conn);
   }
 
@@ -255,6 +293,12 @@ export class RealLiveSessionController {
 
     this.recoveryPromise = (async () => {
       this.currentState = 'RECOVERING';
+      flightRecorder.record({
+        category: 'SESSION',
+        event: 'RECOVERY_STARTED',
+        sessionId: this.sessionId,
+        details: { reason },
+      });
       this.poller?.stop();
       this.bleDisconnectSubscription?.remove();
       this.bleDisconnectSubscription = null;
@@ -262,6 +306,16 @@ export class RealLiveSessionController {
       this.onRecordingError?.(`SESSION_RECOVERING:${reason}`);
 
       for (let attempt = 0; attempt < RECOVERY_DELAYS_MS.length; attempt++) {
+        flightRecorder.record({
+          category: 'SESSION',
+          event: 'RECOVERY_ATTEMPT',
+          sessionId: this.sessionId,
+          details: {
+            reason,
+            attempt: attempt + 1,
+            maxAttempts: RECOVERY_DELAYS_MS.length,
+          },
+        });
         await this.delay(RECOVERY_DELAYS_MS[attempt]);
         if (this.terminalPromise) return false;
 
@@ -287,6 +341,12 @@ export class RealLiveSessionController {
           this.recordingStatus = 'RECORDING';
           this.onRecordingError?.('');
           this.poller?.start(250);
+          flightRecorder.record({
+            category: 'SESSION',
+            event: 'RECOVERY_SUCCEEDED',
+            sessionId: this.sessionId,
+            details: { reason, attempt: attempt + 1 },
+          });
           return true;
         } catch (error) {
           console.warn(
@@ -297,6 +357,12 @@ export class RealLiveSessionController {
       }
 
       if (!this.terminalPromise) {
+        flightRecorder.record({
+          category: 'SESSION',
+          event: 'RECOVERY_EXHAUSTED',
+          sessionId: this.sessionId,
+          details: { reason, attempts: RECOVERY_DELAYS_MS.length },
+        });
         // Never await terminalization FROM the recovery promise: performStop
         // waits for this same recovery promise to settle before BLE teardown.
         // Awaiting here forms a self-deadlock on exhausted retries.
@@ -358,6 +424,16 @@ export class RealLiveSessionController {
 
   private async performStop(mode: 'NORMAL' | 'INTERRUPTED', reason?: string): Promise<void> {
     const wasRecovering = this.currentState === 'RECOVERING';
+    flightRecorder.record({
+      category: 'SESSION',
+      event: 'TERMINALIZATION_STARTED',
+      sessionId: this.sessionId,
+      details: {
+        mode,
+        reason: reason ?? null,
+        wasRecovering,
+      },
+    });
     const wasRunning = this.currentState === 'ACTIVE' || wasRecovering;
     this.currentState = mode === 'NORMAL' ? 'STOPPING' : 'INTERRUPTED';
 
@@ -450,6 +526,11 @@ export class RealLiveSessionController {
         // commit may fail or still be in flight while a second screen mounts.
         activeBleController.releaseClaim('LIVE');
         this.currentState = 'COMPLETED';
+        flightRecorder.record({
+          category: 'SESSION',
+          event: 'COMPLETED',
+          sessionId: this.sessionId,
+        });
         this.onSessionTerminal?.({ state: 'COMPLETED' });
         return;
       } catch (error) {
@@ -466,6 +547,12 @@ export class RealLiveSessionController {
       console.error('Failed to record session interruption', err);
     }
     this.currentState = 'INTERRUPTED';
+    flightRecorder.record({
+      category: 'SESSION',
+      event: 'INTERRUPTED',
+      sessionId: this.sessionId,
+      details: { reason: failReason },
+    });
     this.onSessionTerminal?.({ state: 'INTERRUPTED', reason: failReason });
   }
 
