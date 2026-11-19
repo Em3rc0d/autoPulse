@@ -1,5 +1,6 @@
 import { Platform } from 'react-native';
 import ReactNativeForegroundService from '@supersami/rn-foreground-service';
+import { flightRecorder } from '../observability/FlightRecorder';
 
 export type LiveForegroundServiceFailureListener = (reason: string) => void;
 
@@ -15,6 +16,11 @@ function notifyFailure(reason: string) {
   lifecycleEpoch += 1;
   running = false;
   lastFailure = reason;
+  flightRecorder.record({
+    category: 'FOREGROUND_SERVICE',
+    event: 'FAILURE',
+    details: { reason, lifecycleEpoch },
+  });
   failureListeners.forEach(listener => {
     try {
       listener(reason);
@@ -62,6 +68,11 @@ export function startLiveForegroundService(): Promise<boolean> {
 
   const epoch = ++lifecycleEpoch;
   lastFailure = null;
+  flightRecorder.record({
+    category: 'FOREGROUND_SERVICE',
+    event: 'START_REQUESTED',
+    details: { epoch },
+  });
   const start = enqueue(async () => {
     if (epoch !== lifecycleEpoch) return false;
     if (nativeStartMayBeActive) {
@@ -91,6 +102,11 @@ export function startLiveForegroundService(): Promise<boolean> {
       await ReactNativeForegroundService.start(config);
       if (epoch !== lifecycleEpoch) return false;
       running = true;
+      flightRecorder.record({
+        category: 'FOREGROUND_SERVICE',
+        event: 'STARTED',
+        details: { epoch },
+      });
       return true;
     } catch (error) {
       if (epoch === lifecycleEpoch) {
@@ -113,6 +129,11 @@ export function startLiveForegroundService(): Promise<boolean> {
  */
 export function stopLiveForegroundService(): Promise<void> {
   lifecycleEpoch += 1;
+  flightRecorder.record({
+    category: 'FOREGROUND_SERVICE',
+    event: 'STOP_REQUESTED',
+    details: { lifecycleEpoch },
+  });
   running = false;
   pendingStart = null;
   if (Platform.OS !== 'android') return Promise.resolve();
@@ -122,6 +143,11 @@ export function stopLiveForegroundService(): Promise<void> {
     try {
       await ReactNativeForegroundService.stopAll();
       nativeStartMayBeActive = false;
+      flightRecorder.record({
+        category: 'FOREGROUND_SERVICE',
+        event: 'STOPPED',
+        details: { lifecycleEpoch },
+      });
     } catch (error) {
       console.warn('[LiveForegroundService] Could not stop foreground service', error);
       notifyFailure('FOREGROUND_SERVICE_STOP_FAILED');
