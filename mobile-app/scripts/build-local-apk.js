@@ -255,8 +255,10 @@ if (!verifyOnly && !sourceTreeCleanAfterBuild && !allowDirty) {
   fail('Working tree changed during the APK build. Certification requires clean source inputs before and after build.');
 }
 
-const sourceTreeClean = !verifyOnly && sourceTreeCleanBeforeBuild === true && sourceTreeCleanAfterBuild === true;
-const certificationEligible = !verifyOnly && sourceTreeClean;
+const sourceTreeClean = verifyOnly
+  ? null
+  : sourceTreeCleanBeforeBuild === true && sourceTreeCleanAfterBuild === true;
+const certificationEligible = !verifyOnly && sourceTreeClean === true;
 const destination = path.join(root, 'dist');
 fs.mkdirSync(destination, { recursive: true });
 const out = path.join(destination, 'autopulse-internal-' + sha256.slice(0, 12) + '.apk');
