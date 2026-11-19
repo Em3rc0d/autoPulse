@@ -1,5 +1,6 @@
 import { EncodedTelemetryBlock } from '../../domain/telemetry/models/EncodedTelemetryBlock';
 import { ITelemetryBlockRepository } from '../../domain/telemetry/repositories/TelemetryBlockRepository';
+import { flightRecorder } from '../observability/FlightRecorder';
 
 export type CommitQueueEvent =
   | { type: 'COMMITTED'; block: EncodedTelemetryBlock }
@@ -35,6 +36,15 @@ export class TelemetryCommitQueue {
 
     if (this.queue.length >= MAX_PENDING_TELEMETRY_BLOCKS) {
       this.hasFailed = true;
+      flightRecorder.record({
+        category: 'PERSISTENCE',
+        event: 'BACKPRESSURE_OVERFLOW',
+        sessionId: this.sessionId,
+        details: {
+          pendingCount: this.queue.length,
+          blockSequence: block.blockSequence,
+        },
+      });
       this.onEvent({
         type: 'FAILED',
         errorReason: 'TELEMETRY_BACKPRESSURE_OVERFLOW',
@@ -62,6 +72,15 @@ export class TelemetryCommitQueue {
     // Check if retryable
     if (!result.success) {
       if (this.isRetryable((result as any).reason)) {
+        flightRecorder.record({
+          category: 'PERSISTENCE',
+          event: 'COMMIT_RETRY',
+          sessionId: this.sessionId,
+          details: {
+            reason: (result as any).reason,
+            blockSequence: block.blockSequence,
+          },
+        });
         // Retry exactly once with identical block. Repository writes are idempotent
         // by session + block sequence + byte-identical payload.
         result = await this.repository.commitBlock(this.workspaceId, this.sessionId, block);
@@ -77,6 +96,15 @@ export class TelemetryCommitQueue {
 
     if (!result.success) {
       this.hasFailed = true;
+      flightRecorder.record({
+        category: 'PERSISTENCE',
+        event: 'COMMIT_FAILED',
+        sessionId: this.sessionId,
+        details: {
+          reason: (result as any).reason,
+          blockSequence: block.blockSequence,
+        },
+      });
       // We retain the block in the queue (do not shift)
       this.onEvent({ type: 'FAILED', errorReason: (result as any).reason, block });
       return;
@@ -89,6 +117,15 @@ export class TelemetryCommitQueue {
     } catch (error) {
       if (!this.hasFailed) {
         this.hasFailed = true;
+        flightRecorder.record({
+          category: 'PERSISTENCE',
+          event: 'COMMIT_EXCEPTION',
+          sessionId: this.sessionId,
+          details: {
+            blockSequence: block.blockSequence,
+            error: error instanceof Error ? error.message : 'UNKNOWN',
+          },
+        });
         this.onEvent({ type: 'FAILED', errorReason: 'DATABASE_WRITE_FAILED', block });
       }
     } finally {
@@ -113,6 +150,15 @@ export class TelemetryCommitQueue {
 
     while (this.queue.length > 0 && !this.hasFailed) {
       if (Date.now() - startedAt >= timeoutMs) {
+        flightRecorder.record({
+          category: 'PERSISTENCE',
+          event: 'DRAIN_TIMEOUT',
+          sessionId: this.sessionId,
+          details: {
+            timeoutMs,
+            pendingCount: this.queue.length,
+          },
+        });
         throw new TelemetryCommitQueueDrainTimeoutError(timeoutMs, this.queue.length);
       }
       await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
