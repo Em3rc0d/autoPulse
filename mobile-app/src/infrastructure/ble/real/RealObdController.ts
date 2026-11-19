@@ -9,6 +9,7 @@ import { CommandRequest, CommandResult, CommandResultStatus, RawElmResponse } fr
 import { DiagnosticsBuffer } from './DiagnosticsBuffer';
 import { BleDebugLogger } from './BleDebugLogger';
 import { decodeAdapterVoltage } from '../../../domain/obd/AdapterVoltage';
+import { flightRecorder } from '../../../application/observability/FlightRecorder';
 
 export class RealObdController {
   private connection: ActiveConnection;
@@ -73,11 +74,35 @@ export class RealObdController {
           // Run Pipeline
           const result = this.runPipeline(request, rawResponse);
           DiagnosticsBuffer.push(result);
+          if (!['SUCCESS_DECODED', 'SUCCESS_RAW', 'NO_DATA'].includes(result.status)) {
+            flightRecorder.record({
+              category: 'OBD_TRANSPORT',
+              event: 'COMMAND_ANOMALY',
+              details: {
+                command: request.command,
+                family: request.family,
+                status: result.status,
+                latencyMs: result.latencyMs,
+                completionReason: rawResponse.completionReason,
+                frameCount: result.obdFrames.length,
+                negativeResponseCount: result.negativeResponses.length,
+              },
+            });
+          }
           resolve(result);
 
         } catch (e: any) {
           console.log(`[RealObdController] Error executing ${request.command}:`, e.message);
           BleDebugLogger.log(`ERR (${request.command}): ${e.message}`);
+          flightRecorder.record({
+            category: 'OBD_TRANSPORT',
+            event: 'COMMAND_EXCEPTION',
+            details: {
+              command: request.command,
+              family: request.family,
+              error: e instanceof Error ? e.message : 'UNKNOWN',
+            },
+          });
           if (e?.errorCode === 201) {
             this.isConnected = false;
             resolve(this.buildErrorResult(request, 'DISCONNECTED', e.message));
