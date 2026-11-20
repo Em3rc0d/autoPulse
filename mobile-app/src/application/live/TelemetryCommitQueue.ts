@@ -1,6 +1,6 @@
 import { EncodedTelemetryBlock } from '../../domain/telemetry/models/EncodedTelemetryBlock';
 import { ITelemetryBlockRepository } from '../../domain/telemetry/repositories/TelemetryBlockRepository';
-import { flightRecorder } from '../observability/FlightRecorder';
+import { flightRecorder } from '../../infrastructure/observability/FlightRecorder';
 
 export type CommitQueueEvent =
   | { type: 'COMMITTED'; block: EncodedTelemetryBlock }
