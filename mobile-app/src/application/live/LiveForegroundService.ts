@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import ReactNativeForegroundService from '@supersami/rn-foreground-service';
-import { flightRecorder } from '../observability/FlightRecorder';
+import { flightRecorder } from '../../infrastructure/observability/FlightRecorder';
 
 export type LiveForegroundServiceFailureListener = (reason: string) => void;
 
