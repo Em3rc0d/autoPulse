@@ -17,6 +17,7 @@ Categories currently include:
 - `BLUETOOTH`
 - `OBD_TRANSPORT`
 - `PERSISTENCE`
+- `CHECK`
 
 The in-app recorder is a bounded ring buffer. The Android console mirror is the durable debugging path when ADB logcat is being captured.
 
@@ -151,3 +152,19 @@ SQLITE / SESSION SUMMARY
 ```
 
 A strong diagnosis correlates these layers by timestamp rather than trusting one source in isolation.
+
+
+## 10. Check observability
+
+The Check path emits structured events for:
+
+```text
+CHECK COMMAND_STARTED
+CHECK COMMAND_COMPLETED
+CHECK COMMAND_FAILED
+CHECK REPORT_SEALED
+CHECK REPORT_REOPEN_VERIFIED
+CHECK REPORT_INTEGRITY_MISMATCH
+```
+
+These events intentionally omit raw diagnostic payloads. The immutable Check report remains the evidence authority for diagnostic content; the flight recorder exists to correlate execution and integrity lifecycle with Android/runtime logs.
