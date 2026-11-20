@@ -9,7 +9,7 @@ import { CommandRequest, CommandResult, CommandResultStatus, RawElmResponse } fr
 import { DiagnosticsBuffer } from './DiagnosticsBuffer';
 import { BleDebugLogger } from './BleDebugLogger';
 import { decodeAdapterVoltage } from '../../../domain/obd/AdapterVoltage';
-import { flightRecorder } from '../../../application/observability/FlightRecorder';
+import { flightRecorder } from '../../observability/FlightRecorder';
 
 export class RealObdController {
   private connection: ActiveConnection;
