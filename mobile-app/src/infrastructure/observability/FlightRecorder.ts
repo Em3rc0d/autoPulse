@@ -4,6 +4,7 @@ export type FlightRecorderCategory =
   | 'BLUETOOTH'
   | 'OBD_TRANSPORT'
   | 'PERSISTENCE'
+  | 'CHECK'
   | 'APP_LIFECYCLE';
 
 export type FlightRecorderDetailValue = string | number | boolean | null | undefined;
