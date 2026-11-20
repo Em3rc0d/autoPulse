@@ -1,5 +1,6 @@
 import type { DiagnosticProtocol } from '../../../domain/diagnostics/DiagnosticConnector';
 import { RealObdController } from '../../../infrastructure/ble/real/RealObdController';
+import { flightRecorder } from '../../../infrastructure/observability/FlightRecorder';
 import type { CommandFamily, CommandRequest } from '../../../infrastructure/ble/real/pipeline/types';
 import type { PlannedDiagnosticExecutionReceipt, PlannedDiagnosticExecutor } from '../replay/DiagnosticExecutionPort';
 import type { PlannedDiagnosticRequest } from '../planner/DiagnosticScanPlanner';
@@ -71,6 +72,16 @@ export class RealCheckPlannedExecutor implements PlannedDiagnosticExecutor {
   ): Promise<PlannedDiagnosticExecutionReceipt> {
     if (this.commandInFlight) throw new Error('CHECK_EXECUTOR_CONCURRENT_COMMAND');
     this.commandInFlight = true;
+    flightRecorder.record({
+      category: 'CHECK',
+      event: 'COMMAND_STARTED',
+      details: {
+        semanticId: request.semanticId,
+        service: request.service,
+        attemptIndex,
+        protocol: this.protocol,
+      },
+    });
     try {
     if (this.cancellation.isCancelled) throw new Error('CHECK_CANCELLED');
     if (!request.supportedProtocols.includes(this.protocol)) {
@@ -100,8 +111,32 @@ export class RealCheckPlannedExecutor implements PlannedDiagnosticExecutor {
     // Do not promote a late ECU response after the user cancelled Check.
     if (this.cancellation.isCancelled) throw new Error('CHECK_CANCELLED');
     const receipt = adaptRealCommandResultToReceipt(request, this.protocol, result, startedAt, this.provenance);
+    flightRecorder.record({
+      category: 'CHECK',
+      event: 'COMMAND_COMPLETED',
+      details: {
+        semanticId: request.semanticId,
+        service: request.service,
+        attemptIndex,
+        responseCount: receipt.responses.length,
+        responseKinds: receipt.responses.map(item => item.envelope.kind).join(','),
+        durationMs: Math.max(0, receipt.finishedAt - receipt.startedAt),
+      },
+    });
     this.onReceipt?.(request, receipt);
     return receipt;
+    } catch (error) {
+      flightRecorder.record({
+        category: 'CHECK',
+        event: 'COMMAND_FAILED',
+        details: {
+          semanticId: request.semanticId,
+          service: request.service,
+          attemptIndex,
+          error: error instanceof Error ? error.message : 'UNKNOWN',
+        },
+      });
+      throw error;
     } finally {
       this.commandInFlight = false;
     }
