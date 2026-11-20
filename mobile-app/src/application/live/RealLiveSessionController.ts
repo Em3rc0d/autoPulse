@@ -28,7 +28,7 @@ import {
   stopLiveForegroundService,
   subscribeLiveForegroundServiceFailure,
 } from './LiveForegroundService';
-import { flightRecorder } from '../observability/FlightRecorder';
+import { flightRecorder } from '../../infrastructure/observability/FlightRecorder';
 
 export type RecordingStatus = 'NOT_STARTED' | 'RECORDING' | 'FLUSHING' | 'DEGRADED' | 'FAILED' | 'CLOSED';
 
