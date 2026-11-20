@@ -1,4 +1,5 @@
 import { ProductIdGenerator } from '../../infrastructure/database/product/uuidv7';
+import { flightRecorder } from '../../infrastructure/observability/FlightRecorder';
 import { DiagnosticCheckReportRepository } from '../../infrastructure/database/product/repositories/diagnostic-check-report.repository';
 import {
   buildDiagnosticCheckSnapshot,
@@ -23,7 +24,19 @@ export class DiagnosticCheckReportService {
     const snapshot = JSON.parse(stored.snapshotJson) as DiagnosticCheckSnapshot;
     const sealed = await sealIntegrityPayload(snapshot);
     const verified = sealed.sha256 === stored.sha256 && sealed.canonicalJson === stored.canonicalJson;
-    if (!verified) throw new Error('DIAGNOSTIC_CHECK_INTEGRITY_MISMATCH');
+    if (!verified) {
+      flightRecorder.record({
+        category: 'CHECK',
+        event: 'REPORT_INTEGRITY_MISMATCH',
+        details: { checkId: stored.id },
+      });
+      throw new Error('DIAGNOSTIC_CHECK_INTEGRITY_MISMATCH');
+    }
+    flightRecorder.record({
+      category: 'CHECK',
+      event: 'REPORT_REOPEN_VERIFIED',
+      details: { checkId: stored.id },
+    });
     return { snapshot, sha256: stored.sha256, verified: true, reusedExisting: true };
   }
 
@@ -55,6 +68,15 @@ export class DiagnosticCheckReportService {
       createdAt: Date.now(),
     };
     await this.repository.saveImmutable(stored);
+    flightRecorder.record({
+      category: 'CHECK',
+      event: 'REPORT_SEALED',
+      details: {
+        checkId,
+        protocol: snapshot.protocol,
+        sha256Prefix: sealed.sha256.slice(0, 16),
+      },
+    });
     return { snapshot, sha256: sealed.sha256, verified: true, reusedExisting: false };
   }
 
